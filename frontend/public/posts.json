@@ -1,0 +1,14 @@
+[
+  {
+    "id": "palabras-clave",
+    "title": "¿Qué son las palabras clave?",
+    "tags": "uso, tips",
+    "content": "Las **palabras clave** son términos o frases que describen el contenido principal de un tema. Ayudan a los usuarios a encontrar información relevante de forma rápida y eficiente.\n\n#### Ejemplo:\n- Para un artículo sobre \"cómo cocinar pasta\", las palabras clave podrían ser: *pasta*, *receta italiana*, *cocina fácil*."
+  },
+  {
+    "id": "visor",
+    "title": "Visor de letra",
+    "tags": "uso",
+    "content": "Este componente permite mostrar una línea de texto dinámica que cambia en tiempo real según los datos recibidos desde un servidor a través de una conexión Socket. También incluye efectos visuales y estilos ajustables según ciertas configuraciones.\n\n## Funcionalidades Clave\n\n1. **Texto Dinámico:** El componente muestra una línea de texto, que cambia automáticamente cuando el servidor envía nueva información.\n\n   - Si no hay datos disponibles, mostrará un marcador de espera: `· · ·`.\n\n2. **Estilo Condicional:** Dependiendo de los parámetros de la URL, el diseño y los estilos del componente cambian:\n\n   - `bg`: Si está presente, aplica un fondo azul con bordes redondeados.\n\n   - `slide`: Si está presente y `bg` no lo está, se muestra un diseño rectangular.\n\n   - `no_bg`: Si está presente junto con `slide`, elimina el fondo azul, mostrando un diseño transparente.\n\n3. **Estado Activo/Inactivo:**\n\n   - Cuando desde el controlador se activa/inactiva, el componente se ajusta:\n\n     - **Activo:** El texto es visible y completamente opaco.\n\n     - **Inactivo:** El texto se atenúa y parece alejarse.\n\n## Comportamiento según los Queries\n\nTenga en cuenta que si va a combinar queries, no debe usar ? siempre. Después del primero, debe usar `&`. Ejemplo: `http://tu-ip/ver?bg&slide`\n\n### ?bg\n\n- **Si está presente:** El fondo del componente se vuelve azul oscuro y el diseño se redondea.\n\n- **Si no está presente:** No se aplica un fondo azul.\n\n### ?slide\n\n- **Si está presente y `bg` no lo está:** El diseño del componente se vuelve rectangular.\n\n- **Si no está presente:** El diseño permanece por defecto, con bordes redondeados (si `bg` está presente).\n\n### ?no_bg\n\n- **Si está presente junto con `slide`:** Se elimina el fondo azul, dejando el componente transparente.\n\n### Sin Queries\n\n- Si no se proporcionan queries, el componente utiliza un diseño predeterminado con texto en el centro."
+  }
+]

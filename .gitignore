@@ -1,0 +1,28 @@
+# Frontend
+frontend/.nuxt/*
+frontend/.output/*
+frontend/node_modules/*
+frontend/bun.lockb
+frontend/*-lock.*
+frontend/.env
+frontend/.env.*
+
+# Backend
+backend/node_modules/*
+backend/.env
+backend/dist/*
+backend/src/data.db
+backend/bun.lockb
+backend/*-lock.*
+
+# Parse PDF Utility
+parse-pdf/*.pdf
+parse-pdf/.venv/*
+parse-pdf/__pycache__/*
+parse-pdf/.env
+
+# IDE and Editor files
+.vscode/*
+.idea/*
+*.swp
+.DS_Store
