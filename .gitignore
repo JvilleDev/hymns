@@ -6,6 +6,7 @@ frontend/bun.lockb
 frontend/*-lock.*
 frontend/.env
 frontend/.env.*
+frontend/version.txt
 
 # Backend
 backend/node_modules/*
@@ -20,6 +21,9 @@ parse-pdf/*.pdf
 parse-pdf/.venv/*
 parse-pdf/__pycache__/*
 parse-pdf/.env
+
+# Updater
+updater/*.exe
 
 # IDE and Editor files
 .vscode/*
