@@ -8,8 +8,14 @@ import cors from "cors";
 import Fuse from "fuse.js";
 import { PrismaClient } from '@prisma/client'
 
-const prisma = new PrismaClient()
-const db = new Database("src/data.db");
+let prisma: PrismaClient;
+const db =  new Database("src/data.db");
+
+try {
+    prisma = new PrismaClient();
+} catch (error) {
+    console.error("Failed to initialize database connections:", error);
+}
 
 const app = express();
 const server = http.createServer(app);
