@@ -15,7 +15,7 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     app: {
-      apiUrl: process.env.BACKEND_URL,
+      apiUrl: process.env.BACKEND_URL ?? "https://hymns-back.jville.dev",
     }
   },
   experimental: {

@@ -29,7 +29,7 @@ const formData = ref({
 
 async function fetchData() {
   isLoading.value = true;
-  const res = await fetch(`http://${apiUrl}/api/cantos`);
+  const res = await fetch(`${apiUrl}/api/cantos`);
   const data = await res.json();
   displayedSongs.value = data;
   songs.value = data;
@@ -46,7 +46,7 @@ async function addItem() {
 
   try {
     isLoading.value = true;
-    const res = await fetch(`http://${apiUrl}/api/canto`, {
+    const res = await fetch(`${apiUrl}/api/canto`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -70,7 +70,7 @@ async function addItem() {
 }
 
 async function editItem() {
-  const res = await fetch(`http://${apiUrl}/api/canto`, {
+  const res = await fetch(`${apiUrl}/api/canto`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -89,7 +89,7 @@ async function editItem() {
 
 async function deleteItem(id: string) {
   isLoading.value = true;
-  await fetch(`http://${apiUrl}/api/canto/${id}`, {
+  await fetch(`${apiUrl}/api/canto/${id}`, {
     method: 'DELETE'
   }).then(() => {
     fetchData();
@@ -98,7 +98,7 @@ async function deleteItem(id: string) {
 }
 
 async function fetchItem(id: string) {
-  const res = await fetch(`http://${apiUrl}/api/canto/${id}`);
+  const res = await fetch(`${apiUrl}/api/canto/${id}`);
   formData.value = await res.json();
 }
 
@@ -117,7 +117,7 @@ const debounce = (fn, delay) => {
 };
 
 const searchDebounce = debounce(async (query) => {
-  const res = await $fetch(`http://${apiUrl}/search?q=${query}`);
+  const res = await $fetch(`${apiUrl}/search?q=${query}`);
   displayedSongs.value = res.results
 }, 200);
 

@@ -3,7 +3,7 @@ import { onKeyStroke } from '@vueuse/core'
 import io from 'socket.io-client'
 
 const { apiUrl } = useRuntimeConfig().app
-const socket = io('ws://' + apiUrl)
+const socket = io('wss://' + apiUrl.split("//")[1])
 let isChangingSong = ref(false); // Estado de bloqueo
 
 onKeyStroke("ArrowUp", (e) => {
@@ -64,7 +64,7 @@ function checkTags(text: string): string {
 }
 
 async function fetchData() {
-  const res = await fetch(`http://${apiUrl}/api/cantos`)
+  const res = await fetch(`${apiUrl}/api/cantos`)
   songs.value = await res.json()
 }
 
@@ -76,7 +76,7 @@ async function changeSong(id: string) {
     // Activamos el bloqueo
     isChangingSong.value = true;
 
-    const res = await fetch(`http://${apiUrl}/api/canto/${id}`);
+    const res = await fetch(`${apiUrl}/api/canto/${id}`);
     let songData = await res.json();
     songData.content = `${songData.type === 'Especial' ? 'Especial - ' + songData.title : `#${songData.nh}` + ' - ' + songData.title}` + '\n' + songData.content;
     songData.content = songData.content.split("\n");
@@ -120,7 +120,7 @@ async function changeSong(id: string) {
 }
 
 async function searchData() {
-  const res = await fetch(`http://${apiUrl}/search?q=${searchTerm.value}`)
+  const res = await fetch(`${apiUrl}/search?q=${searchTerm.value}`)
   results.value = await res.json()
 
 }

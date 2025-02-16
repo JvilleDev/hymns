@@ -2,7 +2,7 @@
 import io from 'socket.io-client';
 
 const { apiUrl } = useRuntimeConfig().app;
-const socket = io('ws://' + apiUrl);
+const socket = io('wss://' + apiUrl.split("//")[1]);
 const line = ref("");
 const changeLine = ref(true);
 
