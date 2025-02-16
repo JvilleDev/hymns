@@ -13,9 +13,6 @@ RUN bun install
 # Copia el resto de los archivos del proyecto
 COPY . .
 
-# Compila el proyecto TypeScript (si es necesario)
-RUN bun run build
-
 # Expone el puerto en el que la aplicación escucha
 EXPOSE 5001
 
