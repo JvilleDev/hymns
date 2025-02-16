@@ -15,7 +15,7 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     app: {
-      apiUrl: ip.address() + ":5001",
+      apiUrl: process.env.BACKEND_URL,
     }
   },
   experimental: {
