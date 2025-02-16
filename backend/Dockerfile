@@ -10,6 +10,8 @@ COPY package.json  ./
 # Instala las dependencias
 RUN bun install
 
+CMD ["prisma", "generate"]
+
 # Copia el resto de los archivos del proyecto
 COPY . .
 
