@@ -2,8 +2,6 @@
 frontend/.nuxt/*
 frontend/.output/*
 frontend/node_modules/*
-frontend/bun.lockb
-frontend/*-lock.*
 frontend/.env
 frontend/.env.*
 frontend/version.txt
