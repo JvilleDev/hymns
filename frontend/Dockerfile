@@ -14,10 +14,10 @@ RUN bun install
 COPY . .
 
 # Compila el proyecto Nuxt
-RUN bun run generate
+RUN bun run build
 
 # Expone el puerto en el que la aplicación escucha (ajusta el puerto si es necesario)
 EXPOSE 3000
 
 # Comando para ejecutar el servidor Nuxt
-CMD ["bunx", "serve", "./output/public"]
+CMD ["bun", "run", "./server/index.mjs"]
