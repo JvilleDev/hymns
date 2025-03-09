@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onKeyStroke } from '@vueuse/core'
 import io from 'socket.io-client'
+import { useDebounceFn } from '@vueuse/core'
 
 const { apiUrl } = useRuntimeConfig().app
-const socket = io('wss://' + apiUrl.split("//")[1])
+const socket = io(apiUrl.startsWith("https") ? "wss://" : 'ws://' + apiUrl.split("//")[1])
 let isChangingSong = ref(false); // Estado de bloqueo
 
 onKeyStroke("ArrowUp", (e) => {
@@ -35,20 +36,39 @@ let initialInfo = ref({
 
 // ! Search
 let searchTerm = ref('')
-let results: Ref<{ results: { title: string; id: string; nh: number; content: string; type: string } }[]> = ref([])
+let isLoading = ref(false)
+let results: Ref<{ results: { title: string; id: string; nh: number; content: string; type: string }[] }> = ref({ results: [] })
 let quickActions = ref([{
   text: '1',
   index: 0,
 }])
 
-const filteredSongs = computed(() => {
-  if (results && results.value.results && results.value.results.length > 0 && searchTerm.value.length > 0) {
-    return songs.value.filter(s => results.value.results.some(el => el.id === s.id));
+const debouncedSearch = useDebounceFn(async () => {
+  if (searchTerm.value.length > 0) {
+    isLoading.value = true
+    try {
+      await searchData()
+    } finally {
+      isLoading.value = false
+    }
   } else {
-    return songs.value;
+    results.value = { results: [] }
+  }
+}, 300)
+
+const filteredSongs = computed(() => {
+  if (searchTerm.value.length > 0 && results.value.results && results.value.results.length > 0) {
+    // Limitar a 20 resultados para mejor rendimiento
+    return results.value.results.slice(0, 20);
+  } else {
+    // Mostrar solo los primeros 50 cantos cuando no hay búsqueda
+    return songs.value.slice(0, 50);
   }
 });
 
+const isSearching = computed(() => {
+  return searchTerm.value.length > 0 && results.value.results && results.value.results.length > 0;
+});
 
 // ! Functions
 function checkTags(text: string): string {
@@ -69,26 +89,42 @@ async function fetchData() {
 }
 
 async function changeSong(id: string) {
-  if(isChangingSong.value) return
-  if(id === currentSong.value.id) return
+  if (!id) {
+    console.error('ID de canción inválido');
+    return;
+  }
+
+  if (isChangingSong.value) {
+    console.log('Ya hay un cambio de canción en proceso');
+    return;
+  }
+
+  if (currentSong.value.id && id === currentSong.value.id) {
+    console.log('La canción ya está seleccionada');
+    return;
+  }
 
   try {
-    // Activamos el bloqueo
     isChangingSong.value = true;
+    console.log('Cambiando a la canción:', id);
 
     const res = await fetch(`${apiUrl}/api/canto/${id}`);
+    if (!res.ok) {
+      throw new Error(`Error al obtener la canción: ${res.statusText}`);
+    }
+
     let songData = await res.json();
     songData.content = `${songData.type === 'Especial' ? 'Especial - ' + songData.title : `#${songData.nh}` + ' - ' + songData.title}` + '\n' + songData.content;
     songData.content = songData.content.split("\n");
 
-    // Actualizamos la canción actual y limpiamos el índice
     currentSong.value = songData;
     currentIndex.value = 0;
+    console.log("SONG DATA", songData)
 
     sendLine(songData.content[0]);
 
     searchTerm.value = '';
-    results.value = [];
+    results.value = { results: [] };
 
     quickActions.value = [];
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -109,12 +145,10 @@ async function changeSong(id: string) {
       }
     });
 
-    // Liberamos el bloqueo
-    isChangingSong.value = false;
+    console.log('Cambio de canción completado');
   } catch (error) {
     console.error("Error al cambiar la canción:", error);
-
-    // Liberamos el bloqueo en caso de error
+  } finally {
     isChangingSong.value = false;
   }
 }
@@ -135,9 +169,7 @@ function changeViewerState(state: boolean) {
 }
 
 watch(searchTerm, () => {
-  if (searchTerm.value.length > 0) {
-    searchData()
-  }
+  debouncedSearch()
 })
 
 watch(currentIndex, () => {
@@ -170,9 +202,14 @@ onUnmounted(() => {
     <div class="relative w-full items-center mb-2">
       <Input id="search" type="text"
         @keydown.enter="(searchTerm.length > 0 && results.results.length > 0) ? changeSong(filteredSongs[0].id) : ''"
-        placeholder="Buscar..." class="pl-10" v-model="searchTerm" />
+        placeholder="Buscar..." 
+        :disabled="isLoading"
+        class="pl-10" 
+        v-model="searchTerm" 
+      />
       <span class="absolute start-0 inset-y-0 flex items-center justify-center pl-4">
-        <Icon name="tabler:search" class="size-4 text-muted-foreground" />
+        <Icon v-if="!isLoading" name="tabler:search" class="size-4 text-muted-foreground" />
+        <Icon v-else name="tabler:loader-2" class="size-4 text-muted-foreground animate-spin" />
       </span>
       <span class="absolute end-0 m-0 inset-y-0 flex items-center justify-center p-1">
         <Button :variant="initialInfo.viewerActive ? 'default' : 'destructive'"
@@ -183,7 +220,14 @@ onUnmounted(() => {
     </div>
     <div class="container">
       <section>
-        <SongList :elements="filteredSongs" :activeId="currentSong.id" @changeSong="changeSong" />
+        <SongList 
+          :elements="filteredSongs" 
+          :activeId="currentSong.id || ''" 
+          :isSearching="isSearching"
+          :searchTerm="searchTerm"
+          :isLoading="isLoading"
+          @changeSong="changeSong" 
+        />
       </section>
       <Card id="song-viewer" v-if="currentSong.id != null && currentSong.id.length > 0" class="overflow-hidden">
         <CardHeader>
