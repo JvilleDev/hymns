@@ -20,6 +20,21 @@ onKeyStroke("ArrowDown", (e) => {
   }
 })
 
+// Add keyboard shortcuts for quick actions (both NumPad and normal keys)
+onKeyStroke(['0', 'Numpad0', '1', 'Numpad1', '2', 'Numpad2', '3', 'Numpad3', '4', 'Numpad4', '5', 'Numpad5', '6', 'Numpad6', '7', 'Numpad7', '8', 'Numpad8', '9', 'Numpad9'], (e) => {
+  // Prevent activation if search bar is focused
+  if (document.activeElement?.id === 'search') return;
+  
+  const key = e.key.replace('Numpad', '');
+  const numKey = parseInt(key);
+  
+  if (currentSong.value.id && quickActions.value.length > numKey) {
+    e.preventDefault();
+    currentIndex.value = quickActions.value[numKey].index;
+    sendLine(currentSong.value.content[currentIndex.value]);
+  }
+})
+
 interface BaseSong {
   id: string;
   title: string;
@@ -269,7 +284,7 @@ onUnmounted(() => {
   <main class="max-w-7xl mx-auto w-full flex flex-col items-center justify-center px-4 py-2">
     <div class="relative w-full items-center mb-2">
       <Input id="search" type="text"
-        @keydown.enter="(searchTerm.length > 0 && results.results.length > 0) ? changeSong(filteredSongs[0].id) : ''"
+        @keydown.enter="(searchTerm.length > 0 && filteredSongs.length > 0) ? changeSong(filteredSongs[0].id) : ''"
         placeholder="Buscar..." 
         :disabled="isLoading"
         class="pl-10" 
@@ -305,10 +320,11 @@ onUnmounted(() => {
             <span 
               v-for="(action, idx) in quickActions" 
               :key="action.index" 
-              class="t-mark rounded-md line transition-all duration-200"
+              class="t-mark rounded-md line transition-all duration-200 relative"
               :class="[idx === activeQuickAction ? 'active-section' : '']"
               @click="currentIndex = action.index; sendLine(currentSong.content[action.index])"
             >
+              <span class="absolute -top-2 -left-1 text-[10px] text-neutral-500">{{ idx }}</span>
               {{ action.text }}
             </span>
           </CardDescription>
