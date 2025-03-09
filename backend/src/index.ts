@@ -10,7 +10,7 @@ import Fuse from "fuse.js";
 import { PrismaClient } from '@prisma/client'
 
 let prisma: PrismaClient;
-const db =  new Database("src/data.db");
+const db =  new Database(":memory:");
 
 try {
     prisma = new PrismaClient();
@@ -45,13 +45,6 @@ let fuse: Fuse<Canto>;
 
 async function setupFuse() {
     const cantos: Canto[] = await getCantos();
-    console.log(`Setting up Fuse search with ${cantos.length} cantos`);
-    
-    // Log some sample data to verify content
-    if (cantos.length > 0) {
-        console.log("Sample canto for debugging:", JSON.stringify(cantos[0], null, 2));
-    }
-    
     const options = {
         keys: [
             { name: 'title', weight: 2 },
@@ -87,12 +80,10 @@ async function setupFuse() {
         }
     });
     
-    console.log(`Fuse search engine initialized successfully with ${addedCount}/${cantos.length} cantos`);
 }
 
 async function updateFuse() {
     const cantos = await getCantos();
-    console.log("TIPO DE CANTOS", typeof cantos)
     fuse.setCollection(cantos);
 }
 
@@ -116,9 +107,7 @@ app.get("/api/cantos", async (req, res) => {
     res.send(await getCantos());
 });
 app.get("/api/canto/:id", async (req, res) => {
-    console.log("GET CANTO", req.params.id)
     const answer = await getCantos(req.params.id)
-    console.log("ANSWER", answer)
     res.send(answer[0]);
 });
 app.post("/api/canto", async (req, res) => {
@@ -196,47 +185,31 @@ app.get("/search", async (req, res): Promise<any> => {
         }
 
         const searchTerm = req.query.q as string;
-        console.log(`Searching for: "${searchTerm}"`);
-        
         if (!fuse) {
-            console.log("Fuse is not initialized, setting up now");
             await setupFuse();
         }
         
         // Ensure we have data to search
         const cantos = await getCantos();
         if (cantos.length === 0) {
-            console.log("No cantos found in database, reinitializing...");
             await setupFuse();
             return res.status(500).json({
                 error: "No hay cantos en la base de datos para buscar"
             });
         }
-        
-        console.log(`Realizando búsqueda con ${cantos.length} cantos disponibles`);
-        
-        // Realizar búsqueda manual para depuración
-        console.log("Realizando búsqueda manual para depuración:");
         let manualMatches = 0;
         cantos.forEach(canto => {
             const titleMatch = canto.title.toLowerCase().includes(searchTerm.toLowerCase());
             const contentMatch = canto.content.toLowerCase().includes(searchTerm.toLowerCase());
             if (titleMatch || contentMatch) {
                 manualMatches++;
-                console.log(`- Match manual encontrado: ${canto.title} (ID: ${canto.id})`);
-                if (titleMatch) console.log(`  - Coincidencia en título`);
-                if (contentMatch) console.log(`  - Coincidencia en contenido`);
             }
         });
-        console.log(`Búsqueda manual encontró ${manualMatches} coincidencias`);
         
         // Búsqueda con Fuse
         const results = fuse.search(searchTerm);
-        console.log(`Fuse encontró ${results.length} resultados para "${searchTerm}"`);
         
         if (results.length > 0) {
-            console.log("Primer resultado:", JSON.stringify(results[0].item, null, 2));
-            console.log("Puntuación:", results[0].score);
         } else if (manualMatches > 0) {
             console.log("ADVERTENCIA: La búsqueda manual encontró coincidencias pero Fuse no encontró ninguna");
         }
@@ -262,21 +235,17 @@ app.get("/search", async (req, res): Promise<any> => {
 // DB Setup
 async function prepareDb() {
     try {
-        console.log("Preparing database...");
         await db.run(
             "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)"
         );
         
-        console.log("Fetching cantos from Prisma...");
         const res = await prisma.cantos.findMany();
-        console.log(`Found ${res.length} cantos in Prisma database`);
         
         if (res.length === 0) {
             console.warn("No cantos found in Prisma database. Search functionality will not work properly.");
             return;
         }
         
-        console.log("Inserting cantos into SQLite database...");
         for (const row of res) {
             const query = db.query(
                 "INSERT OR REPLACE INTO cantos (id, title, type, nh, content) VALUES (?, ?, ?, ?, ?)"
@@ -288,7 +257,6 @@ async function prepareDb() {
         const verifyQuery = db.query("SELECT COUNT(*) as count FROM cantos");
         const result = await verifyQuery.get();
         const count = result ? (result as {count: number}).count : 0;
-        console.log(`Successfully inserted ${count} cantos into SQLite database`);
     } catch (error) {
         console.error("Error preparing database:", error);
     }
@@ -304,7 +272,6 @@ async function getCantos(id?: string):Promise<Canto[]> {
                 "SELECT id, title, nh, type, content FROM cantos ORDER BY nh"
             );
             const results = await query.all();
-            console.log(`Retrieved ${results.length} cantos from database`);
             return results as Canto[];
         }
     } catch (error) {

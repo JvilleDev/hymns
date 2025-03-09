@@ -11,11 +11,7 @@ import { toast } from 'vue-sonner';
 
 const { apiUrl } = useRuntimeConfig().app;
 
-const songs = ref([]);
-const displayedSongs = ref([]);
-const isLoading = ref(false);
 const searchQuery = ref('');
-
 const addDialog = ref(false);
 const editDialog = ref(false);
 const itemToEdit = ref("");
@@ -27,14 +23,45 @@ const formData = ref({
   content: ''
 });
 
-async function fetchData() {
-  isLoading.value = true;
-  const res = await fetch(`${apiUrl}/api/cantos`);
-  const data = await res.json();
-  displayedSongs.value = data;
-  songs.value = data;
-  isLoading.value = false;
+interface Song {
+  id: string;
+  title: string;
+  type: string;
+  nh: number;
+  content: string;
 }
+
+// Usar useAsyncData para la carga inicial
+const { data: songs, refresh: refreshSongs, status: songsStatus } = await useAsyncData(
+  'songs',
+  () => $fetch<Song[]>(`${apiUrl}/api/cantos`)
+);
+
+// Usar useAsyncData para la búsqueda
+const { data: searchResults, status: searchStatus, refresh: refreshSearch } = await useAsyncData(
+  'songSearch',
+  async () => {
+    if (!searchQuery.value) return { results: [] };
+    return $fetch<{ results: Song[] }>(`${apiUrl}/search?q=${searchQuery.value}`);
+  },
+  {
+    watch: [searchQuery],
+    immediate: false
+  }
+);
+
+// Computed para los resultados mostrados
+const displayedSongs = computed(() => {
+  if (searchQuery.value && searchResults.value?.results) {
+    return searchResults.value.results;
+  }
+  return songs.value || [];
+});
+
+// Computed para el estado de carga
+const isLoading = computed(() => {
+  return songsStatus.value === 'pending' || searchStatus.value === 'pending';
+});
 
 async function addItem() {
   const newSong = {
@@ -45,92 +72,93 @@ async function addItem() {
   };
 
   try {
-    isLoading.value = true;
-    const res = await fetch(`${apiUrl}/api/canto`, {
+    const res = await $fetch(`${apiUrl}/api/canto`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(newSong),
+      body: newSong,
     });
-    if (res.ok) {
-      fetchData();
+    
+    if (res) {
+      await refreshSongs();
       formData.value = { title: '', type: 'Congregacional', nh: 0, content: '' };
       toast.success("Canto añadido exitosamente.");
       addDialog.value = false;
-    } else {
-      toast.error("Error al agregar el canto.");
     }
   } catch (error) {
     console.error("Error al agregar el canto:", error);
     toast.error("Error al agregar el canto.");
-  } finally {
-    isLoading.value = false;
   }
 }
 
 async function editItem() {
-  const res = await fetch(`${apiUrl}/api/canto`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ...formData.value, "id": itemToEdit.value }),
-  });
-  if (res.ok) {
-    fetchData();
-    formData.value = { title: "", type: "Congregacional", nh: 0, content: "" };
-    toast.success("Canto actualizado exitosamente.");
-    editDialog.value = false;
-  } else {
-    toast.error("Error al actualizar el canto.", { description: res.statusText });
+  try {
+    const res = await $fetch(`${apiUrl}/api/canto`, {
+      method: "PUT",
+      body: { ...formData.value, "id": itemToEdit.value },
+    });
+    
+    if (res) {
+      await refreshSongs();
+      formData.value = { title: "", type: "Congregacional", nh: 0, content: "" };
+      toast.success("Canto actualizado exitosamente.");
+      editDialog.value = false;
+    }
+  } catch (error) {
+    toast.error("Error al actualizar el canto.");
   }
 }
 
 async function deleteItem(id: string) {
-  isLoading.value = true;
-  await fetch(`${apiUrl}/api/canto/${id}`, {
-    method: 'DELETE'
-  }).then(() => {
-    fetchData();
-  });
-  toast.warning("Canto eliminado exitosamente.");
+  try {
+    await $fetch(`${apiUrl}/api/canto/${id}`, {
+      method: 'DELETE'
+    });
+    await refreshSongs();
+    toast.warning("Canto eliminado exitosamente.");
+  } catch (error) {
+    toast.error("Error al eliminar el canto.");
+  }
 }
 
-async function fetchItem(id: string) {
-  const res = await fetch(`${apiUrl}/api/canto/${id}`);
-  formData.value = await res.json();
-}
+// useAsyncData para obtener un canto específico
+const { data: currentSong, refresh: refreshCurrentSong } = await useAsyncData<Song | null>(
+  'currentSong',
+  async () => {
+    if (!itemToEdit.value) return null;
+    return $fetch<Song>(`${apiUrl}/api/canto/${itemToEdit.value}`);
+  },
+  {
+    watch: [itemToEdit],
+    immediate: false
+  }
+);
 
-onBeforeMount(() => {
-  fetchData();
+watch(currentSong, (song) => {
+  if (song) {
+    formData.value = { ...song };
+  }
 });
 
-const debounce = (fn, delay) => {
-  let timeout = null;
-  return (...args) => {
-    clearTimeout(timeout);
+// Debounce optimizado para TypeScript
+const debounce = <T extends (...args: any[]) => any>(fn: T, delay: number) => {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => {
       fn(...args);
     }, delay);
   };
 };
 
-const searchDebounce = debounce(async (query) => {
-  const res = await $fetch(`${apiUrl}/search?q=${query}`);
-  displayedSongs.value = res.results
+const searchDebounce = debounce(async () => {
+  await refreshSearch();
 }, 200);
 
-watch(searchQuery, (query) => {
-  if(query.length < 1) {
-    displayedSongs.value = songs.value
+watch(searchQuery, () => {
+  if (searchQuery.value.length < 1) {
+    searchResults.value = { results: [] };
   } else {
-    searchDebounce(query)
+    searchDebounce();
   }
-});
-
-watch(itemToEdit, (val) => {
-  fetchItem(val);
 });
 </script>
 
@@ -164,7 +192,7 @@ watch(itemToEdit, (val) => {
             </div>
           </div>
           <div class="flex gap-2">
-            <Dialog @update:open="(e) => editDialog = e" :open="editDialog">
+            <Dialog @update:open="(e: boolean) => editDialog = e" :open="editDialog">
               <DialogTrigger as-child>
                 <Button size="sm" variant="ghost" @click="itemToEdit = song?.id">
                   <Icon name="tabler:pencil" class="size-4" />
@@ -176,7 +204,7 @@ watch(itemToEdit, (val) => {
                       Editando "{{ formData?.title }}"
                     </DialogTitle>
                   </DialogHeader>
-                  <form @submit.prevent="editItem(song.id)">
+                  <form @submit.prevent="editItem">
                     <div class="space-y-4" v-auto-animate>
                       <div>
                         <Label for="title" class="block text-sm font-medium text-gray-700">Título</Label>
@@ -267,7 +295,7 @@ watch(itemToEdit, (val) => {
     </div>
 
     <!-- Add Button -->
-    <Dialog @update:open="(e) => addDialog = e" :open="addDialog">
+    <Dialog @update:open="(e: boolean) => addDialog = e" :open="addDialog">
         <DialogTrigger>
           <TooltipProvider>
             <Tooltip>

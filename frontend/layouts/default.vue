@@ -48,6 +48,7 @@ onMounted(() => {
           </a>
         </nav>
       </div>
+      <NuxtLoadingIndicator :height="2" :duration="300" :color="'#000'"/>
     </header>
     <Toaster position="bottom-right"/>
     <slot/>

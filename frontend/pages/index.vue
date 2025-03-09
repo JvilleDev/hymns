@@ -4,8 +4,8 @@ import io from 'socket.io-client'
 import { useDebounceFn } from '@vueuse/core'
 
 const { apiUrl } = useRuntimeConfig().app
-const socket = io(apiUrl.startsWith("https") ? "wss://" : 'ws://' + apiUrl.split("//")[1])
-let isChangingSong = ref(false); // Estado de bloqueo
+const socket = io(apiUrl.startsWith("https") ? "wss://" + apiUrl.split("//")[1] : 'ws://' + apiUrl.split("//")[1])
+let isChangingSong = ref(false);
 
 onKeyStroke("ArrowUp", (e) => {
   e.preventDefault()
@@ -20,54 +20,91 @@ onKeyStroke("ArrowDown", (e) => {
   }
 })
 
-let songs: Ref<{ title: string; id: string; nh: number; content: string; type: string }[]> = ref([])
-let currentSong: Ref<{ title: string; id: string; nh: number; content: string[]; type: string }> = ref({
+interface BaseSong {
+  id: string;
+  title: string;
+  type: string;
+  nh: number;
+}
+
+interface Song extends BaseSong {
+  content: string;
+}
+
+interface CurrentSong extends BaseSong {
+  content: string[];
+}
+
+interface SearchResults {
+  results: Song[];
+}
+
+// Cargar lista inicial de canciones
+const { data: songs, refresh: refreshSongs } = await useAsyncData<Song[]>(
+  'songs',
+  () => $fetch(`${apiUrl}/api/cantos`)
+);
+
+let currentSong: Ref<CurrentSong> = ref({
   title: '',
   id: '',
   nh: 0,
   content: [],
   type: ''
-})
+});
+
 let currentIndex = ref(0);
 let initialInfo = ref({
   viewerActive: true,
   activeLine: ''
-})
+});
 
 // ! Search
-let searchTerm = ref('')
-let isLoading = ref(false)
-let results: Ref<{ results: { title: string; id: string; nh: number; content: string; type: string }[] }> = ref({ results: [] })
+let searchTerm = ref('');
+let isLoading = ref(false);
+
+// Búsqueda con useAsyncData
+const { data: searchResults, refresh: refreshSearch } = await useAsyncData<SearchResults>(
+  'songSearch',
+  async () => {
+    if (!searchTerm.value) return { results: [] };
+    return $fetch<SearchResults>(`${apiUrl}/search?q=${searchTerm.value}`);
+  },
+  {
+    watch: [searchTerm],
+    immediate: false
+  }
+);
+
 let quickActions = ref([{
   text: '1',
   index: 0,
-}])
+  endIndex: 0,
+}]);
 
 const debouncedSearch = useDebounceFn(async () => {
   if (searchTerm.value.length > 0) {
-    isLoading.value = true
+    isLoading.value = true;
     try {
-      await searchData()
+      await refreshSearch();
     } finally {
-      isLoading.value = false
+      isLoading.value = false;
     }
   } else {
-    results.value = { results: [] }
+    searchResults.value = { results: [] };
   }
-}, 300)
+}, 300);
 
 const filteredSongs = computed(() => {
-  if (searchTerm.value.length > 0 && results.value.results && results.value.results.length > 0) {
-    // Limitar a 20 resultados para mejor rendimiento
-    return results.value.results.slice(0, 20);
+  if (searchTerm.value.length > 0 && searchResults.value?.results && searchResults.value.results.length > 0) {
+    return searchResults.value.results.slice(0, 20);
   } else {
-    // Mostrar solo los primeros 50 cantos cuando no hay búsqueda
-    return songs.value.slice(0, 50);
+    return (songs.value || []).slice(0, 50);
   }
 });
 
 const isSearching = computed(() => {
-  return searchTerm.value.length > 0 && results.value.results && results.value.results.length > 0;
+  return searchTerm.value.length > 0 && searchResults.value?.results && searchResults.value.results.length > 0;
 });
 
 // ! Functions
@@ -81,11 +118,6 @@ function checkTags(text: string): string {
     return 'tag-mark';
   }
   return '';
-}
-
-async function fetchData() {
-  const res = await fetch(`${apiUrl}/api/cantos`)
-  songs.value = await res.json()
 }
 
 async function changeSong(id: string) {
@@ -108,40 +140,57 @@ async function changeSong(id: string) {
     isChangingSong.value = true;
     console.log('Cambiando a la canción:', id);
 
-    const res = await fetch(`${apiUrl}/api/canto/${id}`);
-    if (!res.ok) {
-      throw new Error(`Error al obtener la canción: ${res.statusText}`);
-    }
+    // Usar useAsyncData para obtener la canción
+    const { data: songData } = await useAsyncData<Song>(
+      `song-${id}`,
+      () => $fetch(`${apiUrl}/api/canto/${id}`),
+      { immediate: true }
+    );
 
-    let songData = await res.json();
-    songData.content = `${songData.type === 'Especial' ? 'Especial - ' + songData.title : `#${songData.nh}` + ' - ' + songData.title}` + '\n' + songData.content;
-    songData.content = songData.content.split("\n");
+    if (!songData.value) throw new Error('No se pudo obtener la canción');
 
-    currentSong.value = songData;
+    const processedContent = `${songData.value.type === 'Especial' ? 'Especial - ' + songData.value.title : `#${songData.value.nh}` + ' - ' + songData.value.title}` + '\n' + songData.value.content;
+    
+    currentSong.value = {
+      ...songData.value,
+      content: processedContent.split("\n")
+    };
+    
     currentIndex.value = 0;
-    console.log("SONG DATA", songData)
-
-    sendLine(songData.content[0]);
+    sendLine(currentSong.value.content[0]);
 
     searchTerm.value = '';
-    results.value = { results: [] };
+    searchResults.value = { results: [] };
 
+    // Extraer quickActions directamente del contenido con rangos
     quickActions.value = [];
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
     const actionsSet = new Set<string>();
-    const labelLines = document.querySelectorAll("#index-select .t-mark");
+    let lastActionIndex = -1;
 
-    labelLines.forEach((line) => {
-      const text = (line as HTMLElement).innerText;
-      const index = (line as HTMLElement).dataset.index;
+    // Agregar siempre la quickAction del título
+    quickActions.value.push({
+      text: 'TÍTULO',
+      index: 0,
+      endIndex: 0,
+    });
+    lastActionIndex = 0;
 
-      if (!actionsSet.has(text)) {
-        actionsSet.add(text);
+    currentSong.value.content.forEach((line: string, index: number) => {
+      if (index === 0) return;
+      
+      const tagType = checkTags(line);
+      if (tagType === 't-mark' && !actionsSet.has(line)) {
+        if (lastActionIndex !== -1) {
+          quickActions.value[lastActionIndex].endIndex = index - 1;
+        }
+        
+        actionsSet.add(line);
         quickActions.value.push({
-          text,
-          index: Number(index),
+          text: line.trim(),
+          index: index,
+          endIndex: currentSong.value.content.length - 1,
         });
+        lastActionIndex = quickActions.value.length - 1;
       }
     });
 
@@ -151,12 +200,6 @@ async function changeSong(id: string) {
   } finally {
     isChangingSong.value = false;
   }
-}
-
-async function searchData() {
-  const res = await fetch(`${apiUrl}/search?q=${searchTerm.value}`)
-  results.value = await res.json()
-
 }
 
 socket.on('initial', (data) => {
@@ -173,32 +216,57 @@ watch(searchTerm, () => {
 })
 
 watch(currentIndex, () => {
-  const activeIndex = document.querySelector('.active.line');
-  const indexSelect = document.querySelector("#line-container");
-  if (activeIndex && indexSelect) {
-    setTimeout(() => {
-      const offset = activeIndex.offsetTop - indexSelect.offsetHeight / 1.5;
-      indexSelect.scrollTop = offset;
-      indexSelect.scrollLeft = 0;
-    }, 200)
-  }
-  sendLine(currentSong.value.content[currentIndex.value])
+  nextTick(() => {
+    const activeIndex = document.querySelector('.active.line') as HTMLElement;
+    const indexSelect = document.querySelector("#line-container") as HTMLElement;
+    
+    if (activeIndex && indexSelect) {
+      // Calcular la posición del elemento activo relativa al contenedor
+      const containerTop = indexSelect.scrollTop;
+      const containerHeight = indexSelect.offsetHeight;
+      const elementTop = activeIndex.offsetTop;
+      const elementHeight = activeIndex.offsetHeight;
+
+      // Calcular el punto medio del contenedor
+      const containerMiddle = containerHeight / 2;
+      
+      // Calcular el scroll necesario para centrar el elemento
+      const targetScroll = elementTop - containerMiddle + elementHeight / 2;
+
+      // Aplicar el scroll con animación suave
+      indexSelect.scrollTo({
+        top: targetScroll,
+        left: 0,
+        behavior: 'smooth'
+      });
+    }
+    
+    sendLine(currentSong.value.content[currentIndex.value]);
+  });
 });
 
 function sendLine(data: string) {
   socket.emit('newLine', data)
 }
 
+// Computed para determinar qué quickAction está activa
+const activeQuickAction = computed(() => {
+  return quickActions.value.findIndex(action => 
+    currentIndex.value >= action.index && 
+    currentIndex.value <= action.endIndex
+  );
+});
+
 onMounted(() => {
-  socket.open()
-  fetchData()
+  socket.open();
+  refreshSongs();
 })
 onUnmounted(() => {
   socket.close()
 })
 </script>
 <template>
-  <main class="max-w-7xl mx-auto w-full flex flex-col items-center justify-center">
+  <main class="max-w-7xl mx-auto w-full flex flex-col items-center justify-center px-4 py-2">
     <div class="relative w-full items-center mb-2">
       <Input id="search" type="text"
         @keydown.enter="(searchTerm.length > 0 && results.results.length > 0) ? changeSong(filteredSongs[0].id) : ''"
@@ -234,8 +302,13 @@ onUnmounted(() => {
           <CardTitle v-auto-animate>{{ currentSong.type === 'Especial' ? 'Especial' : `#${currentSong.nh}` }} - {{ currentSong.title }}
           </CardTitle>
           <CardDescription class="flex gap-2 items-center" v-auto-animate>
-            <span v-for="action in quickActions" :key="action.index" class="t-mark rounded-md line"
-              @click="currentIndex = action.index; sendLine(currentSong.content[action.index])">
+            <span 
+              v-for="(action, idx) in quickActions" 
+              :key="action.index" 
+              class="t-mark rounded-md line transition-all duration-200"
+              :class="[idx === activeQuickAction ? 'active-section' : '']"
+              @click="currentIndex = action.index; sendLine(currentSong.content[action.index])"
+            >
               {{ action.text }}
             </span>
           </CardDescription>
@@ -301,5 +374,9 @@ onUnmounted(() => {
   @media (max-width: 512px) {
     @apply flex-col;
   }
+}
+
+.active-section {
+  @apply !bg-emerald-100 !text-emerald-700 !shadow-md scale-105;
 }
 </style>
