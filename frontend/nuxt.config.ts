@@ -2,7 +2,7 @@ import ip from 'ip'
 
 export default defineNuxtConfig({
   compatibilityDate: '2024-04-03',
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   modules: [
     "@nuxtjs/tailwindcss",
     "shadcn-nuxt",
@@ -13,6 +13,15 @@ export default defineNuxtConfig({
     "@nuxtjs/google-fonts",
     '@vueuse/nuxt',
   ],
+  vite: {
+    vue: {
+      template: {
+        compilerOptions: {
+          isCustomElement: (tag) => ['vue-inspector'].includes(tag)
+        }
+      }
+    }
+  },
   runtimeConfig: {
     app: {
       apiUrl: process.env.BACKEND_URL ?? "https://hymns-back.jville.dev",
