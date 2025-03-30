@@ -150,9 +150,10 @@ app.put("/api/canto", async (req, res): Promise<any> => {
                 .send("ERROR: No se encontró ningún canto con el ID proporcionado.");
         }
 
-        await prisma.cantos.update({
+        await prisma.cantos.upsert({
             where: { id: id },
-            data: { title: title, type: type, nh: nh, content: content },
+            update: { title: title, type: type, nh: nh, content: content },
+            create: { id: id, title: title, type: type, nh: nh, content: content },
         })
 
         await updateFuse();
