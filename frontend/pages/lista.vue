@@ -12,9 +12,8 @@ import { toast } from 'vue-sonner';
 const { apiUrl } = useRuntimeConfig().app;
 
 const searchQuery = ref('');
-const addDialog = ref(false);
-const editDialog = ref(false);
-const itemToEdit = ref("");
+const dialogOpen = ref(false);
+const selectedSong = ref<Song | null>(null);
 
 const formData = ref({
   title: '',
@@ -63,47 +62,63 @@ const isLoading = computed(() => {
   return songsStatus.value === 'pending' || searchStatus.value === 'pending';
 });
 
-async function addItem() {
-  const newSong = {
-    title: formData.value.title,
-    type: formData.value.type,
-    nh: formData.value.type === 'Congregacional' ? formData.value.nh : 0,
-    content: formData.value.content
-  };
+// Computed para determinar si es un nuevo canto o una edición
+const isNewSong = computed(() => {
+  return selectedSong.value === null;
+});
 
-  try {
-    const res = await $fetch(`${apiUrl}/api/canto`, {
-      method: 'POST',
-      body: newSong,
-    });
-    
-    if (res) {
-      await refreshSongs();
-      formData.value = { title: '', type: 'Congregacional', nh: 0, content: '' };
-      toast.success("Canto añadido exitosamente.");
-      addDialog.value = false;
-    }
-  } catch (error) {
-    console.error("Error al agregar el canto:", error);
-    toast.error("Error al agregar el canto.");
-  }
+function openAddDialog() {
+  selectedSong.value = null;
+  formData.value = { title: '', type: 'Congregacional', nh: 0, content: '' };
+  dialogOpen.value = true;
 }
 
-async function editItem() {
+async function openEditDialog(song: Song) {
+  selectedSong.value = song;
+  formData.value = { ...song };
+  dialogOpen.value = true;
+}
+
+async function saveItem() {
   try {
-    const res = await $fetch(`${apiUrl}/api/canto`, {
-      method: "PUT",
-      body: { ...formData.value, "id": itemToEdit.value },
-    });
-    
-    if (res) {
-      await refreshSongs();
-      formData.value = { title: "", type: "Congregacional", nh: 0, content: "" };
-      toast.success("Canto actualizado exitosamente.");
-      editDialog.value = false;
+    if (isNewSong.value) {
+      // Add new song
+      const newSong = {
+        title: formData.value.title,
+        type: formData.value.type,
+        nh: formData.value.type === 'Congregacional' ? formData.value.nh : 0,
+        content: formData.value.content
+      };
+
+      const res = await $fetch(`${apiUrl}/api/canto`, {
+        method: 'POST',
+        body: newSong,
+      });
+      
+      if (res) {
+        await refreshSongs();
+        toast.success("Canto añadido exitosamente.");
+      }
+    } else if (selectedSong.value) {
+      // Edit existing song
+      const res = await $fetch(`${apiUrl}/api/canto`, {
+        method: "PUT",
+        body: { ...formData.value, "id": selectedSong.value.id },
+      });
+      
+      if (res) {
+        await refreshSongs();
+        toast.success("Canto actualizado exitosamente.");
+      }
     }
+    
+    // Reset form and close dialog
+    formData.value = { title: '', type: 'Congregacional', nh: 0, content: '' };
+    dialogOpen.value = false;
+    selectedSong.value = null;
   } catch (error) {
-    toast.error("Error al actualizar el canto.");
+    console.error("Error al guardar el canto:", error);
+    toast.error(isNewSong.value ? "Error al añadir el canto." : "Error al actualizar el canto.");
   }
 }
 
@@ -118,25 +133,6 @@ async function deleteItem(id: string) {
     toast.error("Error al eliminar el canto.");
   }
 }
-
-// useAsyncData para obtener un canto específico
-const { data: currentSong, refresh: refreshCurrentSong } = await useAsyncData<Song | null>(
-  'currentSong',
-  async () => {
-    if (!itemToEdit.value) return null;
-    return $fetch<Song>(`${apiUrl}/api/canto/${itemToEdit.value}`);
-  },
-  {
-    watch: [itemToEdit],
-    immediate: false
-  }
-);
-
-watch(currentSong, (song) => {
-  if (song) {
-    formData.value = { ...song };
-  }
-});
 
 // Debounce optimizado para TypeScript
 const debounce = <T extends (...args: any[]) => any>(fn: T, delay: number) => {
@@ -192,86 +188,13 @@ watch(searchQuery, () => {
             </div>
           </div>
           <div class="flex gap-2">
-            <Dialog @update:open="(e: boolean) => editDialog = e" :open="editDialog">
-              <DialogTrigger as-child>
-                <Button size="sm" variant="ghost" @click="itemToEdit = song?.id">
-                  <Icon name="tabler:pencil" class="size-4" />
-                </Button>
-              </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>
-                      Editando "{{ formData?.title }}"
-                    </DialogTitle>
-                  </DialogHeader>
-                  <form @submit.prevent="editItem">
-                    <div class="space-y-4" v-auto-animate>
-                      <div>
-                        <Label for="title" class="block text-sm font-medium text-gray-700">Título</Label>
-                        <Input
-                            v-model="formData.title"
-                            id="title"
-                            type="text"
-                            required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                        />
-                      </div>
-                      <div>
-                        <Label for="type" class="block text-sm font-medium text-gray-700">Tipo</Label>
-                        <Select name="type" default-value="Congregacional" class="w-full" v-model="formData.type">
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccione una opción"/>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="Congregacional">
-                                Congregacional
-                              </SelectItem>
-                              <SelectItem value="Especial">
-                                Especial
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div v-if="formData.type !== undefined && formData.type !== null && formData.type === 'Congregacional'">
-                        <Label for="nh" class="block text-sm font-medium text-gray-700">Número de himno</Label>
-                        <Input
-                            v-model="formData.nh"
-                            id="nh"
-                            type="number"
-                            required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                        />
-                      </div>
-                      <div>
-                        <Label for="content" class="block text-sm font-medium text-gray-700">Contenido</Label>
-                        <Textarea
-                            v-model="formData.content"
-                            id="content"
-                            rows="4"
-                            required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                        ></Textarea>
-                      </div>
-                      <DialogFooter>
-                        <DialogClose as-child>
-                          <Button variant="outline"
-                                  @click="addDialog = false;formData = { title: '', type: 'Congregacional', nh: 0, content: '' }">
-                            <Icon name="tabler:x" class="size-3"/>
-                            Cancelar
-                          </Button>
-                          <Button type="submit" :disabled="isLoading">
-                            <Icon name="tabler:check" class="size-3"/>
-                            <span v-if="isLoading">Cargando...</span>
-                            <span v-else>Actualizar Canto</span>
-                          </Button>
-                        </DialogClose>
-                      </DialogFooter>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              @click="openEditDialog(song)"
+            >
+              <Icon name="tabler:pencil" class="size-4" />
+            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -295,33 +218,35 @@ watch(searchQuery, () => {
     </div>
 
     <!-- Add Button -->
-    <Dialog @update:open="(e: boolean) => addDialog = e" :open="addDialog">
-        <DialogTrigger>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger as-child>
-                <Button size="lg" class="fixed bottom-5 right-5 rounded-full shadow-lg">
-                  <Icon name="tabler:plus" class="size-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Añadir</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </DialogTrigger>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button size="lg" class="fixed bottom-5 right-5 rounded-full shadow-lg" @click="openAddDialog">
+            <Icon name="tabler:plus" class="size-5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Añadir</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+
+    <!-- Unified Dialog for Add/Edit -->
+    <ClientOnly>
+      <Dialog @update:open="(e: boolean) => dialogOpen = e" :open="dialogOpen">
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Añadir un canto</DialogTitle>
-            <DialogDescription class="leading-tight">
-              Ingrese la información correspondiente. Recuerde que al usar
-              <NuxtLink to="/ayuda/palabras-clave" class="underline underline-offset-1 decoration-dashed">
-                palabras clave
-              </NuxtLink>
-              en una sola línea, se considerará como una etiqueta especial, que podrá usar como acción rápida más tarde.
+            <DialogTitle>
+              {{ isNewSong ? 'Añadir un canto' : `Editando "${formData.title}"` }}
+            </DialogTitle>
+            <DialogDescription>
+              {{ isNewSong 
+                ? 'Ingrese la información correspondiente. Recuerde que al usar palabras clave en una sola línea, se considerará como una etiqueta especial.'
+                : 'Modifique la información del canto y presione "Guardar" para guardar los cambios.'
+              }}
             </DialogDescription>
           </DialogHeader>
-          <form @submit.prevent="addItem">
+          <form @submit.prevent="saveItem">
             <div class="space-y-4" v-auto-animate>
               <div>
                 <Label for="title" class="block text-sm font-medium text-gray-700">Título</Label>
@@ -372,22 +297,23 @@ watch(searchQuery, () => {
                 ></Textarea>
               </div>
               <DialogFooter>
-                <DialogClose as-child>
+                <DialogClose asChild>
                   <Button variant="outline"
-                          @click="addDialog = false;formData = { title: '', type: 'Congregacional', nh: 0, content: '' }">
+                          @click="dialogOpen = false;formData = { title: '', type: 'Congregacional', nh: 0, content: '' }">
                     <Icon name="tabler:x" class="size-3"/>
                     Cancelar
                   </Button>
                 </DialogClose>
                 <Button type="submit" :disabled="isLoading">
-                  <Icon name="tabler:plus" class="size-3"/>
+                  <Icon :name="isNewSong ? 'tabler:plus' : 'tabler:check'" class="size-3"/>
                   <span v-if="isLoading">Cargando...</span>
-                  <span v-else>Añadir Canto</span>
+                  <span v-else>{{ isNewSong ? 'Añadir Canto' : 'Guardar Cambios' }}</span>
                 </Button>
               </DialogFooter>
             </div>
           </form>
         </DialogContent>
       </Dialog>
+    </ClientOnly>
   </main>
 </template>

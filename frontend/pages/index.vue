@@ -24,8 +24,12 @@ onKeyStroke("ArrowDown", (e) => {
 
 // Add keyboard shortcuts for quick actions (both NumPad and normal keys)
 onKeyStroke(['0', 'Numpad0', '1', 'Numpad1', '2', 'Numpad2', '3', 'Numpad3', '4', 'Numpad4', '5', 'Numpad5', '6', 'Numpad6', '7', 'Numpad7', '8', 'Numpad8', '9', 'Numpad9'], (e) => {
-  // Prevent activation if search bar is focused
-  if (document.activeElement?.id === 'search') return;
+  // Prevent activation if any search bar is focused
+  if (document.activeElement?.id === 'search' || 
+      document.activeElement?.id === 'search-desktop' || 
+      document.activeElement?.id === 'search-mobile') {
+    return;
+  }
   
   const key = e.key.replace('Numpad', '');
   const numKey = parseInt(key);
