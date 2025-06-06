@@ -7,16 +7,8 @@ import * as io from "socket.io";
 import colorprint from "colorprint";
 import cors from "cors";
 import Fuse from "fuse.js";
-import { PrismaClient } from '@prisma/client'
 
-let prisma: PrismaClient;
-const db =  new Database(":memory:");
-
-try {
-    prisma = new PrismaClient();
-} catch (error) {
-    console.error("Failed to initialize database connections:", error);
-}
+const db = new Database("./src/data/database.db");
 
 const app = express();
 const server = http.createServer(app);
@@ -25,23 +17,24 @@ const socket = new io.Server(server, {
         origin: "*",
     },
 });
-const PORT = 5001;
+const PORT = 3100;
 
 let initialInfo = {
     viewerActive: true,
     activeLine: "",
 };
+
 app.use(express.static("public"));
 app.use(cors({ origin: "*" }));
-app.use(express.json());
+app.use(express.json({limit: '5mb'}));
+
+let fuse: Fuse<Canto>;
+
 server.listen(PORT, async () => {
-    await prisma.$connect()
     colorprint.INFO("Server running in http://localhost:" + PORT);
     await prepareDb();
     await setupFuse();
 });
-
-let fuse: Fuse<Canto>;
 
 async function setupFuse() {
     const cantos: Canto[] = await getCantos();
@@ -58,28 +51,21 @@ async function setupFuse() {
         useExtendedSearch: true,
         minMatchCharLength: 2
     };
-    
-    // Inicializar Fuse con un array vacío
+
     fuse = new Fuse([], options);
-    
-    // Agregar cada canto individualmente para detectar posibles problemas
+
     let addedCount = 0;
     cantos.forEach((canto, index) => {
         try {
-            // Verificar que el canto tenga los campos necesarios
             if (!canto.title || !canto.content) {
                 console.warn(`Canto #${index} (${canto.id}) tiene campos faltantes:`, canto);
             }
-            
-            // Agregar el canto a Fuse
             fuse.add(canto);
             addedCount++;
         } catch (error) {
             console.error(`Error al agregar canto #${index} (${canto.id}) a Fuse:`, error);
-            console.error("Datos del canto problemático:", JSON.stringify(canto, null, 2));
         }
     });
-    
 }
 
 async function updateFuse() {
@@ -99,17 +85,49 @@ socket.on("connection", (sc) => {
     });
 });
 
-app.get("/", async (req, res) => {
+app.get("/", (req, res) => {
     res.send("Alive!");
 });
 
 app.get("/api/cantos", async (req, res) => {
     res.send(await getCantos());
 });
+
 app.get("/api/canto/:id", async (req, res) => {
-    const answer = await getCantos(req.params.id)
+    const answer = await getCantos(req.params.id);
     res.send(answer[0]);
 });
+app.post("/import", async (req, res) => {
+    try {
+        if (!Array.isArray(req.body)) {
+            return res.status(400).json({ error: "El cuerpo debe ser un array de cantos." });
+        }
+
+        const cantos: Canto[] = req.body;
+
+        const insert = db.query(
+            "INSERT OR REPLACE INTO cantos (id, title, type, nh, content) VALUES (?, ?, ?, ?, ?)"
+        );
+
+        db.transaction(() => {
+            for (const canto of cantos) {
+                if (!canto.id || !canto.title || !canto.content) {
+                    console.warn("Canto con datos faltantes omitido:", canto);
+                    continue;
+                }
+                insert.run(canto.id, canto.title, canto.type, canto.nh, canto.content);
+            }
+        })();
+
+        await updateFuse();
+
+        res.status(200).json({ message: "Cantos importados exitosamente", count: cantos.length });
+    } catch (error: any) {
+        console.error("Error al importar cantos:", error);
+        res.status(500).json({ error: "Error al importar cantos", message: error.message });
+    }
+});
+
 app.post("/api/canto", async (req, res) => {
     try {
         const { title, type, nh, content } = req.body;
@@ -118,11 +136,6 @@ app.post("/api/canto", async (req, res) => {
             "INSERT OR REPLACE INTO cantos (id, title, type, nh, content) VALUES (?, ?, ?, ?, ?)"
         );
         query.run(id, title, type, nh, content);
-        prisma.cantos.upsert({
-            where: { id: id },
-            update: { title: title, type: type, nh: nh, content: content },
-            create: { id: id, title: title, type: type, nh: nh, content: content },
-        })
 
         await updateFuse();
         res.send("OK!");
@@ -130,7 +143,8 @@ app.post("/api/canto", async (req, res) => {
         res.send(`ERROR: ${error}`);
     }
 });
-app.put("/api/canto", async (req, res): Promise<any> => {
+
+app.put("/api/canto", async (req, res) => {
     try {
         const { id, title, type, nh, content } = req.body;
 
@@ -141,35 +155,27 @@ app.put("/api/canto", async (req, res): Promise<any> => {
         const query = db.query(
             "UPDATE cantos SET title = ?, type = ?, nh = ?, content = ? WHERE id = ?"
         );
-
-        const result = await query.run(title, type, nh, content, id);
+        const result = query.run(title, type, nh, content, id);
 
         if (result.changes === 0) {
-            return res
-                .status(404)
-                .send("ERROR: No se encontró ningún canto con el ID proporcionado.");
+            return res.status(404).send("ERROR: No se encontró ningún canto con el ID proporcionado.");
         }
-
-        await prisma.cantos.upsert({
-            where: { id: id },
-            update: { title: title, type: type, nh: nh, content: content },
-            create: { id: id, title: title, type: type, nh: nh, content: content },
-        })
 
         await updateFuse();
         res.send("Canto actualizado correctamente.");
-    } catch (error: Error | any) {
+    } catch (error: any) {
         res.status(500).send(`ERROR: ${error.message}`);
     }
 });
+
 app.delete("/api/canto/:id", async (req, res) => {
     try {
         const query = db.query("DELETE FROM cantos WHERE id = ?");
-        await query.run(req.params.id);
+        const result = query.run(req.params.id);
 
-        await prisma.cantos.delete({
-            where: {id: req.params.id},
-        })
+        if (result.changes === 0) {
+            return res.status(404).send("ERROR: No se encontró ningún canto para eliminar.");
+        }
 
         await updateFuse();
         res.send("OK!");
@@ -177,7 +183,8 @@ app.delete("/api/canto/:id", async (req, res) => {
         res.send(`ERROR: ${error}`);
     }
 });
-app.get("/search", async (req, res): Promise<any> => {
+
+app.get("/search", async (req, res) => {
     try {
         if (!req.query.q) {
             return res.status(400).json({
@@ -189,8 +196,7 @@ app.get("/search", async (req, res): Promise<any> => {
         if (!fuse) {
             await setupFuse();
         }
-        
-        // Ensure we have data to search
+
         const cantos = await getCantos();
         if (cantos.length === 0) {
             await setupFuse();
@@ -198,6 +204,7 @@ app.get("/search", async (req, res): Promise<any> => {
                 error: "No hay cantos en la base de datos para buscar"
             });
         }
+
         let manualMatches = 0;
         cantos.forEach(canto => {
             const titleMatch = canto.title.toLowerCase().includes(searchTerm.toLowerCase());
@@ -206,15 +213,13 @@ app.get("/search", async (req, res): Promise<any> => {
                 manualMatches++;
             }
         });
-        
-        // Búsqueda con Fuse
+
         const results = fuse.search(searchTerm);
-        
-        if (results.length > 0) {
-        } else if (manualMatches > 0) {
-            console.log("ADVERTENCIA: La búsqueda manual encontró coincidencias pero Fuse no encontró ninguna");
+
+        if (results.length === 0 && manualMatches > 0) {
+            console.warn("La búsqueda manual encontró coincidencias pero Fuse no encontró ninguna.");
         }
-        
+
         res.json({
             query: searchTerm,
             count: results.length,
@@ -224,11 +229,11 @@ app.get("/search", async (req, res): Promise<any> => {
                 score: result.score
             })),
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Search error:", error);
         res.status(500).json({
             error: "An error occurred while searching",
-            message: error instanceof Error ? error.message : String(error)
+            message: error.message
         });
     }
 });
@@ -236,47 +241,38 @@ app.get("/search", async (req, res): Promise<any> => {
 // DB Setup
 async function prepareDb() {
     try {
-        await db.run(
+        db.run(
             "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)"
         );
-        
-        const res = await prisma.cantos.findMany();
-        
-        if (res.length === 0) {
-            console.warn("No cantos found in Prisma database. Search functionality will not work properly.");
-            return;
-        }
-        
-        for (const row of res) {
-            const query = db.query(
-                "INSERT OR REPLACE INTO cantos (id, title, type, nh, content) VALUES (?, ?, ?, ?, ?)"
-            );
-            await query.run(row.id, row.title, row.type, row.nh, row.content);
-        }
-        
-        // Verify data was inserted correctly
-        const verifyQuery = db.query("SELECT COUNT(*) as count FROM cantos");
-        const result = await verifyQuery.get();
-        const count = result ? (result as {count: number}).count : 0;
     } catch (error) {
         console.error("Error preparing database:", error);
     }
 }
-async function getCantos(id?: string):Promise<Canto[]> {
+
+async function getCantos(id?: string): Promise<Canto[]> {
     try {
         if (id) {
             const query = db.query("SELECT * FROM cantos WHERE id = ?");
-            const result = await query.all(id);
+            const result = query.all(id);
             return result.length > 0 ? [result[0] as Canto] : [];
         } else {
             const query = db.query(
                 "SELECT id, title, nh, type, content FROM cantos ORDER BY nh"
             );
-            const results = await query.all();
+            const results = query.all();
             return results as Canto[];
         }
     } catch (error) {
         console.error("Error fetching cantos:", error);
         return [];
     }
+}
+
+// Tipado
+interface Canto {
+    id: string;
+    title: string;
+    type: string;
+    nh: number;
+    content: string;
 }

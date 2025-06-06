@@ -13,15 +13,7 @@ backend/dist/*
 backend/src/data.db
 backend/bun.lockb
 backend/*-lock.*
-
-# Parse PDF Utility
-parse-pdf/*.pdf
-parse-pdf/.venv/*
-parse-pdf/__pycache__/*
-parse-pdf/.env
-
-# Updater
-updater/*.exe
+backend/data/*
 
 # IDE and Editor files
 .vscode/*

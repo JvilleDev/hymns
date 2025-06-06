@@ -10,13 +10,11 @@ COPY package.json  ./
 # Instala las dependencias
 RUN bun install
 
-CMD ["prisma", "generate"]
-
 # Copia el resto de los archivos del proyecto
 COPY . .
 
 # Expone el puerto en el que la aplicación escucha
-EXPOSE 5001
+EXPOSE 3100
 
 # Comando para ejecutar la aplicación
 CMD ["bun", "run", "start"]

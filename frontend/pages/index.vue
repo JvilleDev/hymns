@@ -3,7 +3,6 @@ import { onKeyStroke } from '@vueuse/core'
 import io from 'socket.io-client'
 import { useDebounceFn } from '@vueuse/core'
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const { apiUrl } = useRuntimeConfig().app
 const socket = io(apiUrl.startsWith("https") ? "wss://" + apiUrl.split("//")[1] : 'ws://' + apiUrl.split("//")[1])
