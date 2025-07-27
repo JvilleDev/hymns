@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import io from 'socket.io-client';
 
-const { apiUrl } = useRuntimeConfig().app;
+const { apiUrl } = useRuntimeConfig().public;
 const socket = io(apiUrl.startsWith("https") ? "wss://" + apiUrl.split("//")[1] : 'ws://' + apiUrl.split("//")[1])
 const line = ref("");
 const changeLine = ref(true);
@@ -64,17 +64,19 @@ onUnmounted(() => {
 <style>
 .lyric {
   font-family: 'Outfit', sans-serif;
-  @apply w-full text-center leading-none drop-shadow-xl shadow-black/20 text-5xl;
+  font-size: inherit;
+  @apply w-full text-center leading-none drop-shadow-xl shadow-black/20;
   background: transparent;
 }
 
 .line-wrap {
   @apply flex line-clamp-2 justify-center text-center items-center h-screen max-h-screen overflow-hidden w-full transition-[transform,opacity,filter] duration-300 ease-in-out;
   &.bg {
-    @apply bg-blue-900/80 py-4 px-8 rounded-2xl text-white shadow-lg shadow-black/20 h-fit max-w-[98%];
+    @apply bg-blue-900/80 py-4 px-8 rounded-2xl text-white shadow-lg shadow-black/20 h-fit text-6xl max-w-[98%];
   }
   &.slide {
-    @apply bg-blue-900/80 py-4 px-8 rounded-none text-white shadow-xl;
+    font-size: clamp(5vh, 15vh, 20vh) !important;
+    @apply bg-blue-900/80 py-4 px-8 rounded-none text-white text-5xl shadow-xl;
     &.no-bg {
       @apply bg-transparent text-black shadow-md;
     }

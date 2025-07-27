@@ -21,7 +21,7 @@ export default defineNuxtConfig({
     }
   },
   runtimeConfig: {
-    app: {
+    public: {
       apiUrl: process.env.BACKEND_URL ?? "https://hymns-back.jville.dev",
     }
   },
@@ -39,5 +39,8 @@ export default defineNuxtConfig({
     families: {
       'Outfit': [400, 500, 700, 800],
     }
+  },
+  routeRules: {
+    "/backend/**": {proxy: `${process.env.BACKEND_URL}/**`}
   }
 })

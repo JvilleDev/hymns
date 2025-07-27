@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'vue-sonner';
 
-const { apiUrl } = useRuntimeConfig().app;
+const { apiUrl } = useRuntimeConfig();
 
 const searchQuery = ref('');
 const dialogOpen = ref(false);
@@ -33,7 +33,7 @@ interface Song {
 // Usar useAsyncData para la carga inicial
 const { data: songs, refresh: refreshSongs, status: songsStatus } = await useAsyncData(
   'songs',
-  () => $fetch<Song[]>(`${apiUrl}/api/cantos`)
+  () => $fetch<Song[]>(`/backend/api/cantos`)
 );
 
 // Usar useAsyncData para la búsqueda
@@ -90,7 +90,7 @@ async function saveItem() {
         content: formData.value.content
       };
 
-      const res = await $fetch(`${apiUrl}/api/canto`, {
+      const res = await $fetch(`/backend/api/canto`, {
         method: 'POST',
         body: newSong,
       });
@@ -101,7 +101,7 @@ async function saveItem() {
       }
     } else if (selectedSong.value) {
       // Edit existing song
-      const res = await $fetch(`${apiUrl}/api/canto`, {
+      const res = await $fetch(`/backend/api/canto`, {
         method: "PUT",
         body: { ...formData.value, "id": selectedSong.value.id },
       });
