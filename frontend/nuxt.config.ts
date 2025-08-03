@@ -42,5 +42,6 @@ export default defineNuxtConfig({
   },
   routeRules: {
     "/backend/**": {proxy: `${process.env.BACKEND_URL}/**`}
-  }
+  },
+  ssr: true
 })
