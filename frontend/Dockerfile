@@ -20,4 +20,4 @@ RUN bun run build
 EXPOSE 3000
 
 # Comando para ejecutar el servidor Nuxt
-CMD ["bun", "run", "./.output/server/index.mjs"]
+CMD ["bun", "run", "preview"]

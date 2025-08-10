@@ -43,8 +43,5 @@ export default defineNuxtConfig({
   routeRules: {
     "/backend/**": {proxy: "http://localhost:3100/**"}
   },
-  nitro: {
-    
-  },
   ssr: true
 })
