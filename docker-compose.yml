@@ -1,17 +1,14 @@
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/jvilledev/backend:latest
     container_name: backend
     ports:
       - "3100:3100"
     volumes:
       - db_data:/app/src/data
+
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/jvilledev/frontend:latest
     container_name: frontend
     environment:
       - BACKEND_URL=http://backend:3100
@@ -19,5 +16,17 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=60   # Revisa cada 60 segundos
+    restart: unless-stopped
+    command: --cleanup backend frontend
+    # El comando --cleanup elimina imágenes antiguas para liberar espacio
+
 volumes:
   db_data:

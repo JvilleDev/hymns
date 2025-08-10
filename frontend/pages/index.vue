@@ -4,6 +4,7 @@ import io from 'socket.io-client'
 import { useDebounceFn } from '@vueuse/core'
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'
 
+
 const { apiUrl } = useRuntimeConfig().public
 const socket = io(apiUrl.startsWith("https") ? "wss://" + apiUrl.split("//")[1] : 'ws://' + apiUrl.split("//")[1])
 
