@@ -12,17 +12,21 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set lowercase owner
+      id: vars
+      run: echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
     - name: Build and push backend image
       run: |
         docker build ./backend \
-          -t ghcr.io/${{ github.repository_owner,, }}/backend:latest
-        docker push ghcr.io/${{ github.repository_owner,, }}/backend:latest
+          -t ghcr.io/${{ env.owner_lc }}/backend:latest
+        docker push ghcr.io/${{ env.owner_lc }}/backend:latest
 
     - name: Build and push frontend image
       run: |
         docker build ./frontend \
-          -t ghcr.io/${{ github.repository_owner,, }}/frontend:latest
-        docker push ghcr.io/${{ github.repository_owner,, }}/frontend:latest
+          -t ghcr.io/${{ env.owner_lc }}/frontend:latest
+        docker push ghcr.io/${{ env.owner_lc }}/frontend:latest
