@@ -22,7 +22,7 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      apiUrl: process.env.BACKEND_URL ?? "https://hymns-back.jville.dev",
+      apiUrl: process.env.BACKEND_URL ?? "http://localhost:3100",
     }
   },
   experimental: {
