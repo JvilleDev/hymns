@@ -4,7 +4,6 @@ import io from 'socket.io-client'
 import { useDebounceFn } from '@vueuse/core'
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'
 
-
 const { apiUrl } = useRuntimeConfig().public
 const socket = io(apiUrl.startsWith("https") ? "wss://" + apiUrl.split("//")[1] : 'ws://' + apiUrl.split("//")[1])
 
@@ -17,6 +16,7 @@ interface BaseSong {
 
 interface Song extends BaseSong {
   content: string;
+  searchText?: string;
 }
 
 interface CurrentSong extends BaseSong {
@@ -27,7 +27,6 @@ interface CurrentSong extends BaseSong {
 const isChangingSong = ref(false)
 const searchTerm = ref('')
 const currentIndex = ref(0)
-const isDrawerOpen = ref(false)
 const isMac = ref(false)
 
 const currentSong: Ref<CurrentSong> = ref({
@@ -51,19 +50,26 @@ const quickActions = ref([{
 
 // Cargar lista inicial de canciones
 const { data: songs, refresh: refreshSongs } = await useAsyncData<Song[]>(
-    'songs',
-    () => $fetch<Song[]>(`/backend/api/cantos`),
-    {
-      // Optimización: usar cache y transformación
-      transform: (data: Song[]) => {
-        // Pre-procesar datos para búsqueda más rápida
-        return data.map(song => ({
-          ...song,
-          searchText: `${song.title.toLowerCase()} ${song.nh}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        }))
-      },
-      default: () => []
+  'songs',
+  async () => {
+    try {
+      return await $fetch<Song[]>(`/backend/api/cantos`)
+    } catch (e) {
+      // Si error, intentar con localhost
+      return await $fetch<Song[]>(`http://localhost:3100/api/cantos`)
     }
+  },
+  {
+    // Optimización: usar cache y transformación
+    transform: (data: Song[]) => {
+      // Pre-procesar datos para búsqueda más rápida
+      return data.map(song => ({
+        ...song,
+        searchText: `${song.title.toLowerCase()} ${song.nh}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      }))
+    },
+    default: () => []
+  }
 )
 
 // Optimización: usar computed en lugar de watchers múltiples
@@ -78,7 +84,7 @@ const filteredSongs = computed(() => {
 
   // Búsqueda optimizada con includes simple
   return songs.value.filter(song =>
-      song.searchText.includes(term)
+      (song.searchText ?? '').includes(term)
   )
 })
 
