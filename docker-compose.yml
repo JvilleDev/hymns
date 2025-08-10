@@ -11,7 +11,7 @@ services:
     image: ghcr.io/jvilledev/frontend:latest
     container_name: frontend
     environment:
-      - BACKEND_URL=http://backend:3100
+      - BACKEND_URL=http://localhost:3100
     ports:
       - "3000:3000"
     depends_on:
@@ -23,10 +23,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - WATCHTOWER_POLL_INTERVAL=60   # Revisa cada 60 segundos
+      - WATCHTOWER_POLL_INTERVAL=60
     restart: unless-stopped
     command: --cleanup backend frontend
-    # El comando --cleanup elimina imágenes antiguas para liberar espacio
 
 volumes:
   db_data:
