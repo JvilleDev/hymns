@@ -41,7 +41,7 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    "/backend/**": {proxy: "http://localhost:3100/**"}
+    "/backend/**": {proxy: "http://backend:3100/**"}
   },
   ssr: true
 })
