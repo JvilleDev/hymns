@@ -51,7 +51,7 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <main :class="[queries.bg ? 'bg' : '']">
+  <main :class="[queries.bg ? 'bg' : '']" class="w-svw h-svh max-h-svh max-w-svw overflow-hidden">
     <div class="line-wrap" :class="[ queries.bg ? 'bg' : '', queries.slide ? 'slide' : '', isActive ? 'active' : 'inactive', queries.no_bg ? 'no-bg' : '']">
       <Transition name="fade" :duration="300">
       <p class="lyric" v-if="!changeLine">

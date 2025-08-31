@@ -9,11 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'vue-sonner';
 
-const { apiUrl } = useRuntimeConfig();
-
-const searchQuery = ref('');
+const searchTerm = ref('');
 const dialogOpen = ref(false);
 const selectedSong = ref<Song | null>(null);
+const searchResults = ref<{ results: Song[] } | null>(null);
+const songs = ref<Song[] | null>(null);
+const isLoading = ref(false);
 
 const formData = ref({
   title: '',
@@ -30,37 +31,33 @@ interface Song {
   content: string;
 }
 
-// Usar useAsyncData para la carga inicial
-const { data: songs, refresh: refreshSongs, status: songsStatus } = await useAsyncData(
-  'songs',
-  () => $fetch<Song[]>(`/backend/api/cantos`)
-);
-
-// Usar useAsyncData para la búsqueda
-const { data: searchResults, status: searchStatus, refresh: refreshSearch } = await useAsyncData(
-  'songSearch',
-  async () => {
-    if (!searchQuery.value) return { results: [] };
-    return $fetch<{ results: Song[] }>(`${apiUrl}/search?q=${searchQuery.value}`);
-  },
-  {
-    watch: [searchQuery],
-    immediate: false
+const getSongs = async () => songs.value = await $fetch(`/backend/api/cantos`) as unknown as Song[];
+onMounted(() => getSongs())
+// Optimización: usar computed en lugar de watchers múltiples
+const filteredSongs = computed(() => {
+  console.log('Filtrando canciones con término:', searchTerm.value);
+  console.log("Cantidades:", songs.value?.length);
+  if (!searchTerm.value?.trim() || !songs.value) {
+    return songs.value || []
   }
-);
+  const term = searchTerm.value.toLowerCase().trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+
+  // Búsqueda optimizada con includes simple
+  return songs.value.filter(song =>
+      (song.title ?? '').includes(term) || (String(song.nh) ?? '').includes(term)
+  )
+})
 
 // Computed para los resultados mostrados
 const displayedSongs = computed(() => {
-  if (searchQuery.value && searchResults.value?.results) {
+  if (searchTerm.value && searchResults.value?.results) {
     return searchResults.value.results;
   }
   return songs.value || [];
 });
 
-// Computed para el estado de carga
-const isLoading = computed(() => {
-  return songsStatus.value === 'pending' || searchStatus.value === 'pending';
-});
 
 // Computed para determinar si es un nuevo canto o una edición
 const isNewSong = computed(() => {
@@ -96,7 +93,6 @@ async function saveItem() {
       });
       
       if (res) {
-        await refreshSongs();
         toast.success("Canto añadido exitosamente.");
       }
     } else if (selectedSong.value) {
@@ -107,7 +103,6 @@ async function saveItem() {
       });
       
       if (res) {
-        await refreshSongs();
         toast.success("Canto actualizado exitosamente.");
       }
     }
@@ -124,10 +119,9 @@ async function saveItem() {
 
 async function deleteItem(id: string) {
   try {
-    await $fetch(`${apiUrl}/api/canto/${id}`, {
+    await $fetch(`/backend/api/canto/${id}`, {
       method: 'DELETE'
     });
-    await refreshSongs();
     toast.warning("Canto eliminado exitosamente.");
   } catch (error) {
     toast.error("Error al eliminar el canto.");
@@ -144,25 +138,13 @@ const debounce = <T extends (...args: any[]) => any>(fn: T, delay: number) => {
     }, delay);
   };
 };
-
-const searchDebounce = debounce(async () => {
-  await refreshSearch();
-}, 200);
-
-watch(searchQuery, () => {
-  if (searchQuery.value.length < 1) {
-    searchResults.value = { results: [] };
-  } else {
-    searchDebounce();
-  }
-});
 </script>
 
 <template>
   <main class="px-4 pb-16 relative">
     <div class="relative w-full items-center mb-2 max-w-4xl mx-auto">
       <Input id="search" type="text"
-        placeholder="Buscar..." class="pl-10" v-model="searchQuery"/>
+        placeholder="Buscar..." class="pl-10" v-model="searchTerm"/>
       <span class="absolute start-0 inset-y-0 flex items-center justify-center pl-4">
         <Icon name="tabler:search" class="size-4 text-muted-foreground" />
       </span>
@@ -171,7 +153,7 @@ watch(searchQuery, () => {
     <!-- Grid Layout -->
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 relative w-full min-h-[70svh] max-h-[70svh] overflow-scroll" v-auto-animate>
       <div
-        v-for="(song, index) in displayedSongs"
+        v-for="(song, index) in filteredSongs"
         :key="song.id"
         class="p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow min-h-20 max-h-20"
       >
@@ -207,7 +189,7 @@ watch(searchQuery, () => {
         </div>
       </div>
 
-      <div v-if="displayedSongs.length === 0" class="col-span-full text-center text-muted-foreground">
+      <div v-if="filteredSongs.length === 0" class="col-span-full text-center text-muted-foreground">
         No se encontraron resultados.
       </div>
     </div>
