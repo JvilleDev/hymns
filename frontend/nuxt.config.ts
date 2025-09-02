@@ -10,6 +10,8 @@ export default defineNuxtConfig({
     "@nuxtjs/mdc",
     "@nuxtjs/google-fonts",
     '@vueuse/nuxt',
+    "nuxt-tiptap-editor",
+    "nuxt-tiptap-editor"
   ],
   vite: {
     vue: {
@@ -41,7 +43,10 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    "/backend/**": {proxy: `http://${process.env.BACKEND_URL}:3100/**`}
+    "/backend/**": { proxy: `http://${process.env.BACKEND_URL}:3100/**` }
   },
-  ssr: true
+  ssr: true,
+  tiptap: {
+    prefix: 'Tiptap',
+  },
 })

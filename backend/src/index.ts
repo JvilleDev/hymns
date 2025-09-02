@@ -83,6 +83,10 @@ socket.on("connection", (sc) => {
         initialInfo.viewerActive = msg;
         socket.emit("viewerActive", msg);
     });
+    sc.on("newWritten", (msg) => {
+        socket.emit("written", msg);
+    });
+
 });
 
 app.get("/", (req, res) => {
