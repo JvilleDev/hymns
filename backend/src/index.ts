@@ -20,7 +20,7 @@ const socket = new io.Server(server, {
 const PORT = 3100;
 
 let initialInfo = {
-    viewerActive: true,
+    viewerActive: false,
     activeLine: "",
 };
 
