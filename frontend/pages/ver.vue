@@ -30,9 +30,9 @@ function calculateDuration(htmlContent: string): number {
   // Remover tags HTML para contar solo el texto
   const textContent = htmlContent.replace(/<[^>]*>/g, '');
   const baseTime = 3000; // 3 segundos base
-  const extraTimePerChar = 50; // 50ms por caracter adicional
+  const extraTimePerChar = 100; // 50ms por caracter adicional
   const minTime = 2000; // mínimo 2 segundos
-  const maxTime = 8000; // máximo 8 segundos
+  const maxTime = 10000; // máximo 8 segundos
 
   const calculatedTime = baseTime + (textContent.length * extraTimePerChar);
   return Math.max(minTime, Math.min(maxTime, calculatedTime));
@@ -242,6 +242,7 @@ main {
   transform: translateX(-50%);
   z-index: 1000;
   pointer-events: none;
+  width: 100%;
   max-width: 90vw;
 }
 
@@ -267,7 +268,7 @@ main {
   opacity: 0;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   max-width: 90svw;
-  min-width: 200px;
+  width: 100%
 }
 
 .written-notification.visible {
@@ -276,7 +277,7 @@ main {
 }
 
 .notification-content {
-  font-size: clamp(2svw, 3vw, 3.2svw);
+  font-size: clamp(2.4svw, 4vw, 4svw);
   line-height: 1.6;
   color: #1f2937;
   text-align: center;
