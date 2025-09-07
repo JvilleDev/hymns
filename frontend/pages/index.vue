@@ -5,7 +5,7 @@ import { useDebounceFn } from '@vueuse/core'
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet'
 
 const { apiUrl } = useRuntimeConfig().public
-const socket = io(window.location.origin)
+let socket;
 
 interface BaseSong {
   id: string;
@@ -301,12 +301,13 @@ function sendLine(data: string) {
 }
 
 // Socket listeners
-socket.on('initial', (data) => {
-  initialInfo.value = data
-})
 
 onMounted(() => {
+  socket = io(window.location.origin)
   socket.open()
+  socket.on('initial', (data) => {
+    initialInfo.value = data
+  })
   isMac.value = navigator.platform.includes('Mac')
   // Optimización: solo refrescar si no hay datos
   if (!songs.value?.length) {

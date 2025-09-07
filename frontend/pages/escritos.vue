@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { io } from "socket.io-client"
 
-const socket = io(window.location.origin)
+let socket;
 
 const editorRef = ref<HTMLElement | null>(null)
 const hiddenTextarea = ref<HTMLTextAreaElement | null>(null)
@@ -70,6 +70,7 @@ function send() {
 }
 
 onMounted(() => {
+  socket = io(window.location.origin)
   updateHidden()
   document.addEventListener('selectionchange', onSelectionChange)
 })

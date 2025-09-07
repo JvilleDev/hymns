@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import io from 'socket.io-client';
 
-const { apiUrl } = useRuntimeConfig().public;
-const socket = io(window.location.origin)
+let socket: any;
 const line = ref("");
 const changeLine = ref(true);
 
@@ -99,55 +98,53 @@ function showWrittenNotification(htmlContent: string) {
   }, duration);
 }
 
-socket.on('line', (data) => {
-  changeLine.value = true;
-  line.value = data;
-  setTimeout(() => {
-    changeLine.value = false;
-  }, 1);
-});
 
-socket.on('initial', (data) => {
-  isActive.value = data.viewerActive;
-  if (data.activeLine.length > 0) {
+onMounted(() => {
+  socket = io(window.location.origin)
+  socket.open();
+  socket.on('line', (data) => {
     changeLine.value = true;
-    line.value = data.activeLine;
+    line.value = data;
     setTimeout(() => {
       changeLine.value = false;
     }, 1);
-  }
-})
-
-socket.on('viewerActive', (data) => {
-  isActive.value = data;
-})
-
-// Nuevo evento para recibir mensajes written
-socket.on('written', (data) => {
-  if (data.html && data.html.trim()) {
-    showWrittenNotification(data.html);
-
-    // 🔴 Si el viewer está activo, desactivarlo y avisar al socket
-    if (isActive.value) {
-      isActive.value = false;
-      socket.emit("viewerActive", false);
+  });
+  
+  socket.on('initial', (data) => {
+    isActive.value = data.viewerActive;
+    if (data.activeLine.length > 0) {
+      changeLine.value = true;
+      line.value = data.activeLine;
+      setTimeout(() => {
+        changeLine.value = false;
+      }, 1);
     }
-  }
+  })
+  
+  socket.on('viewerActive', (data) => {
+    isActive.value = data;
+  })
+  
+  // Nuevo evento para recibir mensajes written
+  socket.on('written', (data) => {
+    if (data.html && data.html.trim()) {
+      showWrittenNotification(data.html);
+  
+      // 🔴 Si el viewer está activo, desactivarlo y avisar al socket
+      if (isActive.value) {
+        isActive.value = false;
+        socket.emit("viewerActive", false);
+      }
+    }
+  });
+  
 });
-
-definePageMeta({
-  layout: false
-});
-
-onMounted(() => {
-  socket.open();
-  console.log(queries)
-  console.log(bg, slide, no_bg)
-});
-
 onUnmounted(() => {
   socket.close();
-});
+  definePageMeta({
+    layout: false
+  });  
+})
 </script>
 
 <template>
