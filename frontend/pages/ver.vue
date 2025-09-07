@@ -276,7 +276,7 @@ main {
 }
 
 .notification-content {
-  font-size: clamp(1.5svw, 3vw, 3svw); /* mínimo 16px, fluido hasta 2vw, máximo 32px */
+  font-size: clamp(2svw, 3vw, 3.2svw);
   line-height: 1.6;
   color: #1f2937;
   text-align: center;
