@@ -25,14 +25,12 @@ const writtenNotifications = ref<Array<{
 
 let notificationId = 0;
 
-// Función para calcular duración basada en longitud del texto
 function calculateDuration(htmlContent: string): number {
-  // Remover tags HTML para contar solo el texto
   const textContent = htmlContent.replace(/<[^>]*>/g, '');
-  const baseTime = 3000; // 3 segundos base
-  const extraTimePerChar = 100; // 50ms por caracter adicional
-  const minTime = 2000; // mínimo 2 segundos
-  const maxTime = 10000; // máximo 8 segundos
+  const baseTime = 3000;
+  const extraTimePerChar = 150;
+  const minTime = 2000;
+  const maxTime = 10000;
 
   const calculatedTime = baseTime + (textContent.length * extraTimePerChar);
   return Math.max(minTime, Math.min(maxTime, calculatedTime));
@@ -277,7 +275,7 @@ main {
 }
 
 .notification-content {
-  font-size: clamp(2.4svw, 4vw, 4svw);
+  font-size: clamp(2rem, 4vw, 3.5rem);
   line-height: 1.6;
   color: #1f2937;
   text-align: center;
