@@ -303,7 +303,7 @@ function sendLine(data: string) {
 // Socket listeners
 
 onMounted(() => {
-  socket = io(window.location.origin)
+  socket = io(window.location.origin.replace(":3000", ":3100"))
   socket.open()
   socket.on('initial', (data) => {
     initialInfo.value = data

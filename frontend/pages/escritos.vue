@@ -70,7 +70,7 @@ function send() {
 }
 
 onMounted(() => {
-  socket = io(window.location.origin)
+  socket = io(window.location.origin.replace(":3000", ":3100"))
   updateHidden()
   document.addEventListener('selectionchange', onSelectionChange)
 })

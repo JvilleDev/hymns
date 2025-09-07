@@ -100,7 +100,7 @@ function showWrittenNotification(htmlContent: string) {
 
 
 onMounted(() => {
-  socket = io(window.location.origin)
+  socket = io(window.location.origin.replace(":3000", ":3100"))
   socket.open();
   socket.on('line', (data) => {
     changeLine.value = true;
