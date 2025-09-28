@@ -1,0 +1,31 @@
+services:
+  backend:
+    container_name: backend
+    build: './backend'
+    ports:
+      - "3100:3100"
+    volumes:
+      - db_data:/app/src/data
+
+  frontend:
+    container_name: frontend
+    build: './frontend'
+    environment:
+      - BACKEND_URL=http://localhost:3100
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=60
+    restart: unless-stopped
+    command: --cleanup backend frontend
+
+volumes:
+  db_data:
