@@ -172,6 +172,23 @@ app.put("/api/canto", async (req, res) => {
     }
 });
 
+app.delete("/api/cantos", async (req, res) => {
+    console.log("DELETE /api/cantos hit");
+    try {
+        const query = db.query("DELETE FROM cantos");
+        query.run();
+        await updateFuse();
+        res.send("OK! All songs deleted.");
+    } catch (error: any) {
+        console.error("Error deleting all songs:", error);
+        res.status(500).send(`ERROR: ${error.message}`);
+    }
+});
+
+app.get("/debug/routes", (req, res) => {
+    res.json({ status: "ok", version: "v2-with-delete" });
+});
+
 app.delete("/api/canto/:id", async (req, res) => {
     try {
         const query = db.query("DELETE FROM cantos WHERE id = ?");
