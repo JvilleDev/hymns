@@ -4,11 +4,10 @@ export default defineNuxtConfig({
   modules: [
     "@nuxtjs/tailwindcss",
     "@nuxt/icon",
-    "@nuxtjs/color-mode",
-    "@formkit/auto-animate/nuxt",
     "@nuxtjs/mdc",
     "@nuxtjs/google-fonts",
     '@vueuse/nuxt',
+    '@formkit/auto-animate/nuxt',
   ],
   runtimeConfig: {
     public: {
@@ -34,11 +33,5 @@ export default defineNuxtConfig({
   routeRules: {
     "/backend/**": { proxy: `${process.env.BACKEND_URL ?? "http://localhost:3100"}/**` }
   },
-  colorMode: {
-    classSuffix: '',
-    preference: 'light',
-    fallback: 'light',
-    storageKey: 'nuxt-color-mode'
-  },
-  ssr: true,
+  ssr: false,
 })

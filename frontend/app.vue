@@ -23,11 +23,13 @@ useHead({
 <style>
 /* Base Smoothness */
 html,
-body {
+body,
+#__nuxt {
   margin: 0;
   padding: 0;
   width: 100%;
-  overflow-x: hidden;
+  height: 100svh;
+  overflow: hidden;
   font-family: 'Outfit', sans-serif;
 }
 

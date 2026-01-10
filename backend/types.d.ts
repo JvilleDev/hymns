@@ -3,5 +3,5 @@ interface Canto {
     title: string;
     nh: number;
     content: string;
-    type: "Congregacional" | "Especial"
+    type: "Canto" | "Especial"
 }

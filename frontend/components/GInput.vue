@@ -42,11 +42,11 @@ const inputClass = computed(() => cn(
         </label>
         <div class="relative group">
             <template v-if="type === 'textarea'">
-                <textarea :value="modelValue" @input="onInput" :placeholder="placeholder" :disabled="disabled"
+                <textarea v-bind="$attrs" :value="modelValue" @input="onInput" :placeholder="placeholder" :disabled="disabled"
                     :rows="rows" :class="cn(inputClass, 'resize-none')" />
             </template>
             <template v-else>
-                <input :type="type" :value="modelValue" @input="onInput" :placeholder="placeholder" :disabled="disabled"
+                <input v-bind="$attrs" :type="type" :value="modelValue" @input="onInput" :placeholder="placeholder" :disabled="disabled"
                     :class="inputClass" />
             </template>
             <div

@@ -10,7 +10,7 @@ const isLoading = ref(false);
 
 const formData = ref({
   title: '',
-  type: 'Congregacional',
+  type: 'Canto',
   nh: 0,
   content: ''
 });
@@ -54,7 +54,7 @@ const isNewSong = computed(() => selectedSong.value === null);
 
 function openAddDialog() {
   selectedSong.value = null;
-  formData.value = { title: '', type: 'Congregacional', nh: 0, content: '' };
+  formData.value = { title: '', type: 'Canto', nh: 0, content: '' };
   dialogOpen.value = true;
 }
 
@@ -71,7 +71,7 @@ async function saveItem() {
       const newSong = {
         title: formData.value.title,
         type: formData.value.type,
-        nh: formData.value.type === 'Congregacional' ? formData.value.nh : 0,
+        nh: formData.value.type === 'Canto' ? formData.value.nh : 0,
         content: formData.value.content
       };
 
@@ -115,7 +115,7 @@ async function deleteItem(id: string) {
 }
 
 const typeOptions = [
-  { label: 'Congregacional', value: 'Congregacional' },
+  { label: 'Canto', value: 'Canto' },
   { label: 'Especial', value: 'Especial' }
 ];
 </script>
@@ -145,7 +145,7 @@ const typeOptions = [
                   :class="song.type === 'Especial' ? 'bg-primary/10 text-primary' : 'bg-blue-500/10 text-blue-500'">
                   {{ song.type }}
                 </span>
-                <span v-if="song.type === 'Congregacional'"
+                <span v-if="song.type === 'Canto'"
                   class="text-xs font-mono text-muted-foreground bg-white/5 px-2 py-0.5 rounded">
                   #{{ song.nh }}
                 </span>
@@ -190,7 +190,7 @@ const typeOptions = [
 
         <div class="min-h-[80px]">
           <Transition name="fade" mode="out-in">
-            <div v-if="formData.type === 'Congregacional'" key="nh-input">
+            <div v-if="formData.type === 'Canto'" key="nh-input">
               <GInput label="Número de himno" v-model="formData.nh" type="number" required />
             </div>
             <div v-else key="empty" class="h-0"></div>

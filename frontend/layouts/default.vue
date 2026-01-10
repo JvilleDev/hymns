@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Toaster } from 'vue-sonner'
 
-const colorMode = useColorMode()
 const items = [
   { title: "Inicio", value: "/", icon: "tabler:home" },
   { title: "Lista", value: "/lista", icon: "tabler:list" },
@@ -9,12 +8,7 @@ const items = [
 ];
 const route = useRoute();
 
-const toggleColorMode = () => {
-  colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
-}
-
 onMounted(() => {
-  const currentTitle = computed(() => items.find((item) => item.value === useRoute().path)?.title ?? "Inicio");
   useHead({
     htmlAttrs: { lang: "es" },
     titleTemplate: (title) => title ? `${title} | Himnario` : "Himnario",
@@ -23,158 +17,59 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen relative overflow-hidden">
-    <!-- Navbar para desktop -->
-    <header class="desktop-header fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
-      <div class="w-full flex items-center justify-between px-4 lg:px-6 py-2">
-        <NuxtLink to="/" class="flex items-center gap-2 select-none group">
-          <div
-            class="size-7 rounded-lg bg-primary flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-            <img src="/favicon.ico" alt="Logo" class="size-4 rounded-full brightness-0 invert" />
-          </div>
-          <h1
-            class="text-base font-bold tracking-tight text-foreground">
-            Himnario
-          </h1>
+  <div class="h-svh w-screen flex flex-col overflow-hidden bg-background text-foreground selection:bg-primary/10 selection:text-primary">
+    <!-- Navbar (Desktop & Tablet) -->
+    <header class="h-16 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 md:px-6 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="size-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
+          <Icon name="tabler:book" class="size-5 text-primary-foreground" />
+        </div>
+        <span class="font-bold text-lg tracking-tight">Himnario</span>
+      </div>
+      
+      <nav class="hidden md:flex items-center bg-muted/50 p-1 rounded-xl border border-border/50">
+        <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
+          class="px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2"
+          :class="[route.path === item.value ? 'bg-background text-primary shadow-sm border border-border/50' : 'text-muted-foreground hover:text-foreground hover:bg-muted']">
+          <Icon :name="item.icon" class="size-4" />
+          <span>{{ item.title }}</span>
         </NuxtLink>
+      </nav>
 
-        <nav class="flex items-center gap-1">
-          <NuxtLink v-for="item in items" :key="item.value" :to="item.value" class="nav-link"
-            :class="{ 'active': route.path === item.value }">
-            <Icon :name="item.icon" class="size-4" />
-            <span>{{ item.title }}</span>
-          </NuxtLink>
-
-          <div class="w-px h-5 bg-border mx-2"></div>
-
-          <GButton variant="ghost" size="icon" @click="toggleColorMode"
-            :tooltip="colorMode.value === 'dark' ? 'Modo Claro' : 'Modo Oscuro'" class="size-8">
-            <ClientOnly>
-              <Icon :name="colorMode.value === 'dark' ? 'tabler:sun' : 'tabler:moon'" class="size-4" />
-            </ClientOnly>
-          </GButton>
-        </nav>
+      <div class="md:hidden">
+        <!-- Mobile Label Placeholder or Avatar -->
+        <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{{ items.find(i => i.value === route.path)?.title || 'Himnario' }}</span>
       </div>
     </header>
 
-    <!-- Contenido principal -->
-    <main class="flex-1 w-full pt-0 md:pt-14 pb-0 md:pb-0" :class="{ 'pb-[72px]': route.path !== '/ver' }">
-      <NuxtLoadingIndicator :height="2" :duration="300"
-        color="hsl(var(--primary))" />
+    <!-- Page Content -->
+    <main class="flex-1 min-h-0 w-full relative overflow-hidden flex flex-col">
+      <NuxtLoadingIndicator :height="2" :duration="300" color="hsl(var(--primary))" />
       <slot />
     </main>
 
-    <!-- Bottombar para mobile -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-lg border-t border-border transition-transform duration-300">
-      <div class="flex justify-around items-center py-3 px-3">
-        <NuxtLink v-for="item in items" :key="item.value" :to="item.value" class="mobile-nav-link"
-          :class="{ 'active': route.path === item.value }">
-          <Icon :name="item.icon" class="size-6 mb-1" />
-          <span>{{ item.title }}</span>
-        </NuxtLink>
-
-        <button @click="toggleColorMode" class="mobile-nav-link text-muted-foreground">
-          <ClientOnly>
-            <Icon :name="colorMode.value === 'dark' ? 'tabler:sun' : 'tabler:moon'" class="size-6 mb-1" />
-          </ClientOnly>
-          <span>Tema</span>
-        </button>
-      </div>
+    <!-- Bottom Nav (Mobile Only) -->
+    <nav class="md:hidden h-20 shrink-0 border-t border-border bg-background/80 backdrop-blur-lg z-40 px-6 pb-2 flex items-center justify-around">
+      <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
+        class="flex flex-col items-center gap-1 transition-all duration-300 px-4 py-2 rounded-2xl"
+        :class="[route.path === item.value ? 'text-primary bg-primary/10 scale-110 font-bold' : 'text-muted-foreground']">
+        <Icon :name="item.icon" class="size-6" />
+        <span class="text-[10px] font-bold uppercase tracking-tighter">{{ item.title }}</span>
+      </NuxtLink>
     </nav>
 
-    <Toaster :theme="colorMode.value === 'dark' ? 'dark' : 'light'" position="bottom-right" :toastOptions="{
-      class: 'bg-popover border border-border shadow-lg font-medium text-popover-foreground',
-    }" />
+    <Toaster position="top-center" richColors />
   </div>
 </template>
 
-<style scoped>
-.nav-link {
-  @apply flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-accent;
-}
-
-.nav-link.active {
-  @apply text-primary bg-primary/10 font-bold;
-}
-
-.mobile-nav-link {
-  @apply flex flex-col items-center py-2 px-4 rounded-2xl transition-all duration-300 text-muted-foreground text-[10px] font-bold uppercase tracking-widest;
-}
-
-.mobile-nav-link.active {
-  @apply text-primary bg-primary/10 scale-110;
-}
-
-.mobile-nav-link.active span {
-  @apply opacity-100;
-}
-
-.desktop-header {
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .desktop-header {
-    display: flex;
-  }
-}
-</style>
-
 <style>
-/* Global Glass Backdrop */
-body {
-  background-attachment: fixed;
-}
-
 .page-enter-active,
 .page-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateY(10px);
-}
-</style>
-<style>
-
-@keyframes ripple {
-  0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3) inset;
-  }
-
-  100% {
-    box-shadow: 0 0 0 100px rgba(59, 130, 246, 0) inset;
-  }
-}
-
-@keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.8;
-  }
-}
-
-@keyframes ping {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.6;
-  }
-
-  50% {
-    transform: scale(1.2);
-    opacity: 0.4;
-  }
-
-  100% {
-    transform: scale(0.8);
-    opacity: 0.6;
-  }
+  transform: translateY(8px);
 }
 </style>

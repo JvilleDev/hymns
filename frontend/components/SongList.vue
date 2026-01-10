@@ -1,154 +1,174 @@
 <script setup lang="ts">
-type Song = {
-  title: string,
-  id: string,
-  nh: number,
-  type: string
-  content?: string,
-  score?: number
-}
+import { ref, computed } from 'vue'
 
 const props = defineProps<{
-  elements: Song[];
-  activeId: string;
-  isSearching: boolean;
-  searchTerm?: string;
-  isLoading?: boolean;
-}>();
+  elements: any[]
+  activeId: string
+  isSearching: boolean
+  searchTerm: string
+  isLoading: boolean
+}>()
 
-defineEmits<{
-  (e: 'changeSong', id: string): void;
-}>();
-
-const activeTab = ref('Todos');
+const emit = defineEmits(['changeSong'])
 
 const tabs = computed(() => {
-  const types = new Set(props.elements.map(el => el.type));
-  return ['Todos', ...Array.from(types).sort()];
-});
+  const types = new Set(props.elements.map(e => e.type || 'Canto'))
+  if (types.size <= 1) return ['Todos']
+  return ['Todos', ...Array.from(types).sort()]
+})
+
+const activeTab = ref('Todos')
 
 const filteredElements = computed(() => {
-  // If searching, show all matches regardless of tab
-  if (props.searchTerm && props.searchTerm.length > 0) {
-    return props.elements;
-  }
-  
-  if (activeTab.value === 'Todos') {
-    return props.elements;
-  }
-  
-  return props.elements.filter(el => el.type === activeTab.value);
-});
+  if (activeTab.value === 'Todos') return props.elements
+  return props.elements.filter(e => e.type === activeTab.value)
+})
 
-// Reset tab when elements change significantly or when starting search
-watch(() => props.searchTerm, (newVal) => {
-  if (newVal && newVal.length > 0) {
-    // activeTab.value = 'Todos';
+// Text cleaning for reliable matching
+function clean(text: string) {
+  return text.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function getSnippet(content: string[], term: string) {
+  if (!term || term.length < 2) return null
+  const cleanTerm = clean(term)
+  for (const line of content) {
+    if (clean(line).includes(cleanTerm)) return line
   }
-});
+  return null
+}
+
+function highlight(text: string, term: string) {
+  if (!term || !text) return text
+  const words = term.split(' ').filter(w => w.length > 1).map(clean)
+  if (words.length === 0) return text
+
+  const cleanText = clean(text)
+  const sortedWords = [...words].sort((a, b) => b.length - a.length)
+  
+  let result = text
+  let offset = 0
+  
+  const matches: { start: number, end: number }[] = []
+  
+  for (const word of sortedWords) {
+    let pos = cleanText.indexOf(word)
+    while (pos !== -1) {
+      const start = pos
+      const end = pos + word.length
+      
+      if (!matches.some(m => (start >= m.start && start < m.end) || (end > m.start && end <= m.end))) {
+        matches.push({ start, end })
+      }
+      pos = cleanText.indexOf(word, pos + 1)
+    }
+  }
+
+  matches.sort((a, b) => a.start - b.start)
+
+  let finalHtml = ''
+  let lastIndex = 0
+  let charMap: number[] = []
+  
+  let cleanIdx = 0
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    const cleanedC = clean(c)
+    if (cleanedC !== "" || c === " ") {
+      charMap[cleanIdx] = i
+      cleanIdx++
+    }
+  }
+
+  matches.forEach(match => {
+    const realStart = charMap[match.start]
+    const realEnd = charMap[match.end - 1] + 1
+    
+    finalHtml += text.substring(lastIndex, realStart)
+    finalHtml += `<mark class="highlight">${text.substring(realStart, realEnd)}</mark>`
+    lastIndex = realEnd
+  })
+  
+  finalHtml += text.substring(lastIndex)
+  return finalHtml
+}
 </script>
 
 <template>
   <div class="song-list-container w-full h-full flex flex-col overflow-hidden">
     <!-- Tabs -->
-    <div v-if="tabs.length > 1" class="px-4 pt-4 pb-2 shrink-0 border-b border-border bg-background/50">
-      <div 
-        class="grid gap-1 p-1 bg-muted/50 rounded-lg"
-        :style="{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }"
-      >
-        <button 
-          v-for="tab in tabs" 
-          :key="tab"
-          @click="activeTab = tab"
-          class="px-2 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all truncate text-center"
-          :class="[activeTab === tab 
-            ? 'bg-card text-primary shadow-sm border border-border' 
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted']"
-        >
+    <div v-if="tabs.length > 1" class="h-12 px-3 flex items-center shrink-0 border-b border-border bg-background/50">
+      <div class="grid gap-1 p-1 bg-muted/50 rounded-lg w-full" :style="{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }">
+        <button v-for="tab in tabs" :key="tab" @click="activeTab = tab"
+          class="px-2 h-8 flex items-center justify-center rounded-md text-[10px] font-bold uppercase tracking-wider transition-all truncate text-center"
+          :class="[activeTab === tab ? 'bg-card text-primary shadow-sm border border-border' : 'text-muted-foreground hover:text-foreground hover:bg-muted']">
           {{ tab }}
         </button>
       </div>
     </div>
 
-    <div v-if="filteredElements.length > 0 && searchTerm && searchTerm.length > 0"
-      class="px-6 py-2 text-[10px] font-bold uppercase tracking-widest text-primary/70 border-b border-border bg-primary/5 shrink-0">
-      {{ filteredElements.length }} resultado{{ filteredElements.length !== 1 ? 's' : '' }}
-    </div>
-
-    <div class="flex-1 overflow-y-auto scrollbar-hide py-2 px-3">
-      <ul class="flex flex-col gap-1.5 pb-4">
+    <div class="flex-grow h-0 overflow-y-auto scrollbar-hide py-2 px-3">
+      <ul class="flex flex-col gap-1.5 pb-20">
         <li v-for="(item, index) in (isLoading && filteredElements.length === 0) ? Array(10).fill({}) : filteredElements"
           :key="item.id || `skeleton-${index}`" :data-id="item.id" class="song-item" :class="[
             filteredElements.length > 0 && activeId === item.id ? 'active' : '',
-            isLoading && filteredElements.length === 0 ? 'opacity-50 pointer-events-none' : ''
-          ]" @click="filteredElements.length > 0 && $emit('changeSong', item.id)">
-          <div v-if="filteredElements.length > 0 || !isLoading" class="w-full">
-            <div class="flex items-center justify-between w-full mb-0.5">
-              <div class="flex items-center gap-1.5 opacity-60">
-                <Icon class="size-3" :name="item.type === 'Especial' ? 'tabler:user-circle' : 'tabler:book'" />
-                <span class="font-bold text-[10px] uppercase tracking-tighter">
-                  {{ item.type }}
-                </span>
-              </div>
-              <span v-if="item.type !== 'Especial'"
-                class="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-white/5 rounded text-primary/80">
-                #{{ item.nh }}
+            isLoading ? 'opacity-50 pointer-events-none' : ''
+          ]" @click="emit('changeSong', item.id)">
+          
+          <template v-if="item.id">
+            <div class="flex justify-between items-start mb-1">
+              <span class="text-[9px] font-bold uppercase tracking-tighter opacity-50 flex items-center gap-1">
+                <Icon :name="item.type === 'Especial' ? 'tabler:star' : 'tabler:book'" class="size-3" />
+                {{ item.type || 'Canto' }}
               </span>
+              <span class="text-[10px] font-mono font-bold text-primary/60">#{{ item.nh }}</span>
             </div>
-
-            <div class="min-w-0">
-              <span class="font-bold text-sm truncate block group-hover:text-primary transition-colors">
-                {{ item.title }}
-              </span>
-            </div>
-          </div>
-
-          <GSkeleton v-else class="w-full h-10 rounded-lg" />
-        </li>
-
-        <li v-if="filteredElements.length === 0 && !isLoading"
-          class="flex flex-col items-center justify-center py-20 text-center text-muted-foreground/50">
-          <Icon name="tabler:mood-empty" class="size-10 mb-2 opacity-20" />
-          <p class="text-xs font-semibold uppercase tracking-widest">Sin cantos</p>
+            <h3 class="font-bold text-sm leading-tight group-hover:text-primary transition-colors">{{ item.title }}</h3>
+            <p v-if="searchTerm.length > 1 && getSnippet(item.content, searchTerm)" 
+               class="text-[11px] mt-1.5 text-muted-foreground line-clamp-2 leading-relaxed bg-muted/30 p-1.5 rounded-md border border-border/5"
+               v-html="highlight(getSnippet(item.content, searchTerm) || '', searchTerm)">
+            </p>
+          </template>
+          
+          <template v-else>
+            <div class="h-12 w-full animate-pulse bg-muted/50 rounded-lg"></div>
+          </template>
         </li>
       </ul>
+
+      <div v-if="!isLoading && filteredElements.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-30">
+        <Icon name="tabler:mood-empty" class="size-10 mb-2" />
+        <p class="text-xs font-bold uppercase tracking-wider">No se encontraron cantos</p>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .song-item {
-  @apply flex flex-col items-start justify-center p-3 rounded-xl cursor-pointer transition-all duration-300 border border-transparent select-none;
-  background: transparent;
+  @apply p-3 rounded-xl border border-transparent transition-all duration-300 cursor-pointer select-none bg-card hover:bg-accent/50 hover:border-border/50 hover:shadow-sm active:scale-[0.98];
 }
-
-.song-item:hover {
-  @apply bg-muted/50 translate-x-1 border-border shadow-sm;
-}
-
 .song-item.active {
-  @apply bg-primary text-primary-foreground shadow-md border-primary scale-[1.01] translate-x-1;
+  @apply bg-primary text-primary-foreground border-primary shadow-md translate-x-1;
 }
-
-.song-item.active * {
-  @apply text-primary-foreground;
+.song-item.active .text-primary\/60,
+.song-item.active .text-muted-foreground {
+  @apply text-primary-foreground/80;
 }
-
-.song-item.active span.bg-white\/5 {
-  @apply bg-white/20 text-white;
+.song-item.active .bg-muted\/30 {
+  @apply bg-white/10 border-white/10;
 }
-
-.song-list-container {
-  @apply h-full max-h-full select-none will-change-scroll;
-  scroll-behavior: smooth;
+:deep(.highlight) {
+  @apply bg-yellow-400 text-black px-0.5 rounded-sm font-bold;
 }
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
+.song-item.active :deep(.highlight) {
+  @apply bg-white text-primary px-0.5 rounded-sm;
 }
-
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
