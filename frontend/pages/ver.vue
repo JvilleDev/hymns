@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import io from 'socket.io-client';
-
 const {
   activeLine,
   viewerActive,
@@ -162,7 +160,8 @@ body {
 }
 
 .line-wrap {
-  @apply flex line-clamp-2 justify-center text-center items-center h-screen max-h-screen overflow-hidden w-full transition-[transform, opacity, filter] duration-300 ease-in-out;
+  @apply flex line-clamp-2 justify-center text-center items-center h-svh max-h-svh overflow-hidden w-full duration-300 ease-in-out;
+  transition-property: transform, opacity, filter;
 
   &.bg {
     font-size: clamp(2rem, 6vw, 8rem);
