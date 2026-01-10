@@ -1,12 +1,4 @@
 <script setup lang="ts">
-import {
-  Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger,
-  DialogHeader, DialogFooter, DialogClose
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'vue-sonner';
 
 const searchTerm = ref('');
@@ -31,38 +23,34 @@ interface Song {
   content: string;
 }
 
-const getSongs = async () => songs.value = await $fetch(`/backend/api/cantos`) as unknown as Song[];
+const config = useRuntimeConfig()
+const { apiUrl } = config.public
+
+const getSongs = async () => {
+  isLoading.value = true;
+  try {
+    songs.value = await $fetch(`${apiUrl}/api/cantos`) as unknown as Song[];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
 onMounted(() => getSongs())
-// Optimización: usar computed en lugar de watchers múltiples
+
 const filteredSongs = computed(() => {
-  console.log('Filtrando canciones con término:', searchTerm.value);
-  console.log("Cantidades:", songs.value?.length);
   if (!searchTerm.value?.trim() || !songs.value) {
     return songs.value || []
   }
   const term = searchTerm.value.toLowerCase().trim()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
 
-  // Búsqueda optimizada con includes simple
   return songs.value.filter(song =>
-      (song.title ?? '').includes(term) || (String(song.nh) ?? '').includes(term)
+    (song.title ?? '').toLowerCase().includes(term) || (String(song.nh) ?? '').includes(term)
   )
 })
 
-// Computed para los resultados mostrados
-const displayedSongs = computed(() => {
-  if (searchTerm.value && searchResults.value?.results) {
-    return searchResults.value.results;
-  }
-  return songs.value || [];
-});
-
-
-// Computed para determinar si es un nuevo canto o una edición
-const isNewSong = computed(() => {
-  return selectedSong.value === null;
-});
+const isNewSong = computed(() => selectedSong.value === null);
 
 function openAddDialog() {
   selectedSong.value = null;
@@ -78,8 +66,8 @@ async function openEditDialog(song: Song) {
 
 async function saveItem() {
   try {
+    isLoading.value = true;
     if (isNewSong.value) {
-      // Add new song
       const newSong = {
         title: formData.value.title,
         type: formData.value.type,
@@ -87,215 +75,140 @@ async function saveItem() {
         content: formData.value.content
       };
 
-      const res = await $fetch(`/backend/api/canto`, {
+      const res = await $fetch(`${apiUrl}/api/canto`, {
         method: 'POST',
         body: newSong,
       });
-      
+
       if (res) {
         toast.success("Canto añadido exitosamente.");
       }
     } else if (selectedSong.value) {
-      // Edit existing song
-      const res = await $fetch(`/backend/api/canto`, {
+      const res = await $fetch(`${apiUrl}/api/canto`, {
         method: "PUT",
         body: { ...formData.value, "id": selectedSong.value.id },
       });
-      
+
       if (res) {
         toast.success("Canto actualizado exitosamente.");
       }
     }
-    
-    // Reset form and close dialog
-    formData.value = { title: '', type: 'Congregacional', nh: 0, content: '' };
+
+    await getSongs();
     dialogOpen.value = false;
-    selectedSong.value = null;
   } catch (error) {
     console.error("Error al guardar el canto:", error);
     toast.error(isNewSong.value ? "Error al añadir el canto." : "Error al actualizar el canto.");
+  } finally {
+    isLoading.value = false;
   }
 }
 
 async function deleteItem(id: string) {
   try {
-    await $fetch(`/backend/api/canto/${id}`, {
-      method: 'DELETE'
-    });
+    await $fetch(`${apiUrl}/api/canto/${id}`, { method: 'DELETE' });
     toast.warning("Canto eliminado exitosamente.");
+    await getSongs();
   } catch (error) {
     toast.error("Error al eliminar el canto.");
   }
 }
 
-// Debounce optimizado para TypeScript
-const debounce = <T extends (...args: any[]) => any>(fn: T, delay: number) => {
-  let timeout: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => {
-      fn(...args);
-    }, delay);
-  };
-};
+const typeOptions = [
+  { label: 'Congregacional', value: 'Congregacional' },
+  { label: 'Especial', value: 'Especial' }
+];
 </script>
 
 <template>
-  <main class="px-4 pb-16 relative">
-    <div class="relative w-full items-center mb-2 max-w-4xl mx-auto">
-      <Input id="search" type="text"
-        placeholder="Buscar..." class="pl-10" v-model="searchTerm"/>
-      <span class="absolute start-0 inset-y-0 flex items-center justify-center pl-4">
-        <Icon name="tabler:search" class="size-4 text-muted-foreground" />
-      </span>
+  <main class="px-4 py-8 relative max-w-7xl mx-auto min-h-screen">
+    <div class="mb-12">
+      <h1
+        class="text-2xl font-bold mb-2 text-foreground text-center tracking-tight">
+        Gestión de Cantos</h1>
+      <p class="text-muted-foreground text-sm text-center">Administra la biblioteca de himnos y cantos especiales</p>
     </div>
 
-    <!-- Grid Layout -->
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 relative w-full min-h-[70svh] max-h-[70svh] overflow-scroll" v-auto-animate>
-      <div
-        v-for="(song, index) in filteredSongs"
-        :key="song.id"
-        class="p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow min-h-20 max-h-20"
-      >
-        <div class="flex justify-between items-start mb-2">
-          <div>
-            <h3 class="font-medium">{{ song?.title }}</h3>
-            <div class="flex items-center gap-2 text-sm text-muted-foreground">
-              <Icon
-                :name="song.type === 'Especial' ? 'tabler:user-circle' : 'tabler:book'"
-                class="size-3 opacity-50"
-              />
-              {{ song.type }}
-              <span v-if="song.type === 'Congregacional'">#{{ song.nh }}</span>
+    <div class="relative w-full max-w-2xl mx-auto mb-10">
+      <GInput v-model="searchTerm" placeholder="Buscar por título o número..." class="pl-11" />
+      <Icon name="tabler:search" class="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground/70" />
+    </div>
+
+    <div v-if="!isLoading" v-auto-animate>
+      <div v-if="filteredSongs.length > 0" class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <GCard v-for="song in filteredSongs" :key="song.id" class="group">
+          <div class="flex justify-between items-start gap-4">
+            <div class="flex-1 min-w-0">
+              <h3 class="font-bold text-lg truncate group-hover:text-primary transition-colors">{{ song?.title }}</h3>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                  :class="song.type === 'Especial' ? 'bg-primary/10 text-primary' : 'bg-blue-500/10 text-blue-500'">
+                  {{ song.type }}
+                </span>
+                <span v-if="song.type === 'Congregacional'"
+                  class="text-xs font-mono text-muted-foreground bg-white/5 px-2 py-0.5 rounded">
+                  #{{ song.nh }}
+                </span>
+              </div>
+            </div>
+            <div class="flex gap-1">
+              <GButton size="icon" variant="ghost" @click="openEditDialog(song)" tooltip="Editar canto">
+                <Icon name="tabler:pencil" class="size-4" />
+              </GButton>
+              <GButton size="icon" variant="ghost" class="text-destructive hover:bg-destructive/10"
+                @click="deleteItem(song.id)" tooltip="Eliminar canto">
+                <Icon name="tabler:trash" class="size-4" />
+              </GButton>
             </div>
           </div>
-          <div class="flex gap-2">
-            <Button 
-              size="sm" 
-              variant="ghost" 
-              @click="openEditDialog(song)"
-            >
-              <Icon name="tabler:pencil" class="size-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              class="text-destructive hover:text-destructive"
-              @click="deleteItem(song.id)"
-            >
-              <Icon name="tabler:trash" class="size-4" />
-            </Button>
-          </div>
-        </div>
+        </GCard>
       </div>
 
-      <div v-if="filteredSongs.length === 0" class="col-span-full text-center text-muted-foreground">
-        No se encontraron resultados.
+      <div v-else class="py-20 text-center border border-border rounded-xl bg-muted/20">
+        <Icon name="tabler:mood-empty" class="size-12 text-muted-foreground/30 mx-auto mb-4" />
+        <p class="text-muted-foreground font-medium">No se encontraron resultados.</p>
       </div>
     </div>
 
     <!-- Indicador de carga -->
-    <div v-if="isLoading" class="flex justify-center mt-6">
-      <Icon name="tabler:loader-2" class="animate-spin size-6" />
+    <div v-if="isLoading" class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <GSkeleton v-for="i in 6" :key="i" class="h-32" />
     </div>
 
-    <!-- Add Button -->
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button size="lg" class="fixed bottom-5 right-5 rounded-full shadow-lg" @click="openAddDialog">
-            <Icon name="tabler:plus" class="size-5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>Añadir</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <!-- Floating Add Button -->
+    <GButton size="lg" class="fixed bottom-8 right-8 rounded-2xl shadow-2xl p-0 w-14 h-14" @click="openAddDialog"
+      tooltip="Añadir nuevo canto">
+      <Icon name="tabler:plus" class="size-6" />
+    </GButton>
 
-    <!-- Unified Dialog for Add/Edit -->
-    <ClientOnly>
-      <Dialog @update:open="(e: boolean) => dialogOpen = e" :open="dialogOpen">
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {{ isNewSong ? 'Añadir un canto' : `Editando "${formData.title}"` }}
-            </DialogTitle>
-            <DialogDescription>
-              {{ isNewSong 
-                ? 'Ingrese la información correspondiente. Recuerde que al usar palabras clave en una sola línea, se considerará como una etiqueta especial.'
-                : 'Modifique la información del canto y presione "Guardar" para guardar los cambios.'
-              }}
-            </DialogDescription>
-          </DialogHeader>
-          <form @submit.prevent="saveItem">
-            <div class="space-y-4" v-auto-animate>
-              <div>
-                <Label for="title" class="block text-sm font-medium text-gray-700">Título</Label>
-                <Input
-                    v-model="formData.title"
-                    id="title"
-                    type="text"
-                    required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                />
-              </div>
-              <div>
-                <Label for="type" class="block text-sm font-medium text-gray-700">Tipo</Label>
-                <Select name="type" default-value="Congregacional" class="w-full" v-model="formData.type">
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione una opción"/>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="Congregacional">
-                        Congregacional
-                      </SelectItem>
-                      <SelectItem value="Especial">
-                        Especial
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div v-if="formData.type !== undefined && formData.type !== null && formData.type === 'Congregacional'">
-                <Label for="nh" class="block text-sm font-medium text-gray-700">Número de himno</Label>
-                <Input
-                    v-model="formData.nh"
-                    id="nh"
-                    type="number"
-                    required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                />
-              </div>
-              <div>
-                <Label for="content" class="block text-sm font-medium text-gray-700">Contenido</Label>
-                <Textarea
-                    v-model="formData.content"
-                    id="content"
-                    rows="4"
-                    required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                ></Textarea>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline"
-                          @click="dialogOpen = false;formData = { title: '', type: 'Congregacional', nh: 0, content: '' }">
-                    <Icon name="tabler:x" class="size-3"/>
-                    Cancelar
-                  </Button>
-                </DialogClose>
-                <Button type="submit" :disabled="isLoading">
-                  <Icon :name="isNewSong ? 'tabler:plus' : 'tabler:check'" class="size-3"/>
-                  <span v-if="isLoading">Cargando...</span>
-                  <span v-else>{{ isNewSong ? 'Añadir Canto' : 'Guardar Cambios' }}</span>
-                </Button>
-              </DialogFooter>
+    <GDialog v-model="dialogOpen" :title="isNewSong ? 'Añadir un canto' : `Editando canto`"
+      :description="isNewSong ? 'Completa los campos para añadir un nuevo canto a la biblioteca.' : 'Modifica los campos necesarios y guarda los cambios.'">
+      <form id="song-form" @submit.prevent="saveItem" class="space-y-5">
+        <GInput label="Título" v-model="formData.title" placeholder="Nombre del canto..." required />
+
+        <GSelect label="Categoría" v-model="formData.type" :options="typeOptions" />
+
+        <div class="min-h-[80px]">
+          <Transition name="fade" mode="out-in">
+            <div v-if="formData.type === 'Congregacional'" key="nh-input">
+              <GInput label="Número de himno" v-model="formData.nh" type="number" required />
             </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </ClientOnly>
+            <div v-else key="empty" class="h-0"></div>
+          </Transition>
+        </div>
+
+        <GInput label="Contenido" v-model="formData.content" type="textarea" :rows="10"
+          placeholder="Escribe la letra aquí..." required />
+      </form>
+
+      <template #footer>
+        <GButton type="button" variant="ghost" @click="dialogOpen = false">
+          Cancelar
+        </GButton>
+        <GButton type="submit" form="song-form" :loading="isLoading">
+          {{ isNewSong ? 'Añadir Canto' : 'Guardar Cambios' }}
+        </GButton>
+      </template>
+    </GDialog>
   </main>
 </template>

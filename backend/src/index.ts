@@ -22,6 +22,8 @@ const PORT = 3100;
 let initialInfo = {
     viewerActive: false,
     activeLine: "",
+    activeCantoId: "",
+    activeIndex: 0,
 };
 
 app.use(express.static("public"));
@@ -77,11 +79,20 @@ socket.on("connection", (sc) => {
     sc.emit("initial", initialInfo);
     sc.on("newLine", (msg) => {
         initialInfo.activeLine = msg;
-        socket.emit("line", msg);
+        sc.broadcast.emit("line", msg);
+    });
+    sc.on("changeCanto", (id) => {
+        initialInfo.activeCantoId = id;
+        initialInfo.activeIndex = 0;
+        sc.broadcast.emit("canto", id);
+    });
+    sc.on("changeIndex", (index) => {
+        initialInfo.activeIndex = index;
+        sc.broadcast.emit("index", index);
     });
     sc.on("view", (msg) => {
         initialInfo.viewerActive = msg;
-        socket.emit("viewerActive", msg);
+        sc.broadcast.emit("viewerActive", msg);
     });
     sc.on("newWritten", (msg) => {
         socket.emit("written", msg);

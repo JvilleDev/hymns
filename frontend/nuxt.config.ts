@@ -3,28 +3,17 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   modules: [
     "@nuxtjs/tailwindcss",
-    "shadcn-nuxt",
     "@nuxt/icon",
     "@nuxtjs/color-mode",
     "@formkit/auto-animate/nuxt",
     "@nuxtjs/mdc",
     "@nuxtjs/google-fonts",
     '@vueuse/nuxt',
-    "nuxt-tiptap-editor",
-    "nuxt-tiptap-editor"
   ],
-  vite: {
-    vue: {
-      template: {
-        compilerOptions: {
-          isCustomElement: (tag) => ['vue-inspector'].includes(tag)
-        }
-      }
-    }
-  },
   runtimeConfig: {
     public: {
       apiUrl: process.env.BACKEND_URL ?? "http://localhost:3100",
+      socketUrl: process.env.SOCKET_URL ?? "http://localhost:3100",
     }
   },
   experimental: {
@@ -43,10 +32,7 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    "/backend/**": { proxy: `http://backend:3100/**` }
+    "/backend/**": { proxy: `${process.env.BACKEND_URL ?? "http://localhost:3100"}/**` }
   },
   ssr: true,
-  tiptap: {
-    prefix: 'Tiptap',
-  },
 })
