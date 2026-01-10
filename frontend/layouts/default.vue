@@ -23,9 +23,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-screen relative overflow-x-hidden">
+  <div class="flex flex-col h-screen relative overflow-hidden">
     <!-- Navbar para desktop -->
-    <header class="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
+    <header class="desktop-header fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
       <div class="w-full flex items-center justify-between px-4 lg:px-6 py-2">
         <NuxtLink to="/" class="flex items-center gap-2 select-none group">
           <div
@@ -58,14 +58,14 @@ onMounted(() => {
     </header>
 
     <!-- Contenido principal -->
-    <main class="flex-1 w-full pt-14">
+    <main class="flex-1 w-full pt-0 md:pt-14 pb-0 md:pb-0" :class="{ 'pb-[72px]': route.path !== '/ver' }">
       <NuxtLoadingIndicator :height="2" :duration="300"
         color="hsl(var(--primary))" />
       <slot />
     </main>
 
     <!-- Bottombar para mobile -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-lg border-t border-border">
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-lg border-t border-border transition-transform duration-300">
       <div class="flex justify-around items-center py-3 px-3">
         <NuxtLink v-for="item in items" :key="item.value" :to="item.value" class="mobile-nav-link"
           :class="{ 'active': route.path === item.value }">
@@ -107,6 +107,16 @@ onMounted(() => {
 
 .mobile-nav-link.active span {
   @apply opacity-100;
+}
+
+.desktop-header {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .desktop-header {
+    display: flex;
+  }
 }
 </style>
 

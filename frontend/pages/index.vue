@@ -346,15 +346,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col w-full h-[calc(100svh-56px)] overflow-hidden">
+  <div class="flex flex-col w-full h-full overflow-hidden">
     <!-- Buscador y acciones principales -->
     <div class="w-full p-4 flex flex-col md:flex-row items-center gap-4 shrink-0 bg-background/50 border-b border-border">
       <div class="relative flex-1 group w-full">
-        <GInput id="search-desktop" v-model="searchTerm" placeholder="Buscar por título o número..."
-          class="pl-12 h-10 text-base"
+        <GInput id="search-desktop" v-model="searchTerm" placeholder="Buscar..."
+          class="pl-10 h-10 text-base"
           @keydown.enter="(searchTerm.length > 0 && filteredSongs.length > 0) ? changeSong(filteredSongs[0].id) : ''" />
         <Icon name="tabler:search"
-          class="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          class="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
       </div>
 
       <div class="flex items-center gap-4">

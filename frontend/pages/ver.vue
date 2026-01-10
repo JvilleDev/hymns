@@ -1,17 +1,28 @@
 <script setup lang="ts">
 import io from 'socket.io-client';
 
-let socket: any;
+const {
+  activeLine,
+  viewerActive,
+  connect,
+  disconnect,
+  socket
+} = useSocket();
+
 const line = ref("");
 const changeLine = ref(true);
-
 const isActive = ref(false);
+
 const { bg, slide, no_bg } = useRoute().query;
 const queries = {
   bg: bg !== undefined,
   slide: slide !== undefined,
   no_bg: no_bg !== undefined,
 }
+
+definePageMeta({
+  layout: false
+});
 
 // Enhanced notification system with progress bar
 const notificationText = ref("");
@@ -25,13 +36,12 @@ function calculateDuration(text: string): number {
   const extraTimePerChar = 150;
   const minTime = 2000;
   const maxTime = 10000;
-  
+
   const calculatedTime = baseTime + (text.length * extraTimePerChar);
   return Math.max(minTime, Math.min(maxTime, calculatedTime));
 }
 
 function displayNotification(htmlContent: string) {
-  // Cancel any existing timers
   if (hideTimer) {
     clearTimeout(hideTimer);
     hideTimer = null;
@@ -40,16 +50,11 @@ function displayNotification(htmlContent: string) {
     clearInterval(progressInterval);
     progressInterval = null;
   }
-  
-  // If currently showing, hide first
+
   if (showNotification.value) {
     showNotification.value = false;
-    // Small delay to let it hide before showing new one
-    setTimeout(() => {
-      showNewNotification(htmlContent);
-    }, 100);
+    setTimeout(() => showNewNotification(htmlContent), 100);
   } else {
-    // Not currently showing, show immediately
     showNewNotification(htmlContent);
   }
 }
@@ -58,19 +63,16 @@ function showNewNotification(htmlContent: string) {
   notificationText.value = htmlContent;
   showNotification.value = true;
   progressPercent.value = 100;
-  
-  // Calculate duration and set up progress bar
+
   const duration = calculateDuration(htmlContent.replace(/<[^>]*>/g, ''));
-  const updateInterval = 50; // Update every 50ms for smooth animation
+  const updateInterval = 50;
   const steps = duration / updateInterval;
   let currentStep = 0;
-  
-  // Animate progress bar and handle hiding
+
   progressInterval = setInterval(() => {
     currentStep++;
     progressPercent.value = Math.max(0, 100 - (currentStep / steps) * 100);
-    
-    // Hide notification when progress reaches 0
+
     if (currentStep >= steps) {
       clearInterval(progressInterval);
       progressInterval = null;
@@ -80,56 +82,43 @@ function showNewNotification(htmlContent: string) {
   }, updateInterval);
 }
 
+// Watch for socket updates
+watch(activeLine, (newValue) => {
+  changeLine.value = true;
+  line.value = newValue;
+  setTimeout(() => {
+    changeLine.value = false;
+  }, 1);
+}, { immediate: true });
+
+watch(viewerActive, (newValue) => {
+  isActive.value = newValue;
+}, { immediate: true });
+
 onMounted(() => {
-  socket = io(window.location.origin.replace(":3000", ":3100"))
-  socket.open();
-  
-  socket.on('line', (data) => {
-    changeLine.value = true;
-    line.value = data;
-    setTimeout(() => {
-      changeLine.value = false;
-    }, 1);
-  });
-  
-  socket.on('initial', (data) => {
-    isActive.value = data.viewerActive;
-    if (data.activeLine.length > 0) {
-      changeLine.value = true;
-      line.value = data.activeLine;
-      setTimeout(() => {
-        changeLine.value = false;
-      }, 1);
+  connect();
+
+  // Listen for the special 'written' event
+  watch(socket, (newSocket) => {
+    if (newSocket) {
+      newSocket.off('written'); // Avoid duplicates
+      newSocket.on('written', (data: any) => {
+        if (data.html && data.html.trim()) {
+          displayNotification(data.html);
+          if (isActive.value) {
+            isActive.value = false;
+            newSocket.emit("view", false);
+          }
+        }
+      });
     }
-  });
-  
-  socket.on('viewerActive', (data) => {
-    isActive.value = data;
-  });
-  
-  socket.on('written', (data) => {
-    if (data.html && data.html.trim()) {
-      displayNotification(data.html);
-      
-      if (isActive.value) {
-        isActive.value = false;
-        socket.emit("viewerActive", false);
-      }
-    }
-  });
+  }, { immediate: true });
 });
 
 onUnmounted(() => {
-  if (hideTimer) {
-    clearTimeout(hideTimer);
-  }
-  if (progressInterval) {
-    clearInterval(progressInterval);
-  }
-  socket.close();
-  definePageMeta({
-    layout: false
-  });  
+  if (hideTimer) clearTimeout(hideTimer);
+  if (progressInterval) clearInterval(progressInterval);
+  disconnect();
 })
 </script>
 
@@ -151,10 +140,7 @@ onUnmounted(() => {
         <div v-if="showNotification" class="notification">
           <div class="notification-content" v-html="notificationText"></div>
           <div class="notification-progress-bar">
-            <div 
-              class="notification-progress-line" 
-              :style="{ width: progressPercent + '%' }"
-            ></div>
+            <div class="notification-progress-line" :style="{ width: progressPercent + '%' }"></div>
           </div>
         </div>
       </Transition>
@@ -163,6 +149,11 @@ onUnmounted(() => {
 </template>
 
 <style>
+html,
+body {
+  background: transparent !important;
+}
+
 .lyric {
   font-family: 'Outfit', sans-serif;
   font-size: inherit;
@@ -171,7 +162,7 @@ onUnmounted(() => {
 }
 
 .line-wrap {
-  @apply flex line-clamp-2 justify-center text-center items-center h-screen max-h-screen overflow-hidden w-full transition-[transform,opacity,filter] duration-300 ease-in-out;
+  @apply flex line-clamp-2 justify-center text-center items-center h-screen max-h-screen overflow-hidden w-full transition-[transform, opacity, filter] duration-300 ease-in-out;
 
   &.bg {
     font-size: clamp(2rem, 6vw, 8rem);
@@ -208,7 +199,7 @@ onUnmounted(() => {
 }
 
 main {
-  @apply flex flex-col items-center justify-center w-screen h-screen;
+  @apply flex flex-col items-center justify-center w-screen h-screen bg-transparent;
 
   &.bg {
     @apply justify-end pb-4 px-4;

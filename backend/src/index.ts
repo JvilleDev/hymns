@@ -76,28 +76,42 @@ async function updateFuse() {
 }
 
 socket.on("connection", (sc) => {
+    colorprint.NOTICE(`[Client Connected] ID: ${sc.id}`);
     sc.emit("initial", initialInfo);
+
     sc.on("newLine", (msg) => {
+        colorprint.INFO(`[Line] ${msg}`);
         initialInfo.activeLine = msg;
         sc.broadcast.emit("line", msg);
     });
+
     sc.on("changeCanto", (id) => {
+        colorprint.INFO(`[Canto Change] New ID: ${id}`);
         initialInfo.activeCantoId = id;
         initialInfo.activeIndex = 0;
         sc.broadcast.emit("canto", id);
     });
+
     sc.on("changeIndex", (index) => {
+        colorprint.INFO(`[Index Change] Line: ${index + 1}`);
         initialInfo.activeIndex = index;
         sc.broadcast.emit("index", index);
     });
+
     sc.on("view", (msg) => {
+        colorprint.WARN(`[Viewer State] ${msg ? 'ENABLED' : 'DISABLED'}`);
         initialInfo.viewerActive = msg;
         sc.broadcast.emit("viewerActive", msg);
     });
+
     sc.on("newWritten", (msg) => {
+        colorprint.NOTICE(`[Notification] ${msg.html ? 'HTML Content' : 'Text'}`);
         socket.emit("written", msg);
     });
 
+    sc.on("disconnect", () => {
+        colorprint.DEBUG(`[Client Disconnected] ID: ${sc.id}`);
+    });
 });
 
 app.get("/", (req, res) => {

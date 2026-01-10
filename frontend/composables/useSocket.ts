@@ -15,35 +15,61 @@ export const useSocket = () => {
 
     // Ensure we run this only on client side
     if (import.meta.client) {
-        socket.value = io(socketUrl as string)
-        
-        socket.value.on('connect', () => {
-          console.log('Socket connected to', socketUrl)
-        })
+        let currentUrl = socketUrl as string
+        let attemptedFallback = false
 
-        socket.value.on('initial', (data: any) => {
-          viewerActive.value = data.viewerActive
-          activeLine.value = data.activeLine
-          activeCantoId.value = data.activeCantoId
-          activeIndex.value = data.activeIndex
-        })
+        const initSocket = (url: string) => {
+          socket.value = io(url, {
+            reconnectionAttempts: 5,
+            timeout: 10000
+          })
 
-        socket.value.on('viewerActive', (state: boolean) => {
-          viewerActive.value = state
-        })
-        
-        socket.value.on('line', (line: string) => {
-            activeLine.value = line
-        })
+          socket.value.on('connect', () => {
+            console.log('Socket connected to', url)
+            import('vue-sonner').then(({ toast }) => {
+              toast.success('Servidor conectado')
+            })
+          })
 
-        socket.value.on('canto', (id: string) => {
-            activeCantoId.value = id
-            activeIndex.value = 0
-        })
+          socket.value.on('connect_error', (error) => {
+            console.error('Socket connection error:', error)
+            
+            if (!attemptedFallback) {
+              attemptedFallback = true
+              const fallbackUrl = `${window.location.protocol}//${window.location.hostname}:3100`
+              console.log('Attempting fallback to:', fallbackUrl)
+              
+              socket.value?.disconnect()
+              initSocket(fallbackUrl)
+            }
+          })
 
-        socket.value.on('index', (index: number) => {
-            activeIndex.value = index
-        })
+          socket.value.on('initial', (data: any) => {
+            viewerActive.value = data.viewerActive
+            activeLine.value = data.activeLine
+            activeCantoId.value = data.activeCantoId
+            activeIndex.value = data.activeIndex
+          })
+
+          socket.value.on('viewerActive', (state: boolean) => {
+            viewerActive.value = state
+          })
+          
+          socket.value.on('line', (line: string) => {
+              activeLine.value = line
+          })
+
+          socket.value.on('canto', (id: string) => {
+              activeCantoId.value = id
+              activeIndex.value = 0
+          })
+
+          socket.value.on('index', (index: number) => {
+              activeIndex.value = index
+          })
+        }
+
+        initSocket(currentUrl)
     }
   }
 
