@@ -40,24 +40,24 @@ onUnmounted(() => {
 
 <template>
   <main 
-    class="relative h-svh w-svw overflow-hidden flex flex-col items-center justify-center transition-all duration-500 ease-in-out"
+    class="relative h-svh w-svw overflow-hidden flex flex-col items-center transition-all duration-500 ease-in-out"
     :class="[
-      queries.bg ? 'justify-end pb-12 px-10' : '',
+      queries.bg && !queries.slide ? 'justify-end pb-16 px-10' : 'justify-center',
       isActive ? 'opacity-100' : 'opacity-0 scale-95 translate-y-8'
     ]"
   >
     <div 
-      class="w-full flex justify-center items-center transition-all duration-500"
+      class="w-full flex justify-center items-center overflow-hidden relative"
       :class="[
         queries.slide ? 'h-full bg-blue-900/90' : '',
-        queries.bg && !queries.slide ? 'bg-blue-900/80 py-8 px-12 rounded-[2.5rem] shadow-2xl backdrop-blur-md h-fit max-w-[95%]' : '',
+        queries.bg && !queries.slide ? 'bg-blue-900/80 py-8 px-12 rounded-[2.5rem] shadow-2xl backdrop-blur-md max-w-[95%] h-fit' : '',
         queries.no_bg && queries.slide ? '!bg-transparent' : ''
       ]"
     >
       <Transition name="lyric-fade" mode="out-in">
         <p 
           :key="line"
-          class="text-center font-outfit drop-shadow-[0_10px_10px_rgba(0,0,0,0.3)] leading-[1.1] tracking-tight"
+          class="text-center font-outfit drop-shadow-[0_10px_10px_rgba(0,0,0,0.3)] leading-[1.1] tracking-tight w-full"
           :class="[
             queries.slide ? 'text-[clamp(4vh,12vh,20vh)] font-bold px-10' : 'text-[clamp(1.5rem,6vw,8rem)] font-medium',
             (queries.no_bg && queries.slide) ? 'text-black drop-shadow-none' : 'text-white'
@@ -83,21 +83,19 @@ html, body {
   font-family: 'Outfit', sans-serif;
 }
 
-/* Transición de las letras: Suave con un ligero desenfoque */
+/* Transición de las letras: Movimiento interno sin solapamiento */
 .lyric-fade-enter-active, 
 .lyric-fade-leave-active {
-  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .lyric-fade-enter-from {
   opacity: 0;
-  filter: blur(10px);
-  transform: translateY(15px);
+  transform: translateY(20px) scale(0.98);
 }
 
 .lyric-fade-leave-to {
   opacity: 0;
-  filter: blur(10px);
-  transform: translateY(-15px);
+  transform: translateY(-20px) scale(0.98);
 }
 </style>

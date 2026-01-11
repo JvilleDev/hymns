@@ -12,7 +12,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiUrl: process.env.BACKEND_URL ?? "http://localhost:3100",
-      socketUrl: process.env.SOCKET_URL ?? "http://localhost:3100",
+      socketUrl: process.env.BACKEND_URL ?? "http://localhost:3100",
     }
   },
   experimental: {

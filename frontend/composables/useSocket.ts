@@ -13,34 +13,54 @@ export const useSocket = () => {
   const connect = () => {
     if (socket.value?.connected) return
 
-    // Ensure we run this only on client side
     if (import.meta.client) {
-        let currentUrl = socketUrl as string
-        let attemptedFallback = false
+        const socketUrlStr = socketUrl as string
+        
+        // Generar lista de fallbacks únicos
+        const fallbacks = [
+          socketUrlStr,
+          // Fallback 1: Misma base URL pero con puerto 3100
+          socketUrlStr.replace(/:(\d+)$/, '') + ':3100',
+          // Fallback 2: Hostname actual con puerto 3100
+          `${window.location.protocol}//${window.location.hostname}:3100`
+        ]
+        
+        // Filtrar duplicados
+        const uniqueFallbacks = [...new Set(fallbacks)]
+        let currentFallbackIndex = 0
 
         const initSocket = (url: string) => {
+          console.log('Attempting socket connection to:', url)
+          
           socket.value = io(url, {
-            reconnectionAttempts: 5,
-            timeout: 10000
+            reconnectionAttempts: 3, // Reducido para saltar más rápido al siguiente fallback
+            timeout: 5000
           })
 
           socket.value.on('connect', () => {
-            console.log('Socket connected to', url)
+            console.log('Socket connected successfully to:', url)
             import('vue-sonner').then(({ toast }) => {
               toast.success('Servidor conectado')
             })
           })
 
-          socket.value.on('connect_error', (error) => {
-            console.error('Socket connection error:', error)
+          socket.value.on('connect_error', () => {
+            currentFallbackIndex++
             
-            if (!attemptedFallback) {
-              attemptedFallback = true
-              const fallbackUrl = `${window.location.protocol}//${window.location.hostname}:3100`
-              console.log('Attempting fallback to:', fallbackUrl)
+            if (currentFallbackIndex < uniqueFallbacks.length) {
+              const nextUrl = uniqueFallbacks[currentFallbackIndex]
+              console.warn(`Connection to ${url} failed. Trying fallback ${currentFallbackIndex}: ${nextUrl}`)
               
               socket.value?.disconnect()
-              initSocket(fallbackUrl)
+              // Pequeño delay para limpiar el estado previo
+              setTimeout(() => {
+                initSocket(nextUrl)
+              }, 500)
+            } else {
+              console.error('All socket fallbacks failed.')
+              import('vue-sonner').then(({ toast }) => {
+                toast.error('No se pudo conectar con el servidor')
+              })
             }
           })
 
@@ -56,20 +76,20 @@ export const useSocket = () => {
           })
           
           socket.value.on('line', (line: string) => {
-              activeLine.value = line
+            activeLine.value = line
           })
 
           socket.value.on('canto', (id: string) => {
-              activeCantoId.value = id
-              activeIndex.value = 0
+            activeCantoId.value = id
+            activeIndex.value = 0
           })
 
           socket.value.on('index', (index: number) => {
-              activeIndex.value = index
+            activeIndex.value = index
           })
         }
 
-        initSocket(currentUrl)
+        initSocket(uniqueFallbacks[0])
     }
   }
 

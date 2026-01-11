@@ -82,10 +82,15 @@ async function changeSong(id: string) {
     } else {
       const song = await $api(`/api/canto/${id}`) as any
       // Normalize content to array if it comes as string
-      const contentArray = Array.isArray(song.content) 
+      let contentArray = Array.isArray(song.content) 
         ? song.content 
         : (typeof song.content === 'string' ? song.content.split('\n').filter(Boolean) : [])
       
+      // Add Header Line
+      const prefix = (song.type === 'Canto' && song.nh) ? `${song.nh}` : 'ESPECIAL'
+      const titleLine = `${prefix} - ${(song.title || '').toUpperCase()}`
+      contentArray = [titleLine, ...contentArray]
+
       const normalizedSong = { ...song, content: contentArray } as Song
       songCache.set(id, normalizedSong)
       currentSong.value = normalizedSong
@@ -93,6 +98,12 @@ async function changeSong(id: string) {
     currentIndex.value = 0
     sheetOpen.value = false
     scrollToActiveLine()
+    
+    // Auto send first line (Title)
+    if (currentSong.value.content?.[0]) {
+      sendLine(currentSong.value.content[0])
+      sendIndex(0)
+    }
   } catch (error) {
     console.error("Error al cargar el canto:", error)
   } finally {
@@ -166,6 +177,32 @@ onKeyStroke(['v', 'V'], (e) => {
   }
 })
 
+// Focus search input with Ctrl/Cmd + F
+onKeyStroke(['f', 'F'], (e) => {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    const container = document.getElementById('search-desktop')
+    const input = container?.querySelector('input') || container as HTMLInputElement
+    if (input) input.focus()
+  }
+})
+
+// Quick Actions numeric shortcuts
+onKeyStroke(['1', '2', '3', '4', '5', '6', '7', '8', '9'], (e) => {
+  if (isTyping()) return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  
+  const num = parseInt(e.key)
+  const action = quickActions.value[num - 1]
+  
+  if (action && currentSong.value?.content) {
+    e.preventDefault()
+    currentIndex.value = action.index + 1
+    sendLine(currentSong.value.content[currentIndex.value] || '')
+    sendIndex(currentIndex.value)
+  }
+})
+
 watch(activeIndex, (newIdx) => {
   if (newIdx !== currentIndex.value) {
     isRemoteChange.value = true
@@ -215,11 +252,19 @@ onUnmounted(() => {
       <main class="flex-1 flex flex-col min-w-0 min-h-0 bg-background">
         <!-- Quick Actions Bar -->
         <div v-if="currentSong.id" class="w-full h-12 shrink-0 bg-muted/5 border-b border-border overflow-hidden">
-          <div id="quick-actions-container" class="flex gap-1.5 items-center h-full px-3 overflow-x-auto scrollbar-hide">
+          <div id="quick-actions-container" class="flex gap-2.5 items-center h-full px-4 overflow-x-auto scrollbar-hide py-2">
             <button v-for="(action, idx) in quickActions" :key="`${action.index}-${action.text}`"
-              @click="currentIndex = action.index + 1; sendLine(currentSong.content[action.index]); sendIndex(action.index + 1)"
-              class="px-3 h-8 flex items-center justify-center rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 select-none border border-transparent whitespace-nowrap"
+              @click="currentIndex = action.index + 1; sendLine(currentSong?.content?.[action.index + 1] || ''); sendIndex(action.index + 1)"
+              class="relative px-4 h-8 flex items-center justify-center rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 select-none border border-transparent whitespace-nowrap group"
               :class="[idx === activeQuickAction ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-secondary/50 text-muted-foreground hover:bg-accent hover:text-accent-foreground']">
+              
+              <!-- Floating Numeric Indicator -->
+              <span v-if="idx < 9" 
+                class="absolute -top-1.5 -right-1.5 size-4 flex items-center justify-center rounded-full text-[8px] font-bold border shadow-sm transition-all duration-300 scale-90 group-hover:scale-100"
+                :class="[idx === activeQuickAction ? 'bg-white text-primary border-primary' : 'bg-primary text-primary-foreground border-primary']">
+                {{ idx + 1 }}
+              </span>
+
               {{ action.text }}
             </button>
           </div>
@@ -235,7 +280,7 @@ onUnmounted(() => {
               <h2 class="font-bold text-base truncate tracking-tight leading-none">{{ currentSong.title }}</h2>
             </div>
             <div class="px-3 py-1.5 rounded-lg bg-secondary/50 text-xs font-bold border border-border">
-              {{ currentIndex + 1 }} <span class="mx-1 text-muted-foreground">/</span> {{ currentSong.content.length }}
+              {{ currentIndex + 1 }} <span class="mx-1 text-muted-foreground">/</span> {{ currentSong.content?.length }}
             </div>
           </div>
 
