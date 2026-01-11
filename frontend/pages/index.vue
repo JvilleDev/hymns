@@ -9,7 +9,7 @@ interface Song {
   type: string
 }
 
-const { $api } = useNuxtApp() as { $api: any }
+const api = useApi()
 const { activeIndex, activeLine, viewerActive, connect, disconnect, changeViewerState, sendLine, sendIndex } = useSocket()
 const isMac = ref(false)
 
@@ -30,7 +30,7 @@ const isLoadingSongs = ref(false)
 async function fetchSongs() {
   isLoadingSongs.value = true
   try {
-    const data = await $api('/api/cantos') as any[]
+    const data = await api.getSongs()
     songs.value = data.map(song => {
       // Normalize content to array if it comes as string
       const contentArray = Array.isArray(song.content) 
@@ -80,7 +80,7 @@ async function changeSong(id: string) {
     if (songCache.has(id)) {
       currentSong.value = songCache.get(id)!
     } else {
-      const song = await $api(`/api/canto/${id}`) as any
+      const song = await api.getSong(id)
       // Normalize content to array if it comes as string
       let contentArray = Array.isArray(song.content) 
         ? song.content 

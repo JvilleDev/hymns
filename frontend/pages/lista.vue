@@ -23,13 +23,15 @@ interface Song {
   content: string;
 }
 
-const config = useRuntimeConfig()
-const { apiUrl } = config.public
+const api = useApi()
 
 const getSongs = async () => {
   isLoading.value = true;
   try {
-    songs.value = await $fetch(`${apiUrl}/api/cantos`) as unknown as Song[];
+     const data = await api.getSongs()
+     songs.value = data as Song[];
+  } catch (error) {
+     console.error("Error al obtener cantos:", error)
   } finally {
     isLoading.value = false;
   }
@@ -75,19 +77,13 @@ async function saveItem() {
         content: formData.value.content
       };
 
-      const res = await $fetch(`${apiUrl}/api/canto`, {
-        method: 'POST',
-        body: newSong,
-      });
+      const res = await api.createSong(newSong)
 
       if (res) {
         toast.success("Canto añadido exitosamente.");
       }
     } else if (selectedSong.value) {
-      const res = await $fetch(`${apiUrl}/api/canto`, {
-        method: "PUT",
-        body: { ...formData.value, "id": selectedSong.value.id },
-      });
+      const res = await api.updateSong({ ...formData.value, "id": selectedSong.value.id })
 
       if (res) {
         toast.success("Canto actualizado exitosamente.");
@@ -106,7 +102,7 @@ async function saveItem() {
 
 async function deleteItem(id: string) {
   try {
-    await $fetch(`${apiUrl}/api/canto/${id}`, { method: 'DELETE' });
+    await api.deleteSong(id)
     toast.warning("Canto eliminado exitosamente.");
     await getSongs();
   } catch (error) {
