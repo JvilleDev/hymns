@@ -96,7 +96,7 @@ function parseSong(canto: Canto): ParsedSong {
     const headerLine = `${prefix} - ${(canto.title || '').toUpperCase()}`;
     
     lines.push(headerLine);
-    actions.push({ text: 'INICIO', index: 0 });
+    actions.push({ text: 'INICIO', index: 1 });
 
     // Process Content
     const content = canto.content;
@@ -118,7 +118,7 @@ function parseSong(canto: Canto): ParsedSong {
 
         if (regexMark.test(cleanLine) || regexTag.test(cleanLine)) {
              let text = cleanLine.replace(/^Al\s+/i, ''); 
-             actions.push({ text: text || `Sec ${currentIndex}`, index: currentIndex });
+             actions.push({ text: text || `Sec ${currentIndex}`, index: currentIndex + 1 });
         }
     });
 
@@ -189,6 +189,12 @@ socket.on("connection", (sc) => {
     sc.on("changeIndex", (index) => {
         colorprint.INFO(`[Index Change] Line: ${index + 1}`);
         initialInfo.activeIndex = index;
+        
+        if (initialInfo.activeSong && initialInfo.activeSong.lines[index] !== undefined) {
+            initialInfo.activeLine = initialInfo.activeSong.lines[index];
+            socket.emit("line", initialInfo.activeLine);
+        }
+        
         sc.broadcast.emit("index", index);
     });
 

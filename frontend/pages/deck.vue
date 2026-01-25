@@ -1,6 +1,11 @@
 <script setup lang="ts">
-const { activeIndex, activeCantoId, connect, disconnect, sendIndex, activeSong } = useSocket()
+const { activeIndex, activeCantoId, connect, disconnect, sendIndex, activeSong, viewerActive, changeViewerState } = useSocket()
 const socketConnected = ref(false)
+
+function toggleViewer() {
+  changeViewerState(!viewerActive.value)
+  if (navigator.vibrate) navigator.vibrate([10, 30, 10])
+}
 
 // Init
 onMounted(() => {
@@ -39,7 +44,7 @@ definePageMeta({
 <template>
   <div class="fixed inset-0 bg-background text-foreground flex flex-col overflow-hidden">
     <!-- Header -->
-    <header class="h-14 shrink-0 border-b border-border bg-muted/10 flex items-center px-4 justify-between">
+    <header class="h-16 shrink-0 border-b border-border bg-muted/10 flex items-center px-4 justify-between">
       <div class="flex flex-col overflow-hidden">
         <span class="text-[10px] font-bold uppercase tracking-widest text-primary/70 leading-none mb-0.5">
             {{ activeSong ? (activeSong.nh ? `Himno #${activeSong.nh}` : 'Especial') : 'Esperando...' }}
@@ -48,7 +53,14 @@ definePageMeta({
           {{ activeSong ? activeSong.title : 'Conectando...' }}
         </h1>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3">
+         <button 
+           @click="toggleViewer"
+           class="size-10 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 border-2"
+           :class="viewerActive ? 'bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-muted border-border text-muted-foreground'"
+         >
+            <Icon :name="viewerActive ? 'tabler:eye' : 'tabler:eye-off'" class="size-6" />
+         </button>
          <div class="size-2 rounded-full" :class="activeCantoId ? 'bg-green-500' : 'bg-yellow-500'"></div>
       </div>
     </header>
