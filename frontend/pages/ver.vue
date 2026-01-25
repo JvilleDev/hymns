@@ -44,9 +44,8 @@ onUnmounted(() => {
     
     <!-- Lyric Content Layer -->
     <div 
-      class="flex-1 w-full flex items-center transition-all duration-500 ease-in-out"
+      class="flex-1 w-full flex items-end justify-center pb-12 px-4 transition-all duration-500 ease-in-out"
       :class="[
-        queries.bg && !queries.slide ? 'justify-end pb-16 px-10' : 'justify-center',
         isActive ? 'opacity-100' : 'opacity-0 scale-95 translate-y-8'
       ]"
     >
