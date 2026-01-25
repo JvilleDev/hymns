@@ -21,10 +21,13 @@ export const useSocket = () => {
 
     if (import.meta.client) {
         const socketUrlStr = socketUrl as string
+        const socketPort = socketUrlStr.match(/:(\d+)$/)?.[1] || '3100'
+        
+        // Try current hostname first (essential for remote access), then fallback to configured URL
         const fallbacks = [
+          `${window.location.protocol}//${window.location.hostname}:${socketPort}`,
           socketUrlStr,
-          socketUrlStr.replace(/:(\d+)$/, '') + ':3100',
-          `${window.location.protocol}//${window.location.hostname}:3100`
+          `${window.location.protocol}//${window.location.hostname}:3100`, // Extra fallback to 3100
         ]
         const uniqueFallbacks = [...new Set(fallbacks)]
         let currentFallbackIndex = 0
@@ -33,8 +36,9 @@ export const useSocket = () => {
           console.log('Attempting socket connection to:', url)
           
           socket.value = io(url, {
-            reconnectionAttempts: 3, 
-            timeout: 5000
+            reconnectionAttempts: 2, 
+            timeout: 3000,
+            transports: ['websocket', 'polling'] // Ensure websocket is tried first
           })
 
           socket.value.on('connect', () => {
@@ -52,10 +56,18 @@ export const useSocket = () => {
               socket.value?.disconnect()
               setTimeout(() => initSocket(nextUrl), 500)
             } else {
-              console.error('All socket fallbacks failed.')
-              import('vue-sonner').then(({ toast }) => {
-                toast.error('No se pudo conectar con el servidor')
-              })
+              console.error('All socket fallbacks failed. Retrying cycle in 5s...')
+              currentFallbackIndex = 0 // Reset for next cycle
+              socket.value?.disconnect()
+              
+              // Only show error toast once in a while or never to avoid spamming
+              // import('vue-sonner').then(({ toast }) => {
+              //   toast.error('No se pudo conectar con el servidor. Reintentando...')
+              // })
+
+              setTimeout(() => {
+                initSocket(uniqueFallbacks[0])
+              }, 5000)
             }
           })
 

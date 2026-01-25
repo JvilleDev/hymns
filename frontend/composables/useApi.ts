@@ -7,11 +7,14 @@ export const useApi = () => {
     const baseUrl = configApiUrl as string
     if (!import.meta.client) return [baseUrl]
 
+    const apiPort = baseUrl.match(/:(\d+)$/)?.[1] || '3100'
+
     const fallbacks = [
+      // Priority 1: Current hostname with config port (essential for remote access)
+      `${window.location.protocol}//${window.location.hostname}:${apiPort}`,
+      // Priority 2: Original config URL
       baseUrl,
-      // Fallback 1: Misma base URL pero con puerto 3100
-      baseUrl.replace(/:(\d+)$/, '') + ':3100',
-      // Fallback 2: Hostname actual con puerto 3100
+      // Priority 3: Current hostname with default port 3100
       `${window.location.protocol}//${window.location.hostname}:3100`
     ]
     return [...new Set(fallbacks)]
