@@ -76,6 +76,7 @@ onUnmounted(() => {
     <Transition name="slide-up">
       <LowerThird 
         v-if="announcement.active && !queries.slide" 
+        :key="announcement.text"
         :text="announcement.text" 
       />
     </Transition>

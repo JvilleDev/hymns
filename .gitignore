@@ -13,7 +13,7 @@ backend/dist/*
 backend/src/data.db
 backend/bun.lockb
 backend/*-lock.*
-backend/data/*
+backend/data/**
 
 # IDE and Editor files
 .vscode/*

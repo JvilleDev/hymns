@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 
-const { announcement, setAnnouncement, connect } = useSocket()
+const { announcement, setAnnouncement, connect, socket } = useSocket()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement } = useApi()
 
 const textInput = ref('')
@@ -82,7 +82,16 @@ onMounted(() => {
         </div>
         <div>
           <h1 class="text-lg font-bold tracking-tight">Anuncios</h1>
-          <p class="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60">Lower Third / Cinta de noticias</p>
+          <div class="flex items-center gap-2">
+            <p class="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60">Lower Third / Cinta de noticias</p>
+            <span class="size-1 rounded-full bg-muted-foreground/30"></span>
+            <div class="flex items-center gap-1.5">
+              <div class="size-1.5 rounded-full" :class="socket?.connected ? 'bg-green-500' : 'bg-red-500 animate-pulse'"></div>
+              <span class="text-[9px] font-bold uppercase tracking-tight" :class="socket?.connected ? 'text-green-600/70' : 'text-red-600/70'">
+                {{ socket?.connected ? 'Conectado' : 'Desconectado' }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -130,16 +139,18 @@ onMounted(() => {
                     Enviar al Aire
                   </GButton>
 
-                  <GButton 
-                    v-if="announcement.text"
-                    @click="toggleVisibility" 
-                    variant="secondary" 
-                    size="lg"
-                    :class="announcement.active ? 'border-red-500/20 text-red-500 hover:bg-red-500/10' : ''"
-                  >
-                    <Icon :name="announcement.active ? 'tabler:eye-off' : 'tabler:eye'" class="size-5 mr-2" />
-                    {{ announcement.active ? 'Ocultar' : 'Mostrar' }}
-                  </GButton>
+                  <ClientOnly>
+                    <GButton 
+                      v-if="announcement?.text && announcement.text.length > 0"
+                      @click="toggleVisibility" 
+                      variant="secondary" 
+                      size="lg"
+                      :class="announcement.active ? 'border-red-500/20 text-red-500 hover:bg-red-500/10' : ''"
+                    >
+                      <Icon :name="announcement.active ? 'tabler:eye-off' : 'tabler:eye'" class="size-5 mr-2" />
+                      {{ announcement.active ? 'Ocultar' : 'Mostrar' }}
+                    </GButton>
+                  </ClientOnly>
                 </div>
               </div>
             </div>
