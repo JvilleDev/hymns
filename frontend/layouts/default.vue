@@ -5,6 +5,7 @@ const items = [
   { title: "Inicio", value: "/", icon: "tabler:home" },
   { title: "Lista", value: "/lista", icon: "tabler:list" },
   { title: "Visor", value: "/visor", icon: "tabler:eye" },
+  { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone" },
 ];
 const route = useRoute();
 

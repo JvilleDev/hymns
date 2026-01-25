@@ -77,6 +77,12 @@ export const useApi = () => {
     getSong: (id: string) => request<any>(`/api/canto/${id}`),
     createSong: (song: any) => request<any>('/api/canto', { method: 'POST', body: song }),
     updateSong: (song: any) => request<any>('/api/canto', { method: 'PUT', body: song }),
-    deleteSong: (id: string) => request<any>(`/api/canto/${id}`, { method: 'DELETE' })
+    deleteSong: (id: string) => request<any>(`/api/canto/${id}`, { method: 'DELETE' }),
+
+    // Anuncios
+    getAnnouncements: () => request<any[]>('/api/anuncios'),
+    createAnnouncement: (text: string) => request<any>('/api/anuncios', { method: 'POST', body: { text } }),
+    deleteAnnouncement: (id: string) => request<any>(`/api/anuncios/${id}`, { method: 'DELETE' })
   }
 }
+

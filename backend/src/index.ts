@@ -54,11 +54,10 @@ async function setupFuse() {
     let addedCount = 0;
     cantos.forEach((canto, index) => {
         try {
-            if (!canto.title || !canto.content) {
-                console.warn(`Canto #${index} (${canto.id}) tiene campos faltantes:`, canto);
+            if (canto.title && canto.content) {
+               fuse.add(canto);
+               addedCount++;
             }
-            fuse.add(canto);
-            addedCount++;
         } catch (error) {
             console.error(`Error al agregar canto #${index} (${canto.id}) a Fuse:`, error);
         }
@@ -79,6 +78,12 @@ interface ParsedSong {
     nh: number;
     lines: string[];
     quickActions: { text: string; index: number }[];
+}
+
+interface Anuncio {
+    id: string;
+    text: string;
+    createdAt: number; // timestamp
 }
 
 // -- Helpers --
@@ -133,7 +138,11 @@ let initialInfo = {
     activeLine: "",
     activeCantoId: "",
     activeIndex: 0,
-    activeSong: null as ParsedSong | null, // New structured state
+    activeSong: null as ParsedSong | null,
+    announcement: {
+        text: "",
+        active: false,
+    },
 };
 
 
@@ -192,6 +201,14 @@ socket.on("connection", (sc) => {
     sc.on("newWritten", (msg) => {
         colorprint.NOTICE(`[Notification] ${msg.html ? 'HTML Content' : 'Text'}`);
         socket.emit("written", msg);
+        socket.emit("written", msg);
+    });
+
+    sc.on("setAnnouncement", (data: { text: string; active: boolean }) => {
+        colorprint.NOTICE(`[Announcement] ${data.active ? 'SHOW:' : 'HIDE:'} ${data.text}`);
+        initialInfo.announcement = data;
+        sc.broadcast.emit("announcement", data);
+        sc.emit("announcement", data); // Echo back to sender to confirm state
     });
 
     sc.on("disconnect", () => {
@@ -313,6 +330,46 @@ app.delete("/api/canto/:id", async (req, res) => {
     } catch (error) {
         res.send(`ERROR: ${error}`);
     }
+
+});
+
+// -- Anuncios API --
+
+app.get("/api/anuncios", (req, res) => {
+    try {
+        const query = db.query("SELECT * FROM anuncios ORDER BY createdAt DESC LIMIT 50");
+        const results = query.all();
+        res.json(results);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post("/api/anuncios", (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text) return res.status(400).json({ error: "Text is required" });
+
+        const id = uuid();
+        const createdAt = Date.now();
+        
+        const insert = db.query("INSERT INTO anuncios (id, text, createdAt) VALUES (?, ?, ?)");
+        insert.run(id, text, createdAt);
+
+        res.json({ id, text, createdAt });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete("/api/anuncios/:id", (req, res) => {
+    try {
+        const query = db.query("DELETE FROM anuncios WHERE id = ?");
+        query.run(req.params.id);
+        res.json({ success: true });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 app.get("/search", async (req, res) => {
@@ -374,6 +431,9 @@ async function prepareDb() {
     try {
         db.run(
             "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)"
+        );
+        db.run(
+            "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, createdAt INTEGER)"
         );
     } catch (error) {
         console.error("Error preparing database:", error);

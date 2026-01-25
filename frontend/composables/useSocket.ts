@@ -10,6 +10,8 @@ export const useSocket = () => {
   const activeCantoId = useState<string>('activeCantoId', () => '')
   const activeIndex = useState<number>('activeIndex', () => 0)
   const activeSong = useState<any>('activeSong', () => null) // New structured state
+  const announcement = useState<{ text: string, active: boolean }>('announcement', () => ({ text: '', active: false }))
+  
   // We can keep these for legacy or computed compatibility, or derive them.
   // For now let's keep them synced to avoid breaking other components immediately, 
   // but eventually we should use activeSong everywhere.
@@ -63,7 +65,9 @@ export const useSocket = () => {
             activeCantoId.value = data.activeCantoId
             activeIndex.value = data.activeIndex
             activeSong.value = data.activeSong || null
+            announcement.value = data.announcement || { text: '', active: false }
           })
+
 
           socket.value.on('viewerActive', (state: boolean) => {
             viewerActive.value = state
@@ -89,6 +93,10 @@ export const useSocket = () => {
 
           socket.value.on('index', (index: number) => {
             activeIndex.value = index
+          })
+
+          socket.value.on('announcement', (data: { text: string, active: boolean }) => {
+            announcement.value = data
           })
         }
 
@@ -129,6 +137,11 @@ export const useSocket = () => {
     viewerActive.value = state
   }
 
+  const setAnnouncement = (data: { text: string, active: boolean }) => {
+    if (!socket.value) return
+    socket.value.emit('setAnnouncement', data)
+  }
+
   return {
     socket,
     viewerActive,
@@ -141,6 +154,8 @@ export const useSocket = () => {
     sendLine,
     sendCanto,
     sendIndex,
-    changeViewerState
+    changeViewerState,
+    announcement,
+    setAnnouncement
   }
 }
