@@ -19,12 +19,7 @@ const socket = new io.Server(server, {
 });
 const PORT = 3100;
 
-let initialInfo = {
-    viewerActive: false,
-    activeLine: "",
-    activeCantoId: "",
-    activeIndex: 0,
-};
+
 
 app.use(express.static("public"));
 app.use(cors({ origin: "*" }));
@@ -75,6 +70,73 @@ async function updateFuse() {
     fuse.setCollection(cantos);
 }
 
+
+// -- Tipos --
+interface ParsedSong {
+    id: string;
+    title: string;
+    type: string;
+    nh: number;
+    lines: string[];
+    quickActions: { text: string; index: number }[];
+}
+
+// -- Helpers --
+function parseSong(canto: Canto): ParsedSong {
+    const lines: string[] = [];
+    const actions: { text: string; index: number }[] = [];
+
+    // Header Line
+    const prefix = (canto.type === 'Canto' && canto.nh) ? `${canto.nh}` : 'ESPECIAL';
+    const headerLine = `${prefix} - ${(canto.title || '').toUpperCase()}`;
+    
+    lines.push(headerLine);
+    actions.push({ text: 'INICIO', index: 0 });
+
+    // Process Content
+    const content = canto.content;
+    const rawLines = typeof content === 'string' 
+        ? content.split('\n').filter(Boolean) 
+        : (Array.isArray(content) ? content : []);
+
+    rawLines.forEach((line) => {
+        // Here we just push the line. Frontend was doing some cleaning but let's keep it simple for now.
+        // We might want to remove formatting cues if they exist, but current logic seemed to use raw lines.
+        lines.push(line);
+        const currentIndex = lines.length - 1;
+
+        const cleanLine = line.trim();
+        // Regex for Marks
+        const regexMark = /^(?:\d+|[->]|FINAL|(?:CORO|PRE[-]?CORO|ESTRIBILLO))/i;
+        // Regex for Tags
+        const regexTag = /^Al\s+(?:CORO|PRE[-]?CORO|ESTRIBILLO|FINAL)(?:\s+\d+)?/i;
+
+        if (regexMark.test(cleanLine) || regexTag.test(cleanLine)) {
+             let text = cleanLine.replace(/^Al\s+/i, ''); 
+             actions.push({ text: text || `Sec ${currentIndex}`, index: currentIndex });
+        }
+    });
+
+    return {
+        id: canto.id,
+        title: canto.title,
+        type: canto.type,
+        nh: canto.nh,
+        lines,
+        quickActions: actions
+    };
+}
+
+
+let initialInfo = {
+    viewerActive: false,
+    activeLine: "",
+    activeCantoId: "",
+    activeIndex: 0,
+    activeSong: null as ParsedSong | null, // New structured state
+};
+
+
 socket.on("connection", (sc) => {
     colorprint.NOTICE(`[Client Connected] ID: ${sc.id}`);
     sc.emit("initial", initialInfo);
@@ -85,11 +147,34 @@ socket.on("connection", (sc) => {
         sc.broadcast.emit("line", msg);
     });
 
-    sc.on("changeCanto", (id) => {
+    sc.on("changeCanto", async (id) => {
         colorprint.INFO(`[Canto Change] New ID: ${id}`);
         initialInfo.activeCantoId = id;
         initialInfo.activeIndex = 0;
-        sc.broadcast.emit("canto", id);
+        
+        try {
+            const rawSong = (await getCantos(id))[0];
+            if (rawSong) {
+                const parsed = parseSong(rawSong);
+                initialInfo.activeSong = parsed;
+                
+                // Broadcast structured song data
+                socket.emit("activeSong", parsed);
+                
+                // Also emit 'canto' for compatibility if needed, but 'activeSong' should supersede
+                sc.broadcast.emit("canto", id); 
+                
+                // Auto-set first line
+                if (parsed.lines.length > 0) {
+                     initialInfo.activeLine = parsed.lines[0];
+                     socket.emit("line", initialInfo.activeLine);
+                     socket.emit("index", 0);
+                }
+            } 
+        } catch (e) {
+            console.error("Error parsing song:", e);
+            initialInfo.activeSong = null;
+        }
     });
 
     sc.on("changeIndex", (index) => {

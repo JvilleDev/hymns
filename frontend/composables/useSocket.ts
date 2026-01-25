@@ -9,23 +9,21 @@ export const useSocket = () => {
   const activeLine = useState<string>('activeLine', () => '')
   const activeCantoId = useState<string>('activeCantoId', () => '')
   const activeIndex = useState<number>('activeIndex', () => 0)
+  const activeSong = useState<any>('activeSong', () => null) // New structured state
+  // We can keep these for legacy or computed compatibility, or derive them.
+  // For now let's keep them synced to avoid breaking other components immediately, 
+  // but eventually we should use activeSong everywhere.
   
   const connect = () => {
     if (socket.value?.connected) return
 
     if (import.meta.client) {
         const socketUrlStr = socketUrl as string
-        
-        // Generar lista de fallbacks únicos
         const fallbacks = [
           socketUrlStr,
-          // Fallback 1: Misma base URL pero con puerto 3100
           socketUrlStr.replace(/:(\d+)$/, '') + ':3100',
-          // Fallback 2: Hostname actual con puerto 3100
           `${window.location.protocol}//${window.location.hostname}:3100`
         ]
-        
-        // Filtrar duplicados
         const uniqueFallbacks = [...new Set(fallbacks)]
         let currentFallbackIndex = 0
 
@@ -33,7 +31,7 @@ export const useSocket = () => {
           console.log('Attempting socket connection to:', url)
           
           socket.value = io(url, {
-            reconnectionAttempts: 3, // Reducido para saltar más rápido al siguiente fallback
+            reconnectionAttempts: 3, 
             timeout: 5000
           })
 
@@ -46,16 +44,11 @@ export const useSocket = () => {
 
           socket.value.on('connect_error', () => {
             currentFallbackIndex++
-            
             if (currentFallbackIndex < uniqueFallbacks.length) {
               const nextUrl = uniqueFallbacks[currentFallbackIndex]
               console.warn(`Connection to ${url} failed. Trying fallback ${currentFallbackIndex}: ${nextUrl}`)
-              
               socket.value?.disconnect()
-              // Pequeño delay para limpiar el estado previo
-              setTimeout(() => {
-                initSocket(nextUrl)
-              }, 500)
+              setTimeout(() => initSocket(nextUrl), 500)
             } else {
               console.error('All socket fallbacks failed.')
               import('vue-sonner').then(({ toast }) => {
@@ -69,6 +62,7 @@ export const useSocket = () => {
             activeLine.value = data.activeLine
             activeCantoId.value = data.activeCantoId
             activeIndex.value = data.activeIndex
+            activeSong.value = data.activeSong || null
           })
 
           socket.value.on('viewerActive', (state: boolean) => {
@@ -82,6 +76,15 @@ export const useSocket = () => {
           socket.value.on('canto', (id: string) => {
             activeCantoId.value = id
             activeIndex.value = 0
+          })
+
+          socket.value.on('activeSong', (song: any) => {
+             console.log('[Socket] Received ActiveSong:', song)
+             activeSong.value = song
+             // Sync individual states if needed for legacy components, but components should switch to activeSong
+             if (song) {
+                 activeCantoId.value = song.id
+             }
           })
 
           socket.value.on('index', (index: number) => {
@@ -109,8 +112,9 @@ export const useSocket = () => {
   const sendCanto = (id: string) => {
     if (!socket.value) return
     socket.value.emit('changeCanto', id)
-    activeCantoId.value = id
-    activeIndex.value = 0
+    // Optimistic update? Better wait for server response to ensure sync
+    // activeCantoId.value = id 
+    // activeIndex.value = 0
   }
 
   const sendIndex = (index: number) => {
@@ -131,6 +135,7 @@ export const useSocket = () => {
     activeLine,
     activeCantoId,
     activeIndex,
+    activeSong, // Export new state
     connect,
     disconnect,
     sendLine,

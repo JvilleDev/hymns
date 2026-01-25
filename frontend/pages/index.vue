@@ -10,7 +10,7 @@ interface Song {
 }
 
 const api = useApi()
-const { activeIndex, activeLine, viewerActive, connect, disconnect, changeViewerState, sendLine, sendIndex } = useSocket()
+const { activeIndex, activeLine, viewerActive, connect, disconnect, changeViewerState, sendLine, sendIndex, sendCanto, activeSong } = useSocket()
 const isMac = ref(false)
 
 onMounted(() => {
@@ -32,14 +32,14 @@ async function fetchSongs() {
   try {
     const data = await api.getSongs()
     songs.value = data.map(song => {
-      // Normalize content to array if it comes as string
+      // Normalize content to array if it comes as string for SEARCH purposes
       const contentArray = Array.isArray(song.content) 
         ? song.content 
         : (typeof song.content === 'string' ? song.content.split('\n').filter(Boolean) : [])
-        
+      
       return {
         ...song,
-        content: contentArray,
+        content: contentArray, // Keep raw content array for search index
         searchText: `${song.nh} ${clean(song.title || '')} ${contentArray.map(clean).join(' ')}`
       }
     }) as Song[]
@@ -51,7 +51,6 @@ async function fetchSongs() {
 }
 
 const isChangingSong = ref(false)
-const currentSong = ref<Partial<Song>>({})
 
 function clean(text: string) {
   return text.toLowerCase()
@@ -71,39 +70,16 @@ const filteredSongs = computed(() => {
 
 const isSearching = computed(() => searchTerm.value.length > 0)
 
-const songCache = new Map<string, Song>()
-
 async function changeSong(id: string) {
-  if (currentSong.value.id === id) return
+  if (activeSong.value?.id === id) return
   isChangingSong.value = true
   try {
-    if (songCache.has(id)) {
-      currentSong.value = songCache.get(id)!
-    } else {
-      const song = await api.getSong(id)
-      // Normalize content to array if it comes as string
-      let contentArray = Array.isArray(song.content) 
-        ? song.content 
-        : (typeof song.content === 'string' ? song.content.split('\n').filter(Boolean) : [])
-      
-      // Add Header Line
-      const prefix = (song.type === 'Canto' && song.nh) ? `${song.nh}` : 'ESPECIAL'
-      const titleLine = `${prefix} - ${(song.title || '').toUpperCase()}`
-      contentArray = [titleLine, ...contentArray]
-
-      const normalizedSong = { ...song, content: contentArray } as Song
-      songCache.set(id, normalizedSong)
-      currentSong.value = normalizedSong
-    }
-    currentIndex.value = 0
-    sheetOpen.value = false
-    scrollToActiveLine()
-    
-    // Auto send first line (Title)
-    if (currentSong.value.content?.[0]) {
-      sendLine(currentSong.value.content[0])
-      sendIndex(0)
-    }
+     sendCanto(id)
+     // Wait for socket to update activeSong? 
+     // For now optimistic or just wait. 
+     // The UI will react when activeSong updates.
+     currentIndex.value = 0
+     sheetOpen.value = false
   } catch (error) {
     console.error("Error al cargar el canto:", error)
   } finally {
@@ -111,24 +87,11 @@ async function changeSong(id: string) {
   }
 }
 
-const quickActions = computed(() => {
-  if (!currentSong.value.content) return []
-  const actions: { text: string, index: number }[] = []
-  currentSong.value.content.forEach((line, index) => {
-    const mark = checkTags(line)
-    if (mark === 't-mark' || mark === 'tag-mark') {
-      const text = line.trim()
-      actions.push({ text: text || `Sec ${index + 1}`, index })
-    }
-  })
-  return actions
-})
-
 const activeQuickAction = computed(() => {
-  if (!quickActions.value.length) return -1
+  if (!activeSong.value?.quickActions) return -1
   let activeIdx = -1
-  for (let i = 0; i < quickActions.value.length; i++) {
-    if (quickActions.value[i].index <= currentIndex.value) {
+  for (let i = 0; i < activeSong.value.quickActions.length; i++) {
+    if (activeSong.value.quickActions[i].index <= currentIndex.value) {
       activeIdx = i
     } else {
       break
@@ -162,10 +125,11 @@ function isTyping() {
 onKeyStroke(['ArrowUp', 'ArrowDown'], (e) => {
   if (isTyping()) return
   e.preventDefault()
-  if (!currentSong.value.content) return
+  if (!activeSong.value?.lines) return
   if (e.key === 'ArrowUp' && currentIndex.value > 0) currentIndex.value--
-  if (e.key === 'ArrowDown' && currentIndex.value < currentSong.value.content.length - 1) currentIndex.value++
-  sendLine(currentSong.value.content[currentIndex.value])
+  if (e.key === 'ArrowDown' && currentIndex.value < activeSong.value.lines.length - 1) currentIndex.value++
+  
+  sendLine(activeSong.value.lines[currentIndex.value])
   sendIndex(currentIndex.value)
 })
 
@@ -193,13 +157,14 @@ onKeyStroke(['1', '2', '3', '4', '5', '6', '7', '8', '9'], (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return
   
   const num = parseInt(e.key)
-  const action = quickActions.value[num - 1]
+  const action = activeSong.value?.quickActions?.[num - 1]
   
-  if (action && currentSong.value?.content) {
+  if (action && activeSong.value?.lines) {
     e.preventDefault()
-    currentIndex.value = action.index + 1
-    sendLine(currentSong.value.content[currentIndex.value] || '')
-    sendIndex(currentIndex.value)
+    currentIndex.value = action.index
+    // Note: quick actions index matches lines index directly now
+    sendLine(activeSong.value.lines[action.index] || '')
+    sendIndex(action.index)
   }
 })
 
@@ -217,8 +182,20 @@ watch(currentIndex, () => {
 
 onUnmounted(() => {
   disconnect()
-  songCache.clear()
 })
+
+// Mobile Deck Prompt
+const showDeckPrompt = ref(false)
+
+onMounted(() => {
+  if (window.innerWidth < 768) {
+    showDeckPrompt.value = true
+  }
+})
+
+function navigateToDeck() {
+  navigateTo('/deck')
+}
 </script>
 
 <template>
@@ -244,17 +221,17 @@ onUnmounted(() => {
       <!-- Desktop Song List -->
       <section class="hidden md:flex w-80 shrink-0 border-r border-border min-h-0 flex-col bg-muted/5">
         <div class="flex-1 min-h-0 overflow-hidden">
-          <SongList :elements="filteredSongs" :activeId="currentSong.id || ''" :isSearching="isSearching" :searchTerm="searchTerm" :isLoading="isLoadingSongs || isChangingSong" @changeSong="changeSong" />
+          <SongList :elements="filteredSongs" :activeId="activeSong?.id || ''" :isSearching="isSearching" :searchTerm="searchTerm" :isLoading="isLoadingSongs || isChangingSong" @changeSong="changeSong" />
         </div>
       </section>
 
       <!-- Visor principal -->
       <main class="flex-1 flex flex-col min-w-0 min-h-0 bg-background">
         <!-- Quick Actions Bar -->
-        <div v-if="currentSong.id" class="w-full h-12 shrink-0 bg-muted/5 border-b border-border overflow-hidden">
+        <div v-if="activeSong?.id" class="w-full h-12 shrink-0 bg-muted/5 border-b border-border overflow-hidden">
           <div id="quick-actions-container" class="flex gap-2.5 items-center h-full px-4 overflow-x-auto scrollbar-hide py-2">
-            <button v-for="(action, idx) in quickActions" :key="`${action.index}-${action.text}`"
-              @click="currentIndex = action.index + 1; sendLine(currentSong?.content?.[action.index + 1] || ''); sendIndex(action.index + 1)"
+            <button v-for="(action, idx) in activeSong.quickActions" :key="`${action.index}-${action.text}`"
+              @click="currentIndex = action.index; sendLine(activeSong.lines[action.index] || ''); sendIndex(action.index)"
               class="relative px-4 h-8 flex items-center justify-center rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 select-none border border-transparent whitespace-nowrap group"
               :class="[idx === activeQuickAction ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-secondary/50 text-muted-foreground hover:bg-accent hover:text-accent-foreground']">
               
@@ -271,22 +248,22 @@ onUnmounted(() => {
         </div>
 
         <!-- Contenido -->
-        <div v-if="currentSong.id" class="flex-1 flex flex-col min-h-0">
+        <div v-if="activeSong?.id" class="flex-1 flex flex-col min-h-0">
           <div class="flex justify-between items-center h-14 px-4 border-b border-border shrink-0 bg-muted/5">
             <div class="flex flex-col min-w-0">
               <span class="text-[9px] font-bold uppercase tracking-widest text-primary/70 leading-none mb-0.5">
-                {{ currentSong.type === 'Especial' ? 'Canto Especial' : `Himno #${currentSong.nh}` }}
+                {{ activeSong.type === 'Especial' ? 'Canto Especial' : `Himno #${activeSong.nh}` }}
               </span>
-              <h2 class="font-bold text-base truncate tracking-tight leading-none">{{ currentSong.title }}</h2>
+              <h2 class="font-bold text-base truncate tracking-tight leading-none">{{ activeSong.title }}</h2>
             </div>
             <div class="px-3 py-1.5 rounded-lg bg-secondary/50 text-xs font-bold border border-border">
-              {{ currentIndex + 1 }} <span class="mx-1 text-muted-foreground">/</span> {{ currentSong.content?.length }}
+              {{ currentIndex + 1 }} <span class="mx-1 text-muted-foreground">/</span> {{ activeSong.lines.length }}
             </div>
           </div>
 
           <div class="flex-grow h-0 overflow-y-auto min-h-0" id="line-container">
             <div class="p-3 pb-32 space-y-1.5">
-              <div v-for="(line, index) in currentSong.content" :key="`${currentSong.id}-${index}`"
+              <div v-for="(line, index) in activeSong.lines" :key="`${activeSong.id}-${index}`"
                 @click="currentIndex = index; sendLine(line); sendIndex(index)" class="line-item" :class="[checkTags(line), currentIndex === index ? 'active' : '']">
                 {{ line }}
               </div>
@@ -302,6 +279,29 @@ onUnmounted(() => {
         </div>
       </main>
     </div>
+    <!-- Mobile Prompt Overlay -->
+    <Teleport to="body">
+      <div v-if="showDeckPrompt" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+        <div class="w-full max-w-sm p-6 space-y-4 border rounded-xl bg-card text-card-foreground shadow-2xl">
+          <div class="flex flex-col items-center gap-2 text-center">
+            <div class="p-3 bg-primary/10 rounded-full">
+               <Icon name="tabler:device-mobile-message" class="size-8 text-primary" />
+            </div>
+            <h3 class="text-lg font-bold">¿Usar modo Control?</h3>
+            <p class="text-sm text-muted-foreground">Parece que estás en un celular. ¿Quieres abrir el panel de control remoto (Deck)?</p>
+          </div>
+          
+          <div class="grid gap-2">
+            <GButton size="lg" class="w-full font-bold" @click="navigateToDeck">
+              Sí, ir al Deck
+            </GButton>
+            <GButton variant="ghost" size="lg" class="w-full" @click="showDeckPrompt = false">
+              No, quedarme aquí
+            </GButton>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 

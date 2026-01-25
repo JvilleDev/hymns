@@ -28,8 +28,7 @@ body,
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100svh;
-  overflow: hidden;
+  min-height: 100svh;
   font-family: 'Outfit', sans-serif;
 }
 
@@ -40,8 +39,23 @@ body,
 }
 
 /* Scrollbar Cleanup (Transparent) */
+/* Scrollbar Styling */
 ::-webkit-scrollbar {
-  width: 0px;
-  background: transparent;
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  opacity: 0.5;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
 }
 </style>
