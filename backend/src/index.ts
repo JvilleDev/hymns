@@ -96,7 +96,7 @@ function parseSong(canto: Canto): ParsedSong {
     const headerLine = `${prefix} - ${(canto.title || '').toUpperCase()}`;
     
     lines.push(headerLine);
-    actions.push({ text: 'INICIO', index: 1 });
+    actions.push({ text: 'INICIO', index: 0 });
 
     // Process Content
     const content = canto.content;
