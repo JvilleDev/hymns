@@ -13,7 +13,7 @@ const updateMetrics = () => {
   if (typeof window === 'undefined') return
   containerWidth.value = window.innerWidth
   
-  const charWidth = 70
+  const charWidth = 50
   const gap = 384 // mx-48
   // Use stripped length for accurate width calculation
   const textLen = strippedText.value.length
@@ -44,10 +44,10 @@ const formattedText = computed(() => {
     .replace(/'/g, "&#039;");
 
   // Auto-format "WSS:" to red
-  s = s.replace(/WSS:/g, '<span class="text-red-600">WSS:</span>');
+  s = s.replace(/WSS:/gi, '<span class="text-red-600">WSS:</span>');
   
   // Auto-format "WMB" to purple
-  s = s.replace(/WMB/g, '<span class="text-purple-600">WMB</span>');
+  s = s.replace(/WMB/gi, '<span class="text-purple-600">WMB</span>');
 
   // Bold **text** -> font-black (stronger than base font-bold)
   s = s.replace(/\*\*(.*?)\*\*/g, '<span class="font-black">$1</span>');
@@ -66,7 +66,7 @@ const formattedText = computed(() => {
 })
 
 const duration = computed(() => {
-  const charWidth = 70
+  const charWidth = 50
   const gap = 384
   
   const totalContentWidth = (strippedText.value.length * charWidth + gap) * repeatCount.value
@@ -94,7 +94,7 @@ onUnmounted(() => {
   >
     <div class="marquee-container w-full whitespace-nowrap text-center">
       <div 
-        class="marquee-content inline-block text-8xl font-bold tracking-wide uppercase"
+        class="marquee-content inline-block text-6xl font-bold tracking-wide uppercase"
         :style="{ animationDuration: `${duration}s` }"
       >
         <span class="mx-48" v-for="i in repeatCount" :key="i" v-html="formattedText"></span>
