@@ -73,11 +73,12 @@ onUnmounted(() => {
     </div>
 
     <!-- Lower Third Announcement (Independent Layer) -->
-    <Transition name="slide-up">
+    <Transition :name="announcement.position === 'top' ? 'slide-down' : 'slide-up'">
       <LowerThird 
         v-if="announcement.active && !queries.slide" 
         :key="announcement.text"
         :text="announcement.text" 
+        :position="announcement.position"
       />
     </Transition>
   </main>
@@ -112,7 +113,7 @@ html, body {
   transform: translateY(-20px) scale(0.98);
 }
 
-/* Lower Third Transition */
+/* Lower Third Transition (Bottom) */
 .slide-up-enter-active,
 .slide-up-leave-active {
   transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
@@ -121,6 +122,18 @@ html, body {
 .slide-up-enter-from,
 .slide-up-leave-to {
   transform: translateY(100%);
+  opacity: 0;
+}
+
+/* Lower Third Transition (Top) */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  transform: translateY(-100%);
   opacity: 0;
 }
 </style>

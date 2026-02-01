@@ -43,6 +43,14 @@ export const useSocket = () => {
 
           socket.value.on('connect', () => {
             console.log('Socket connected successfully to:', url)
+            
+            // Sync API URL with successful socket URL
+            const apiWorkingUrl = useState<string>('apiWorkingUrl', () => '')
+            if (apiWorkingUrl.value !== url) {
+                console.log('[Socket] Syncing API URL to:', url)
+                apiWorkingUrl.value = url
+            }
+
             import('vue-sonner').then(({ toast }) => {
               toast.success('Servidor conectado')
             })

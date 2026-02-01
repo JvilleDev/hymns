@@ -1,6 +1,6 @@
 export const useApi = () => {
   const { apiUrl: configApiUrl } = useRuntimeConfig().public
-  const workingUrl = useState<string>('apiWorkingUrl', () => configApiUrl as string)
+  const workingUrl = useState<string>('apiWorkingUrl', () => '')
   const isInitializing = useState<boolean>('apiInitializing', () => false)
 
   const getFallbacks = () => {
