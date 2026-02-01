@@ -6,6 +6,7 @@ const { announcement, setAnnouncement, connect, socket } = useSocket()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement } = useApi()
 
 const textInput = ref('')
+const position = ref<'top' | 'bottom'>('bottom')
 const isLoading = ref(false)
 const history = ref<any[]>([])
 
@@ -23,12 +24,13 @@ const sendAnnouncement = async () => {
   isLoading.value = true
   try {
     // 1. Save to history
-    await createAnnouncement(textInput.value)
+    await createAnnouncement(textInput.value, position.value)
     
     // 2. Activate on screen
     setAnnouncement({
       text: textInput.value,
-      active: true
+      active: true,
+      position: position.value
     })
 
     toast.success('Anuncio enviado y guardado')
@@ -44,15 +46,18 @@ const sendAnnouncement = async () => {
 const toggleVisibility = () => {
   setAnnouncement({
     text: announcement.value.text,
-    active: !announcement.value.active
+    active: !announcement.value.active,
+    position: announcement.value.position
   })
 }
 
 const resendFromHistory = (item: any) => {
   textInput.value = item.text
+  position.value = item.position || 'bottom'
   setAnnouncement({
     text: item.text,
-    active: true
+    active: true,
+    position: item.position || 'bottom'
   })
   toast.success('Anuncio enviado')
 }
@@ -116,6 +121,26 @@ onMounted(() => {
               </div>
 
               <div class="space-y-4">
+                <!-- Position Selector -->
+                <div class="flex items-center gap-2 bg-muted/30 p-1 rounded-lg border border-border/50">
+                  <button 
+                    @click="position = 'top'"
+                    class="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                    :class="position === 'top' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:bg-background/50'"
+                  >
+                    <Icon name="tabler:arrow-bar-to-up" class="size-4" />
+                    Arriba
+                  </button>
+                  <button 
+                    @click="position = 'bottom'"
+                    class="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                    :class="position === 'bottom' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:bg-background/50'"
+                  >
+                    <Icon name="tabler:arrow-bar-to-down" class="size-4" />
+                    Abajo
+                  </button>
+                </div>
+                
                 <div class="relative">
                   <textarea 
                     v-model="textInput" 
@@ -206,6 +231,9 @@ onMounted(() => {
                   </div>
                   
                   <div class="flex items-center gap-1 shrink-0">
+                    <div class="mr-2 px-2 py-1 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50">
+                        {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
+                    </div>
                     <GButton @click="resendFromHistory(item)" variant="secondary" size="icon" class="size-8 rounded-lg" title="Enviar directamente">
                       <Icon name="tabler:send" class="size-4" />
                     </GButton>

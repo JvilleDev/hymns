@@ -83,6 +83,7 @@ interface ParsedSong {
 interface Anuncio {
     id: string;
     text: string;
+    position: 'top' | 'bottom';
     createdAt: number; // timestamp
 }
 
@@ -142,6 +143,7 @@ let initialInfo = {
     announcement: {
         text: "",
         active: false,
+        position: 'bottom' as 'top' | 'bottom',
     },
 };
 
@@ -210,11 +212,16 @@ socket.on("connection", (sc) => {
         socket.emit("written", msg);
     });
 
-    sc.on("setAnnouncement", (data: { text: string; active: boolean }) => {
-        colorprint.NOTICE(`[Announcement] ${data.active ? 'SHOW:' : 'HIDE:'} ${data.text}`);
-        initialInfo.announcement = data;
-        sc.broadcast.emit("announcement", data);
-        sc.emit("announcement", data); // Echo back to sender to confirm state
+    sc.on("setAnnouncement", (data: { text: string; active: boolean; position?: 'top' | 'bottom' }) => {
+        colorprint.NOTICE(`[Announcement] ${data.active ? 'SHOW:' : 'HIDE:'} ${data.text} (${data.position || 'bottom'})`);
+        initialInfo.announcement = {
+            ...initialInfo.announcement,
+            text: data.text,
+            active: data.active,
+            position: data.position || initialInfo.announcement.position || 'bottom'
+        };
+        sc.broadcast.emit("announcement", initialInfo.announcement);
+        sc.emit("announcement", initialInfo.announcement); // Echo back to sender to confirm state
     });
 
     sc.on("disconnect", () => {
@@ -353,16 +360,17 @@ app.get("/api/anuncios", (req, res) => {
 
 app.post("/api/anuncios", (req, res) => {
     try {
-        const { text } = req.body;
+        const { text, position } = req.body;
         if (!text) return res.status(400).json({ error: "Text is required" });
 
         const id = uuid();
         const createdAt = Date.now();
+        const pos = position || 'bottom';
         
-        const insert = db.query("INSERT INTO anuncios (id, text, createdAt) VALUES (?, ?, ?)");
-        insert.run(id, text, createdAt);
+        const insert = db.query("INSERT INTO anuncios (id, text, position, createdAt) VALUES (?, ?, ?, ?)");
+        insert.run(id, text, pos, createdAt);
 
-        res.json({ id, text, createdAt });
+        res.json({ id, text, position: pos, createdAt });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -439,8 +447,17 @@ async function prepareDb() {
             "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)"
         );
         db.run(
-            "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, createdAt INTEGER)"
+            "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', createdAt INTEGER)"
         );
+        
+        // Migration to add position column if it doesn't exist
+        try {
+            const tempQuery = db.query("SELECT position FROM anuncios LIMIT 1");
+            tempQuery.get();
+        } catch (e) {
+            console.log("Migrating anuncios table to include position...");
+            db.run("ALTER TABLE anuncios ADD COLUMN position TEXT DEFAULT 'bottom'");
+        }
     } catch (error) {
         console.error("Error preparing database:", error);
     }
