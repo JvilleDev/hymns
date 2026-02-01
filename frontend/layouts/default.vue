@@ -2,12 +2,16 @@
 import { Toaster } from 'vue-sonner'
 
 const items = [
-  { title: "Inicio", value: "/", icon: "tabler:home" },
-  { title: "Lista", value: "/lista", icon: "tabler:list" },
-  { title: "Visor", value: "/visor", icon: "tabler:eye" },
-  { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone" },
+  { title: "Inicio", value: "/", icon: "tabler:home", description: "Panel principal" },
+  { title: "Lista", value: "/lista", icon: "tabler:list", description: "Gestiona tus cantos e himnos" },
+  { title: "Visor", value: "/visor", icon: "tabler:eye", description: "Control de proyección" },
+  { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Lower Third / Cinta de noticias" },
 ];
 const route = useRoute();
+
+const currentPage = computed(() => {
+  return items.find(i => i.value === route.path) || { title: 'Himnario', description: '' }
+})
 
 onMounted(() => {
   useHead({
@@ -21,11 +25,16 @@ onMounted(() => {
   <div class="h-svh w-screen flex flex-col overflow-hidden bg-background text-foreground selection:bg-primary/10 selection:text-primary">
     <!-- Navbar (Desktop & Tablet) -->
     <header class="h-16 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 md:px-6 flex items-center justify-between">
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-4">
         <div class="size-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
           <Icon name="tabler:book" class="size-5 text-primary-foreground" />
         </div>
-        <span class="font-bold text-lg tracking-tight">Himnario</span>
+        
+        <!-- Dynamic Page Title -->
+        <div class="hidden sm:block">
+          <h1 class="font-bold text-base tracking-tight leading-none">{{ currentPage.title }}</h1>
+          <p v-if="currentPage.description" class="text-[10px] text-muted-foreground font-medium">{{ currentPage.description }}</p>
+        </div>
       </div>
       
       <nav class="hidden md:flex items-center bg-muted/50 p-1 rounded-xl border border-border/50">

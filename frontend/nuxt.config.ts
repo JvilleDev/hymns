@@ -27,7 +27,7 @@ export default defineNuxtConfig({
   },
   googleFonts: {
     families: {
-      'Outfit': [400, 500, 700, 800],
+      'Outfit': true,
     }
   },
   routeRules: {

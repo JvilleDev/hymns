@@ -62,24 +62,6 @@ watch(options, (newVal) => {
 
 <template>
   <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
-    <!-- Cabecera Compacta -->
-    <header class="w-full h-16 px-6 flex items-center justify-between border-b border-border bg-card/30 shrink-0">
-      <div class="flex items-center gap-3">
-        <div class="size-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-          <Icon name="tabler:settings" class="size-6 text-primary" />
-        </div>
-        <div>
-          <h1 class="text-lg font-bold tracking-tight">Configuración del Visor</h1>
-          <p class="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60">Obtén tu URL personalizada para proyección</p>
-        </div>
-      </div>
-      
-      <GButton @click="openViewerInNewWindow" variant="default" size="sm" class="hidden md:flex gap-2">
-        <Icon name="tabler:external-link" class="size-4" />
-        Abrir Ventana
-      </GButton>
-    </header>
-
     <div class="flex-1 flex overflow-hidden">
       <!-- Panel de Opciones -->
       <aside class="w-80 border-r border-border bg-muted/5 flex flex-col p-6 gap-8 overflow-y-auto">
@@ -129,6 +111,11 @@ watch(options, (newVal) => {
               </GButton>
             </div>
           </div>
+          
+          <GButton @click="openViewerInNewWindow" variant="default" size="sm" class="w-full gap-2">
+            <Icon name="tabler:external-link" class="size-4" />
+            Abrir Ventana
+          </GButton>
         </div>
       </aside>
 

@@ -24,16 +24,7 @@ onMounted(() => getSongs())
 
 <template>
   <main class="h-screen flex flex-col w-full bg-background">
-    <div class="px-6 pt-8 pb-4 shrink-0">
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold mb-2 text-foreground tracking-tight">
-          Biblioteca
-        </h1>
-        <p class="text-muted-foreground text-sm">
-          Gestiona tus cantos e himnos
-        </p>
-      </div>
-
+    <div class="px-6 pt-6 pb-4 shrink-0">
       <!-- Barra de herramientas (Search & Filters) -->
       <SongToolbar 
         v-model:search-term="searchTerm"
