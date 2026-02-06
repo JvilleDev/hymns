@@ -72,6 +72,12 @@ const isSearching = computed(() => searchTerm.value.length > 0)
 
 async function changeSong(id: string) {
   if (activeSong.value?.id === id) return
+
+  // Quitar focus del buscador si está activo
+  const container = document.getElementById('search-desktop')
+  const input = container?.querySelector('input') || container as HTMLInputElement
+  if (input) input.blur()
+
   isChangingSong.value = true
   try {
      sendCanto(id)
