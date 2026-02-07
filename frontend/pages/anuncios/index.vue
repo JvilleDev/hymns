@@ -10,7 +10,7 @@ const textInput = ref('')
 const position = ref<'top' | 'bottom'>('bottom')
 const isLoading = ref(false)
 const history = ref<any[]>([])
-const textareaRef = ref<HTMLDivElement | null>(null)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const showMobileHistory = ref(false)
 
 // Autocomplete State
@@ -29,112 +29,32 @@ const filteredIcons = computed(() => {
 
 const menuStyle = ref({})
 
-// Get plain text from contenteditable
-const getPlainText = (el: HTMLElement): string => {
-  return el.textContent || ''
-}
-
-// Render content with icons in contenteditable
-const renderContent = () => {
-  if (!textareaRef.value) return
-  
-  const el = textareaRef.value
-  const segments = parseContent(textInput.value)
-  
-  // Save cursor position
-  const selection = window.getSelection()
-  const range = selection?.rangeCount ? selection.getRangeAt(0) : null
-  const cursorOffset = range?.startOffset || 0
-  
-  // Clear and rebuild content
-  el.innerHTML = ''
-  
-  segments.forEach(segment => {
-    if (segment.type === 'icon') {
-      const iconSpan = document.createElement('span')
-      iconSpan.className = 'icon-wrapper inline-block align-middle mx-0.5'
-      iconSpan.contentEditable = 'false'
-      iconSpan.setAttribute('data-icon', segment.value)
-      
-      const iconEl = document.createElement('span')
-      iconEl.className = 'iconify size-6 inline-block'
-      iconEl.setAttribute('data-icon', segment.value)
-      iconSpan.appendChild(iconEl)
-      
-      el.appendChild(iconSpan)
-    } else {
-      const textNode = document.createTextNode(segment.value)
-      el.appendChild(textNode)
-    }
-  })
-  
-  // Restore cursor (simplified - place at end)
-  nextTick(() => {
-    const newRange = document.createRange()
-    const sel = window.getSelection()
-    
-    if (el.childNodes.length > 0) {
-      const lastNode = el.childNodes[el.childNodes.length - 1]
-      if (lastNode.nodeType === Node.TEXT_NODE) {
-        newRange.setStart(lastNode, lastNode.textContent?.length || 0)
-      } else {
-        newRange.setStartAfter(lastNode)
-      }
-      newRange.collapse(true)
-      sel?.removeAllRanges()
-      sel?.addRange(newRange)
-    }
-    
-    el.focus()
-  })
-}
-
-const handleContentEditableInput = (e: Event) => {
-  const el = e.target as HTMLDivElement
-  const text = getPlainText(el)
-  textInput.value = text
-  
-  checkSlashCommand()
-}
-
+// Textarea specific logic
 const checkSlashCommand = () => {
   if (!textareaRef.value) return
   
-  const el = textareaRef.value
-  const text = getPlainText(el)
+  const el = textareaRef.value as HTMLTextAreaElement
+  const cursorPosition = el.selectionStart
+  const text = textInput.value
   
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return
-  
-  const range = selection.getRangeAt(0)
-  let cursorPos = 0
-  
-  // Calculate cursor position in plain text
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
-  let node
-  while (node = walker.nextNode()) {
-    if (node === range.startContainer) {
-      cursorPos += range.startOffset
-      break
-    }
-    cursorPos += node.textContent?.length || 0
-  }
-  
-  const textBeforeCursor = text.slice(0, cursorPos)
+  const textBeforeCursor = text.slice(0, cursorPosition)
   const lastSlashIndex = textBeforeCursor.lastIndexOf('/')
   
   if (lastSlashIndex !== -1) {
      const command = textBeforeCursor.slice(lastSlashIndex + 1)
+     // Check if there's any space between slash and cursor
      if (!/\s/.test(command)) {
          showIconMenu.value = true
          slashQuery.value = command
          iconMenuIndex.value = 0
          
+         // Use a more approximate positioning for the menu since we can't easily get precise XY coords in textarea
+         // or use a fixed position relative to the textarea
          const rect = el.getBoundingClientRect()
          menuStyle.value = {
              position: 'fixed',
              left: `${rect.left}px`,
-             bottom: `${window.innerHeight - rect.top + 8}px`,
+             bottom: `${window.innerHeight - rect.top + 8}px`, // Keep it simple: above or simple dropdown
              width: '20rem',
              zIndex: 9999
          }
@@ -149,21 +69,32 @@ const checkSlashCommand = () => {
 const insertIcon = (icon: any) => {
   if (!textareaRef.value) return
   
-  const el = textareaRef.value
+  const el = textareaRef.value as HTMLTextAreaElement
+  const cursorPosition = el.selectionStart
   const text = textInput.value
   
-  const lastSlashIndex = text.lastIndexOf('/')
+  const textBeforeCursor = text.slice(0, cursorPosition)
+  const lastSlashIndex = textBeforeCursor.lastIndexOf('/')
   
   if (lastSlashIndex !== -1) {
       const prefix = text.slice(0, lastSlashIndex)
-      const suffix = text.slice(lastSlashIndex + slashQuery.value.length + 1)
+      const suffix = text.slice(cursorPosition)
       
-      textInput.value = `${prefix}/${icon.name} ${suffix}`
+      const newText = `${prefix}/${icon.name} ${suffix}`
+      textInput.value = newText
+      
+      // Move cursor to end of inserted icon
+      nextTick(() => {
+          const newCursorPos = lastSlashIndex + icon.name.length + 2 // +1 for slash, +1 for space
+          el.focus()
+          el.setSelectionRange(newCursorPos, newCursorPos)
+      })
   }
   
   showIconMenu.value = false
   slashQuery.value = ''
 }
+
 
 const menuContainerRef = ref<HTMLElement | null>(null)
 const iconRef = ref<HTMLElement[]>([])
@@ -317,19 +248,14 @@ const parseContent = (text: string) => {
   return segments
 }
 
-// Watch textInput and render content
+// Watch textInput for slash commands
 watch(textInput, () => {
-  if (textareaRef.value) {
-    renderContent()
-  }
+  checkSlashCommand()
 })
 
 onMounted(() => {
   connect()
   fetchHistory()
-  if (textareaRef.value) {
-    renderContent()
-  }
 })
 </script>
 
@@ -385,14 +311,14 @@ onMounted(() => {
                   </Teleport>
 
                   <!-- Contenteditable div with icon rendering -->
-                  <div
+                  <textarea
                     ref="textareaRef"
-                    contenteditable="true"
-                    @input="handleContentEditableInput"
+                    v-model="textInput"
                     @keydown="handleKeydown"
-                    class="announcement-input w-full min-h-[6rem] bg-background border border-border rounded-lg p-4 text-lg focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium overflow-y-auto"
+                    class="announcement-input w-full min-h-[6rem] bg-background border border-border rounded-lg p-4 text-lg focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium resize-none"
                     style="max-height: 12rem;"
-                  ></div>
+                    placeholder="Escribe un anuncio..."
+                  ></textarea>
                   
                   <div class="absolute bottom-3 right-3 text-xs text-muted-foreground pointer-events-none">
                     {{ textInput.length }} caracteres
@@ -578,19 +504,3 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
-.announcement-input:empty:before {
-  content: attr(data-placeholder);
-  color: hsl(var(--muted-foreground));
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.announcement-input:focus:before {
-  content: '';
-}
-
-.icon-wrapper {
-  user-select: none;
-}
-</style>

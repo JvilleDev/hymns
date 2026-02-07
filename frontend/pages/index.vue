@@ -182,6 +182,22 @@ watch(activeIndex, (newIdx) => {
   }
 })
 
+// Focus first line when song changes
+watch(() => activeSong.value?.id, (newId) => {
+  if (newId) {
+    nextTick(() => {
+        const firstLine = document.querySelector('.line-item') as HTMLElement
+        if (firstLine) {
+            firstLine.focus()
+            // Ensure search input is blurred
+            const container = document.getElementById('search-desktop')
+            const input = container?.querySelector('input') || container as HTMLInputElement
+            if (input) input.blur()
+        }
+    })
+  }
+})
+
 watch(currentIndex, () => {
   scrollToActiveLine()
 })
@@ -270,7 +286,10 @@ function navigateToDeck() {
           <div class="flex-grow h-0 overflow-y-auto min-h-0" id="line-container">
             <div class="p-3 pb-32 space-y-1.5">
               <div v-for="(line, index) in activeSong.lines" :key="`${activeSong.id}-${index}`"
-                @click="currentIndex = index; sendLine(line); sendIndex(index)" class="line-item" :class="[checkTags(line), currentIndex === index ? 'active' : '']">
+                tabindex="0"
+                @click="currentIndex = index; sendLine(line); sendIndex(index)" 
+                class="line-item outline-none focus:ring-1 focus:ring-primary/20" 
+                :class="[checkTags(line), currentIndex === index ? 'active' : '']">
                 {{ line }}
               </div>
             </div>
