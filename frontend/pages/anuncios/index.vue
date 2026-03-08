@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
 import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
+import { onKeyStroke } from '@vueuse/core'
 
-const { announcement, setAnnouncement, connect, socket } = useSocket()
-const { getAnnouncements, createAnnouncement, deleteAnnouncement } = useApi()
+const { announcement, setAnnouncement, transcription, setTranscriptionActive, connect, socket, isConnected } = useRealtime()
+const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
 
 const textInput = ref('')
@@ -12,6 +13,56 @@ const isLoading = ref(false)
 const history = ref<any[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const showMobileHistory = ref(false)
+
+// Select Logic
+const selectedIds = ref<Set<string>>(new Set())
+const isSelecting = computed(() => selectedIds.value.size > 0)
+
+const toggleSelect = (id: string) => {
+  if (selectedIds.value.has(id)) {
+    selectedIds.value.delete(id)
+  } else {
+    selectedIds.value.add(id)
+  }
+}
+
+const selectAll = () => {
+  if (selectedIds.value.size === history.value.length) {
+    selectedIds.value.clear()
+  } else {
+    selectedIds.value = new Set(history.value.map(item => item.id))
+  }
+}
+
+const deleteSelected = async () => {
+  if (selectedIds.value.size === 0) return
+  isLoading.value = true
+  try {
+    await deleteSelectedAnnouncements(Array.from(selectedIds.value))
+    toast.success('Anuncios eliminados')
+    selectedIds.value.clear()
+    fetchHistory()
+  } catch (e) {
+    toast.error('Error al eliminar seleccionados')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const clearAll = async () => {
+  if (!confirm('¿Estás seguro de que quieres limpiar todo el historial?')) return
+  isLoading.value = true
+  try {
+    await clearAnnouncements()
+    toast.success('Historial limpiado')
+    selectedIds.value.clear()
+    fetchHistory()
+  } catch (e) {
+    toast.error('Error al limpiar historial')
+  } finally {
+    isLoading.value = false
+  }
+}
 
 // Autocomplete State
 const showIconMenu = ref(false)
@@ -99,26 +150,61 @@ const insertIcon = (icon: any) => {
 const menuContainerRef = ref<HTMLElement | null>(null)
 const iconRef = ref<HTMLElement[]>([])
 
-const handleKeydown = (e: KeyboardEvent) => {
-  if (!showIconMenu.value) return
-  
-  if (e.key === 'ArrowDown') {
+// VueUse Shortcuts
+onKeyStroke(['Enter'], (e) => {
+  if ((e.metaKey || e.ctrlKey)) {
     e.preventDefault()
-    iconMenuIndex.value = (iconMenuIndex.value + 1) % filteredIcons.value.length
-    scrollToActive()
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    iconMenuIndex.value = (iconMenuIndex.value - 1 + filteredIcons.value.length) % filteredIcons.value.length
-    scrollToActive()
-  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    sendAnnouncement()
+    return
+  }
+
+  if (showIconMenu.value) {
     e.preventDefault()
     if (filteredIcons.value.length > 0) {
         insertIcon(filteredIcons.value[iconMenuIndex.value])
     }
-  } else if (e.key === 'Escape') {
-    showIconMenu.value = false
   }
-}
+}, { target: textareaRef })
+
+onKeyStroke(['Tab'], (e) => {
+  if (showIconMenu.value) {
+    e.preventDefault()
+    if (filteredIcons.value.length > 0) {
+        insertIcon(filteredIcons.value[iconMenuIndex.value])
+    }
+  }
+}, { target: textareaRef })
+
+onKeyStroke(['ArrowDown'], (e) => {
+  if (showIconMenu.value) {
+    e.preventDefault()
+    iconMenuIndex.value = (iconMenuIndex.value + 1) % filteredIcons.value.length
+    scrollToActive()
+  }
+}, { target: textareaRef })
+
+onKeyStroke(['ArrowUp'], (e) => {
+  if (showIconMenu.value) {
+    e.preventDefault()
+    iconMenuIndex.value = (iconMenuIndex.value - 1 + filteredIcons.value.length) % filteredIcons.value.length
+    scrollToActive()
+  }
+}, { target: textareaRef })
+
+onKeyStroke(['l', 'L'], (e) => {
+  if (e.metaKey || e.ctrlKey) {
+    e.preventDefault()
+    toggleVisibility()
+  }
+})
+
+onKeyStroke(['Escape'], (e) => {
+  if (showIconMenu.value) {
+    showIconMenu.value = false
+  } else {
+    textInput.value = ''
+  }
+}, { target: textareaRef })
 
 const scrollToActive = () => {
     nextTick(() => {
@@ -271,12 +357,18 @@ onMounted(() => {
               <div class="flex items-start justify-between">
                 <div>
                   <h2 class="text-lg font-bold tracking-tight mb-1">Crear Anuncio</h2>
-                  <p class="text-xs text-muted-foreground">Escribe y envía mensajes a la pantalla</p>
+                  <p class="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted border border-border text-[9px] font-mono leading-none">
+                      <Icon name="tabler:command" class="size-2.5" />
+                      ENTER
+                    </span>
+                    para enviar
+                  </p>
                 </div>
                 <div class="flex items-center gap-2">
-                  <div class="size-2 rounded-full" :class="socket?.connected ? 'bg-green-500' : 'bg-red-500 animate-pulse'"></div>
-                  <span class="text-[10px] font-bold uppercase tracking-tight" :class="socket?.connected ? 'text-green-600/70' : 'text-red-600/70'">
-                    {{ socket?.connected ? 'En Vivo' : 'Desconectado' }}
+                  <div class="size-2 rounded-full" :class="isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 animate-pulse'"></div>
+                  <span class="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/70">
+                    {{isConnected ? "Conectado" : "Desconectado"}}
                   </span>
                 </div>
               </div>
@@ -314,11 +406,20 @@ onMounted(() => {
                   <textarea
                     ref="textareaRef"
                     v-model="textInput"
-                    @keydown="handleKeydown"
                     class="announcement-input w-full min-h-[6rem] bg-background border border-border rounded-lg p-4 text-lg focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium resize-none"
+                    :class="{ 'border-primary/50 ring-2 ring-primary/10': showIconMenu }"
                     style="max-height: 12rem;"
                     placeholder="Escribe un anuncio..."
                   ></textarea>
+                  
+                  <!-- Command Indicator Badge -->
+                  <div 
+                    v-if="showIconMenu"
+                    class="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded bg-primary/10 border border-primary/20 text-[10px] font-bold text-primary animate-in fade-in zoom-in duration-200"
+                  >
+                    <Icon name="tabler:terminal-2" class="size-3" />
+                    MODO COMANDO
+                  </div>
                   
                   <div class="absolute bottom-3 right-3 text-xs text-muted-foreground pointer-events-none">
                     {{ textInput.length }} caracteres
@@ -353,6 +454,47 @@ onMounted(() => {
                     </div>
                     <GSwitch v-model="autoSendToAir" />
                   </div>
+
+                  <div class="pt-4 border-t border-border">
+                    <div class="bg-primary/5 border border-primary/10 rounded-xl p-4 space-y-4">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                          <div class="size-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
+                            <Icon name="tabler:message-chatbot" class="size-5 text-primary" />
+                          </div>
+                          <div>
+                            <label class="text-sm font-bold block">Transcripción Automática</label>
+                            <p class="text-[10px] text-muted-foreground">Sustituye cantos y anuncios</p>
+                          </div>
+                        </div>
+                        <GSwitch 
+                          :model-value="transcription.active" 
+                          @update:model-value="setTranscriptionActive" 
+                        />
+                      </div>
+                      
+                      <div v-if="transcription.active" class="bg-background/50 rounded-lg p-3 border border-primary/10 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div class="flex items-center gap-2 mb-2">
+                           <div class="size-1.5 bg-red-500 rounded-full animate-pulse"></div>
+                           <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest">Capturando...</span>
+                        </div>
+                        <p class="text-xs text-foreground font-medium italic line-clamp-2">
+                          {{ transcription.final }}
+                          <span class="text-primary/60">{{ transcription.interim }}</span>
+                          <span v-if="!transcription.final && !transcription.interim">Esperando voz...</span>
+                        </p>
+                      </div>
+
+                      <NuxtLink 
+                        to="/transcripcion" 
+                        target="_blank"
+                        class="flex items-center justify-center gap-2 w-full py-2 text-[10px] font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors border border-primary/20 bg-background"
+                      >
+                        <Icon name="tabler:external-link" class="size-3" />
+                        ABRIR TRANSPORTE DE VOZ
+                      </NuxtLink>
+                    </div>
+                  </div>
                 </div>
 
                 <GButton 
@@ -368,72 +510,155 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="announcement.text" class="bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
-              <div class="flex items-center justify-between">
-                <h3 class="text-sm font-bold uppercase tracking-widest text-muted-foreground">En Pantalla</h3>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold" :class="announcement.active ? 'text-green-600' : 'text-muted-foreground'">
-                    {{ announcement.active ? 'Visible' : 'Oculto' }}
-                  </span>
-                  <GButton @click="toggleVisibility" variant="secondary" size="icon" class="size-8">
-                    <Icon :name="announcement.active ? 'tabler:eye-off' : 'tabler:eye'" class="size-4" />
-                  </GButton>
+            <!-- Live Preview Card -->
+            <div class="relative overflow-hidden group">
+              <div 
+                class="absolute inset-0 bg-gradient-to-br transition-all duration-500"
+                :class="announcement.active ? 'from-green-500/10 via-transparent to-primary/5 opacity-100' : 'from-muted/20 to-transparent opacity-50'"
+              ></div>
+              
+              <div class="relative bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider"
+                      :class="announcement.active 
+                        ? 'bg-green-500/10 border-green-500/20 text-green-600' 
+                        : 'bg-muted border-border text-muted-foreground'"
+                    >
+                      <span v-if="announcement.active" class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                      </span>
+                      {{ announcement.active ? 'Mostrando' : 'Oculto' }}
+                    </div>
+                  </div>
+                  
+                  <div class="flex items-center gap-3">
+                    <p class="hidden md:block text-[10px] text-muted-foreground font-mono">
+                      <span class="px-1 border rounded bg-muted">⌘</span> + L
+                    </p>
+                    <button 
+                      @click="toggleVisibility" 
+                      class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 bg-muted"
+                      :class="{ 'bg-primary': announcement.active }"
+                    >
+                      <span 
+                        class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                        :class="announcement.active ? 'translate-x-5' : 'translate-x-0'"
+                      ></span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="min-h-[3rem] flex items-center transition-all duration-300" :class="{ 'opacity-50 blur-[1px]': !announcement.active }">
+                  <p v-if="announcement.text" class="text-lg font-bold text-foreground leading-tight">
+                    <template v-for="(segment, idx) in parseContent(announcement.text)" :key="idx">
+                      <Icon 
+                        v-if="segment.type === 'icon'" 
+                        :name="segment.value" 
+                        :class="segment.class"
+                      />
+                      <span v-else>{{ segment.value }}</span>
+                    </template>
+                  </p>
+                  <p v-else class="text-sm italic text-muted-foreground">No hay anuncio activo</p>
                 </div>
               </div>
-              <p class="text-base font-bold text-foreground">{{ announcement.text }}</p>
             </div>
           </div>
         </section>
 
         <!-- Right Column: History (Desktop) -->
-        <section class="hidden lg:flex flex-col bg-background overflow-hidden">
+        <section class="hidden lg:flex flex-col bg-background overflow-hidden border-l border-border">
           <div class="flex-1 flex flex-col overflow-hidden">
-            <div class="px-6 pt-6 pb-4 border-b border-border shrink-0">
-              <h2 class="text-lg font-bold tracking-tight mb-1">Historial</h2>
-              <p class="text-xs text-muted-foreground">Doble clic para reenviar</p>
+            <div class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
+              <div>
+                <h2 class="text-lg font-bold tracking-tight mb-1">Historial</h2>
+                <p class="text-xs text-muted-foreground">Gestiona tus anuncios previos</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <GButton 
+                  v-if="isSelecting"
+                  @click="deleteSelected"
+                  variant="ghost" 
+                  size="sm" 
+                  class="text-red-500 hover:text-red-600 hover:bg-red-50"
+                >
+                  <Icon name="tabler:trash" class="size-4 mr-1" />
+                  Borrar ({{ selectedIds.size }})
+                </GButton>
+                <GButton 
+                  v-if="history.length > 0"
+                  @click="clearAll"
+                  variant="ghost" 
+                  size="sm" 
+                  class="text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                >
+                  Limpiar Todo
+                </GButton>
+              </div>
             </div>
 
-            <div v-if="history.length === 0" class="flex flex-col items-center justify-center h-full text-center border-2 border-dashed border-border rounded-2xl bg-muted/5 lg:my-10">
+            <div v-if="history.length === 0" class="flex flex-col items-center justify-center h-full text-center p-6">
               <Icon name="tabler:history" class="size-12 text-muted-foreground/20 mb-4" />
               <p class="text-sm text-muted-foreground font-medium">No hay historial de anuncios</p>
-              <p class="text-xs text-muted-foreground/60 mt-1 italic">Los mensajes que envíes aparecerán aquí</p>
             </div>
 
             <div v-else class="flex-1 overflow-y-auto px-6 py-4">
+              <div class="flex items-center justify-between mb-4 px-2">
+                <button @click="selectAll" class="text-xs font-bold text-primary hover:underline flex items-center gap-1.5">
+                  <Icon :name="selectedIds.size === history.length ? 'tabler:square-rounded-minus' : 'tabler:square-rounded-check'" class="size-4" />
+                  {{ selectedIds.size === history.length ? 'Deseleccionar todo' : 'Seleccionar todo' }}
+                </button>
+              </div>
+
               <div class="grid gap-4">
                 <div 
                   v-for="item in history" 
                   :key="item.id"
-                  class="group flex flex-col p-5 bg-card hover:bg-muted/20 border border-border hover:border-primary/20 rounded-xl transition-all shadow-sm active:scale-[0.99] cursor-default"
-                  @dblclick="resendFromHistory(item)"
+                  class="group relative flex items-start gap-4 p-5 bg-card hover:bg-muted/10 border border-border hover:border-primary/20 rounded-xl transition-all shadow-sm"
+                  :class="{ 'border-primary bg-primary/5 ring-1 ring-primary/20': selectedIds.has(item.id) }"
                 >
-                  <div class="flex items-start justify-between mb-3">
-                    <div class="flex flex-col min-w-0 pr-4">
-                      <span class="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-1">
+                  <!-- Checkbox area -->
+                  <div class="pt-1">
+                    <button 
+                      @click="toggleSelect(item.id)"
+                      class="size-5 rounded border-2 transition-all flex items-center justify-center"
+                      :class="selectedIds.has(item.id) ? 'bg-primary border-primary text-white' : 'border-muted-foreground/30 hover:border-primary/50 bg-background'"
+                    >
+                      <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-3" stroke-width="3" />
+                    </button>
+                  </div>
+
+                  <div class="flex-1 min-w-0 pr-2">
+                    <div class="flex items-start justify-between mb-2">
+                      <span class="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">
                         {{ new Date(item.createdAt).toLocaleDateString() }} - {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
                       </span>
-                      <div class="text-base font-bold text-foreground leading-tight inline-flex flex-wrap items-center gap-x-1">
-                        <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
-                          <Icon 
-                            v-if="segment.type === 'icon'" 
-                            :name="segment.value" 
-                            :class="segment.class"
-                          />
-                          <span v-else>{{ segment.value }}</span>
-                        </template>
+                      <div class="px-2 py-0.5 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50">
+                        {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
                       </div>
                     </div>
-                    
-                    <div class="flex items-center gap-1 shrink-0">
-                      <div class="mr-2 px-2 py-1 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50">
-                          {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
-                      </div>
-                      <GButton @click="resendFromHistory(item)" variant="secondary" size="icon" class="size-8 rounded-lg" title="Enviar directamente">
-                        <Icon name="tabler:send" class="size-4" />
+
+                    <div class="text-base font-bold text-foreground leading-tight inline-flex flex-wrap items-center gap-x-1 mb-4">
+                      <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
+                        <Icon 
+                          v-if="segment.type === 'icon'" 
+                          :name="segment.value" 
+                          :class="segment.class"
+                        />
+                        <span v-else>{{ segment.value }}</span>
+                      </template>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <GButton @click="resendFromHistory(item)" variant="secondary" size="sm" class="h-8 gap-1.5 px-3">
+                        <Icon name="tabler:send" class="size-3.5" />
+                        Reenviar
                       </GButton>
-                      <GButton @click="deleteItem(item.id)" variant="ghost" size="icon" class="size-8 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-500/10" title="Eliminar">
+                      <button @click="deleteItem(item.id)" class="p-1.5 text-muted-foreground hover:text-red-500 transition-colors">
                         <Icon name="tabler:trash" class="size-4" />
-                      </GButton>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -445,47 +670,94 @@ onMounted(() => {
       </div>
 
       <!-- Mobile History Popup -->
-      <GSheet v-model:open="showMobileHistory">
-        <div class="flex flex-col h-full">
-          <div class="px-6 pt-6 pb-4 border-b border-border shrink-0">
-            <h2 class="text-lg font-bold tracking-tight mb-1">Historial</h2>
-            <p class="text-xs text-muted-foreground">Toca para reenviar</p>
+      <GSheet v-model="showMobileHistory">
+        <div class="flex flex-col h-full bg-background">
+          <div class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold tracking-tight mb-1">Historial</h2>
+              <p class="text-xs text-muted-foreground">Gestiona tus anuncios</p>
+            </div>
+            <div class="flex items-center gap-2">
+               <GButton 
+                v-if="history.length > 0"
+                @click="clearAll"
+                variant="ghost" 
+                size="sm" 
+                class="text-red-500"
+              >
+                Limpiar Todo
+              </GButton>
+            </div>
           </div>
 
           <div v-if="history.length === 0" class="flex flex-col items-center justify-center flex-1 text-center p-6">
             <Icon name="tabler:history" class="size-12 text-muted-foreground/20 mb-4" />
-            <p class="text-sm text-muted-foreground font-medium">No hay historial de anuncios</p>
+            <p class="text-sm text-muted-foreground font-medium">No hay historial</p>
           </div>
 
           <div v-else class="flex-1 overflow-y-auto px-6 py-4">
-            <div class="grid gap-4">
+            <div class="flex items-center justify-between mb-4">
+               <div class="flex items-center gap-2">
+                  <GButton 
+                    v-if="isSelecting"
+                    @click="deleteSelected"
+                    variant="default" 
+                    size="sm" 
+                    class="bg-red-500 hover:bg-red-600 h-8"
+                  >
+                    Borrar seleccionados ({{ selectedIds.size }})
+                  </GButton>
+                  <button v-else @click="selectAll" class="text-xs font-bold text-primary">
+                    Seleccionar todo
+                  </button>
+               </div>
+               <button v-if="isSelecting" @click="selectedIds.clear()" class="text-xs font-bold text-muted-foreground">
+                  Cancelar
+               </button>
+            </div>
+
+            <div class="grid gap-3">
               <div 
                 v-for="item in history" 
                 :key="item.id"
-                class="flex flex-col p-5 bg-card border border-border rounded-xl shadow-sm active:scale-[0.99]"
-                @click="resendFromHistory(item); showMobileHistory = false"
+                class="flex items-center gap-3 p-4 bg-muted/30 border border-border rounded-xl active:scale-[0.98] transition-transform"
+                :class="{ 'border-primary bg-primary/5': selectedIds.has(item.id) }"
+                @click="isSelecting ? toggleSelect(item.id) : null"
               >
-                <div class="flex items-start justify-between mb-3">
-                  <div class="flex flex-col min-w-0 pr-4">
-                    <span class="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mb-1">
-                      {{ new Date(item.createdAt).toLocaleDateString() }} - {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                 <div v-if="isSelecting || true" class="shrink-0">
+                    <button 
+                      @click.stop="toggleSelect(item.id)"
+                      class="size-5 rounded border-2 transition-all flex items-center justify-center"
+                      :class="selectedIds.has(item.id) ? 'bg-primary border-primary text-white' : 'border-muted-foreground/30 bg-background'"
+                    >
+                      <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-3" stroke-width="3" />
+                    </button>
+                 </div>
+
+                <div class="flex-1 min-w-0" @click="!isSelecting && resendFromHistory(item); !isSelecting && (showMobileHistory = false)">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
+                      {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
                     </span>
-                    <div class="text-base font-bold text-foreground leading-tight inline-flex flex-wrap items-center gap-x-1">
-                      <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
-                        <Icon 
-                          v-if="segment.type === 'icon'" 
-                          :name="segment.value" 
-                          :class="segment.class"
-                        />
-                        <span v-else>{{ segment.value }}</span>
-                      </template>
+                    <div class="px-1.5 py-0.5 rounded bg-muted/50 text-[8px] uppercase font-bold text-muted-foreground border border-border/50">
+                      {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
                     </div>
                   </div>
-                  
-                  <div class="px-2 py-1 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50 shrink-0">
-                    {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
+                  <div class="text-sm font-bold text-foreground leading-tight truncate">
+                    <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
+                      <Icon 
+                        v-if="segment.type === 'icon'" 
+                        :name="segment.value" 
+                        :class="segment.class"
+                      />
+                      <span v-else>{{ segment.value }}</span>
+                    </template>
                   </div>
                 </div>
+
+                <GButton v-if="!isSelecting" @click.stop="resendFromHistory(item); showMobileHistory = false" variant="ghost" size="icon" class="size-8">
+                  <Icon name="tabler:send" class="size-4" />
+                </GButton>
               </div>
             </div>
           </div>

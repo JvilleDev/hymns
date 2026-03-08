@@ -27,7 +27,6 @@
     "lucide-vue-next": "^0.485.0",
     "markdown-to-text": "^0.1.1",
     "nuxt": "^3.13.0",
-    "socket.io-client": "^4.7.5",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7",
     "vue": "latest",

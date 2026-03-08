@@ -13,10 +13,10 @@ const props = withDefaults(defineProps<Props>(), {
     side: 'right'
 })
 
-const emit = defineEmits(['update:modelValue'])
+const modelValue = defineModel<boolean>()
 
 const close = () => {
-    emit('update:modelValue', false)
+    modelValue.value = false
 }
 </script>
 

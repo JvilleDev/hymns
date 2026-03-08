@@ -10,7 +10,7 @@ interface Song {
 }
 
 const api = useApi()
-const { activeIndex, activeLine, viewerActive, connect, disconnect, changeViewerState, sendLine, sendIndex, sendCanto, activeSong } = useSocket()
+const { activeIndex, activeLine, viewerActive, connect, disconnect, changeViewerState, sendLine, sendIndex, sendCanto, activeSong } = useRealtime()
 const isMac = ref(false)
 
 onMounted(() => {
@@ -133,10 +133,12 @@ onKeyStroke(['ArrowUp', 'ArrowDown'], (e) => {
   e.preventDefault()
   if (!activeSong.value?.lines) return
   if (e.key === 'ArrowUp' && currentIndex.value > 0) currentIndex.value--
-  if (e.key === 'ArrowDown' && currentIndex.value < activeSong.value.lines.length - 1) currentIndex.value++
+  if (e.key === 'ArrowDown' && currentIndex.value < (activeSong.value?.lines?.length || 0) - 1) currentIndex.value++
   
-  sendLine(activeSong.value.lines[currentIndex.value])
-  sendIndex(currentIndex.value)
+  if (activeSong.value?.lines) {
+    sendLine(activeSong.value.lines[currentIndex.value])
+    sendIndex(currentIndex.value)
+  }
 })
 
 onKeyStroke(['v', 'V'], (e) => {
@@ -258,10 +260,10 @@ function navigateToDeck() {
               :class="[idx === activeQuickAction ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-secondary/50 text-muted-foreground hover:bg-accent hover:text-accent-foreground']">
               
               <!-- Floating Numeric Indicator -->
-              <span v-if="idx < 9" 
+              <span v-if="(idx as number) < 9" 
                 class="absolute -top-1.5 -right-1.5 size-4 flex items-center justify-center rounded-full text-[8px] font-bold border shadow-sm transition-all duration-300 scale-90 group-hover:scale-100"
                 :class="[idx === activeQuickAction ? 'bg-white text-primary border-primary' : 'bg-primary text-primary-foreground border-primary']">
-                {{ idx + 1 }}
+                {{ (idx as number) + 1 }}
               </span>
 
               {{ action.text }}
@@ -287,9 +289,9 @@ function navigateToDeck() {
             <div class="p-3 pb-32 space-y-1.5">
               <div v-for="(line, index) in activeSong.lines" :key="`${activeSong.id}-${index}`"
                 tabindex="0"
-                @click="currentIndex = index; sendLine(line); sendIndex(index)" 
+                @click="currentIndex = (index as number); sendLine(line); sendIndex(index as number)" 
                 class="line-item outline-none focus:ring-1 focus:ring-primary/20" 
-                :class="[checkTags(line), currentIndex === index ? 'active' : '']">
+                :class="[checkTags(line), currentIndex === (index as number) ? 'active' : '']">
                 {{ line }}
               </div>
             </div>

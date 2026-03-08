@@ -11,8 +11,7 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     public: {
-      apiUrl: process.env.BACKEND_URL ?? "http://localhost:3100",
-      socketUrl: process.env.BACKEND_URL ?? "http://localhost:3100",
+      apiUrl: "/backend",
     }
   },
   experimental: {
@@ -31,7 +30,22 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    "/backend/**": { proxy: `${process.env.BACKEND_URL ?? "http://localhost:3100"}/**` }
+    "/backend/**": { proxy: "http://localhost:3100/**" },
+    "/api/**": { proxy: "http://localhost:3100/api/**" },
+    "/sse": { proxy: "http://localhost:3100/sse" },
+    "/search": { proxy: "http://localhost:3100/search" },
+    "/import": { proxy: "http://localhost:3100/import" },
   },
   ssr: false,
+  vite: {
+    server: {
+      allowedHosts: ["h1wrh0-ip-181-32-81-2.tunnelmole.net"],
+      proxy: {
+        '/sse': {
+          target: 'http://localhost:3100',
+          changeOrigin: false
+        }
+      }
+    }
+  }
 })

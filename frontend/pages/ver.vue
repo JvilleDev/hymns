@@ -3,9 +3,11 @@ const {
   activeLine,
   viewerActive,
   announcement,
+  transcription,
   connect,
   disconnect,
-} = useSocket();
+  activeSong,
+} = useRealtime();
 
 const line = ref("");
 const isActive = ref(false);
@@ -46,7 +48,7 @@ onUnmounted(() => {
     <div 
       class="flex-1 w-full flex items-end justify-center transition-all duration-500 ease-in-out"
       :class="[
-        isActive ? 'opacity-100' : 'opacity-0 scale-95 translate-y-8'
+        (isActive && !transcription.active) ? 'opacity-100' : 'opacity-0 scale-95 translate-y-8'
       ]"
     >
       <div 
@@ -75,10 +77,19 @@ onUnmounted(() => {
     <!-- Lower Third Announcement (Independent Layer) -->
     <Transition :name="announcement.position === 'top' ? 'slide-down' : 'slide-up'">
       <LowerThird 
-        v-if="announcement.active && !queries.slide" 
+        v-if="announcement.active && !queries.slide && !transcription.active" 
         :key="announcement.text"
         :text="announcement.text" 
         :position="announcement.position"
+      />
+    </Transition>
+
+    <!-- Transcription Layer -->
+    <Transition name="slide-up">
+      <LowerTranscription 
+        v-if="transcription.active && !queries.slide"
+        :final="transcription.final"
+        :interim="transcription.interim"
       />
     </Transition>
   </main>

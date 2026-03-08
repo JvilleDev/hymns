@@ -6,7 +6,7 @@ definePageMeta({
 })
 
 const { getAnnouncements } = useApi()
-const { announcement, connect, disconnect } = useSocket()
+const { setAnnouncement, connect, disconnect } = useRealtime()
 const { icons } = useAnnouncementIcons()
 
 const history = ref<any[]>([])

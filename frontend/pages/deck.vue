@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { activeIndex, activeCantoId, connect, disconnect, sendIndex, activeSong, viewerActive, changeViewerState } = useSocket()
+const { sendLine, sendIndex, activeIndex, activeLine, activeSong, activeCantoId, changeViewerState, viewerActive, connect, disconnect } = useRealtime()
 const socketConnected = ref(false)
 
 function toggleViewer() {

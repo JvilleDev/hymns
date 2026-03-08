@@ -7,7 +7,7 @@ import sys
 
 # --- API Configuration ---
 # Change this to the IP/URL of your backend instance
-API_BASE_URL = "http://192.168.1.16:3100"
+API_BASE_URL = "http://192.168.1.32:3100"
 # -------------------------
 
 
