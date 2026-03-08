@@ -21,3 +21,6 @@ backend/data/**
 *.swp
 .DS_Store
 *.pdf
+
+database.db
+cantos.json

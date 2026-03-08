@@ -30,11 +30,11 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    "/backend/**": { proxy: "http://localhost:3100/**" },
-    "/api/**": { proxy: "http://localhost:3100/api/**" },
-    "/sse": { proxy: "http://localhost:3100/sse" },
-    "/search": { proxy: "http://localhost:3100/search" },
-    "/import": { proxy: "http://localhost:3100/import" },
+    "/backend/**": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/**` },
+    "/api/**": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/api/**` },
+    "/sse": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/sse` },
+    "/search": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/search` },
+    "/import": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/import` },
   },
   ssr: false,
   vite: {
