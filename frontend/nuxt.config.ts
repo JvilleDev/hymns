@@ -32,21 +32,9 @@ export default defineNuxtConfig({
   },
   routeRules: {
     "/backend/**": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/**` },
-    "/api/**": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/api/**` },
     "/sse": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/sse` },
     "/search": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/search` },
     "/import": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/import` },
   },
-  ssr: false,
-  vite: {
-    server: {
-      allowedHosts: ["h1wrh0-ip-181-32-81-2.tunnelmole.net"],
-      proxy: {
-        '/sse': {
-          target: 'http://localhost:3100',
-          changeOrigin: false
-        }
-      }
-    }
-  }
+  ssr: true,
 })
