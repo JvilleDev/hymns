@@ -1,5 +1,6 @@
 export const useApi = () => {
-  const { apiUrl: baseUrl } = useRuntimeConfig().public
+  const { apiUrl: baseUrl, backendUrl: directUrlFallback } = useRuntimeConfig().public
+  const directUrl = (directUrlFallback as string) || "http://localhost:3100"
 
   const request = async <T>(path: string, options: any = {}): Promise<T> => {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
@@ -12,7 +13,24 @@ export const useApi = () => {
         timeout: 10000
       })
     } catch (error: any) {
-      console.error(`[API] Error requesting ${fullUrl}:`, error)
+      console.error(`[API] Error requesting ${fullUrl}, checking if fallback is needed...`)
+      
+      // If it's a proxy issue or connection error, try direct URL
+      // We check if the current request was already using the direct URL to avoid infinite loops
+      if (!fullUrl.startsWith(directUrl)) {
+        const fallbackUrl = `${directUrl}${cleanPath}`
+        console.warn(`[API] Retrying with direct URL: ${fallbackUrl}`)
+        try {
+          return await $fetch<T>(fallbackUrl, {
+            ...options,
+            timeout: 10000
+          })
+        } catch (retryError: any) {
+          console.error(`[API] Direct fallback failed for ${fallbackUrl}:`, retryError)
+          throw retryError
+        }
+      }
+
       throw error
     }
   }

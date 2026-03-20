@@ -12,6 +12,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiUrl: "/backend",
+      backendUrl: process.env.BACKEND_URL || "http://localhost:3100",
     }
   },
   experimental: {
