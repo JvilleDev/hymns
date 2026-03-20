@@ -30,14 +30,14 @@ export const useRealtime = () => {
 
   const eventSource = ref<EventSource | null>(null)
 
-  const connect = () => {
+  const connect = async () => {
     if (eventSource.value && eventSource.value.readyState !== EventSource.CLOSED) return
 
     if (import.meta.client) {
         console.log('Attempting SSE connection')
         
-        // Use useApi getFullUrl to benefit from fallback logic
-        const url = api.getFullUrl('/sse')
+        // Use useApi getFullUrl to benefit from fallback logic (now async)
+        const url = await api.getFullUrl('/sse')
 
         const es = new EventSource(url)
         eventSource.value = es
@@ -112,17 +112,13 @@ export const useRealtime = () => {
           }
         }
 
-        es.onerror = (err) => {
-          isConnected.value = false
-          console.error('Realtime connection error:', err)
-          es.close()
-          
-          // Trigger fallback logic in useApi if we are still using proxy
-          // This will help update api_active_url state if the proxy is down
-          api.get('/api/cantos').catch(() => {})
-          
-          setTimeout(connect, 5000)
-        }
+          es.onerror = (err) => {
+            isConnected.value = false
+            console.error('Realtime connection error:', err)
+            es.close()
+            
+            setTimeout(connect, 5000)
+          }
     }
   }
 
