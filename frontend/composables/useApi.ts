@@ -2,25 +2,32 @@ export const useApi = () => {
   const { apiUrl: baseUrl, backendUrl: directUrlFallback } = useRuntimeConfig().public
   const directUrl = (directUrlFallback as string) || "http://localhost:3100"
 
+  const activeBaseUrl = useState<string>('api_active_url', () => baseUrl)
+
   const request = async <T>(path: string, options: any = {}): Promise<T> => {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
-    const fullUrl = `${baseUrl}${cleanPath}`
-
+    
+    // Try current active URL
     try {
+      const fullUrl = `${activeBaseUrl.value}${cleanPath}`
       return await $fetch<T>(fullUrl, { ...options, timeout: 10000 })
     } catch (error) {
-      // Ensure we have a valid absolute directUrl and it's not just pointing back to the same host
-      const isAbsolute = directUrl.startsWith('http')
-      const currentHost = typeof window !== 'undefined' ? window.location.host : ''
-      const isDirectUrlSameAsHost = directUrl.includes(currentHost)
-      
-      if (isAbsolute && !isDirectUrlSameAsHost) {
-        console.warn(`[API] Proxy failed, retrying direct: ${directUrl}${cleanPath}`)
-        return await $fetch<T>(`${directUrl}${cleanPath}`, { ...options, timeout: 10000 })
+      // If we're already using directUrl, just throw
+      if (activeBaseUrl.value === directUrl) throw error
+
+      // Try fallback to directUrl
+      console.warn(`[API] Proxy failed, retrying direct: ${directUrl}${cleanPath}`)
+      try {
+        const res = await $fetch<T>(`${directUrl}${cleanPath}`, { ...options, timeout: 10000 })
+        
+        // If successful, persist directUrl for future requests
+        activeBaseUrl.value = directUrl
+        console.info(`[API] Switched to direct URL for future requests`)
+        
+        return res
+      } catch (retryError) {
+        throw retryError
       }
-      
-      console.error(`[API] Request failed and no valid fallback available: ${fullUrl}`)
-      throw error
     }
   }
 
@@ -43,7 +50,11 @@ export const useApi = () => {
     createAnnouncement: (text: string, position: 'top' | 'bottom' = 'bottom') => request<any>('/api/anuncios', { method: 'POST', body: { text, position } }),
     deleteAnnouncement: (id: string) => request<any>(`/api/anuncios/${id}`, { method: 'DELETE' }),
     clearAnnouncements: () => request<any>('/api/anuncios', { method: 'DELETE' }),
-    deleteSelectedAnnouncements: (ids: string[]) => request<any>('/api/anuncios/delete-selected', { method: 'POST', body: { ids } })
+    deleteSelectedAnnouncements: (ids: string[]) => request<any>('/api/anuncios/delete-selected', { method: 'POST', body: { ids } }),
+    
+    // Config & Helpers
+    activeBaseUrl,
+    getFullUrl: (path: string) => `${activeBaseUrl.value}${path.startsWith('/') ? path : `/${path}`}`
   }
 }
 

@@ -10,6 +10,7 @@ export interface ParsedSong {
 }
 
 export const useRealtime = () => {
+  const api = useApi()
   const isConnected = ref(false)
   const viewerActive = ref(false)
   const activeLine = ref('')
@@ -35,21 +36,20 @@ export const useRealtime = () => {
     if (import.meta.client) {
         console.log('Attempting SSE connection')
         
-        // SSE is just HTTP, so /sse should work via proxy
-        const url = `/sse`
+        // Use useApi getFullUrl to benefit from fallback logic
+        const url = api.getFullUrl('/sse')
 
         const es = new EventSource(url)
         eventSource.value = es
 
         es.onopen = () => {
           console.log('SSE connection headers received')
-          // We wait for the first message to confirm full data flow through proxy
         }
 
         es.onmessage = (event) => {
           if (!isConnected.value) {
             isConnected.value = true
-            console.log('SSE connected successfully via proxy')
+            console.log('SSE connected successfully')
             import('vue-sonner').then(({ toast }) => {
               toast.success('Servidor conectado (Realtime)')
             })
@@ -116,6 +116,11 @@ export const useRealtime = () => {
           isConnected.value = false
           console.error('Realtime connection error:', err)
           es.close()
+          
+          // Trigger fallback logic in useApi if we are still using proxy
+          // This will help update api_active_url state if the proxy is down
+          api.get('/api/cantos').catch(() => {})
+          
           setTimeout(connect, 5000)
         }
     }
@@ -131,10 +136,7 @@ export const useRealtime = () => {
 
   const sendEvent = async (type: string, data: any) => {
     try {
-        await $fetch(`/api/ws-events/${type}`, {
-            method: 'POST',
-            body: { data }
-        })
+        await api.post(`/api/ws-events/${type}`, { data })
     } catch (e) {
         console.error(`Error sending event ${type}:`, e)
     }
