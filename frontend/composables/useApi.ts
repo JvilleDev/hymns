@@ -8,9 +8,19 @@ export const useApi = () => {
 
     try {
       return await $fetch<T>(fullUrl, { ...options, timeout: 10000 })
-    } catch {
-      console.warn(`[API] Proxy failed, retrying direct: ${directUrl}${cleanPath}`)
-      return await $fetch<T>(`${directUrl}${cleanPath}`, { ...options, timeout: 10000 })
+    } catch (error) {
+      // Ensure we have a valid absolute directUrl and it's not just pointing back to the same host
+      const isAbsolute = directUrl.startsWith('http')
+      const currentHost = typeof window !== 'undefined' ? window.location.host : ''
+      const isDirectUrlSameAsHost = directUrl.includes(currentHost)
+      
+      if (isAbsolute && !isDirectUrlSameAsHost) {
+        console.warn(`[API] Proxy failed, retrying direct: ${directUrl}${cleanPath}`)
+        return await $fetch<T>(`${directUrl}${cleanPath}`, { ...options, timeout: 10000 })
+      }
+      
+      console.error(`[API] Request failed and no valid fallback available: ${fullUrl}`)
+      throw error
     }
   }
 
