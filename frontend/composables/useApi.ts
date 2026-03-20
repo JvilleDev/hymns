@@ -7,31 +7,10 @@ export const useApi = () => {
     const fullUrl = `${baseUrl}${cleanPath}`
 
     try {
-      console.log(`[API] Requesting: ${fullUrl}`)
-      return await $fetch<T>(fullUrl, {
-        ...options,
-        timeout: 10000
-      })
-    } catch (error: any) {
-      console.error(`[API] Error requesting ${fullUrl}, checking if fallback is needed...`)
-      
-      // If it's a proxy issue or connection error, try direct URL
-      // We check if the current request was already using the direct URL to avoid infinite loops
-      if (!fullUrl.startsWith(directUrl)) {
-        const fallbackUrl = `${directUrl}${cleanPath}`
-        console.warn(`[API] Retrying with direct URL: ${fallbackUrl}`)
-        try {
-          return await $fetch<T>(fallbackUrl, {
-            ...options,
-            timeout: 10000
-          })
-        } catch (retryError: any) {
-          console.error(`[API] Direct fallback failed for ${fallbackUrl}:`, retryError)
-          throw retryError
-        }
-      }
-
-      throw error
+      return await $fetch<T>(fullUrl, { ...options, timeout: 10000 })
+    } catch {
+      console.warn(`[API] Proxy failed, retrying direct: ${directUrl}${cleanPath}`)
+      return await $fetch<T>(`${directUrl}${cleanPath}`, { ...options, timeout: 10000 })
     }
   }
 
