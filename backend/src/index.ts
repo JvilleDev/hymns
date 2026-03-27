@@ -2,6 +2,7 @@ import Database from "bun:sqlite";
 import express, { Response } from "express";
 import { v4 as uuid } from "uuid";
 import http from "http";
+import { WebSocketServer } from 'ws';
 // @ts-ignore
 import colorprint from "colorprint";
 import cors from "cors";
@@ -11,6 +12,7 @@ const db = new Database("./src/data/database.db");
 
 const app = express();
 const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
 const PORT = 3100;
 
@@ -20,13 +22,40 @@ app.use(express.json({limit: '5mb'}));
 
 let fuse: Fuse<Canto>;
 
-// -- SSE Logic --
+// -- Real-time Sync Logic (SSE & WS) --
 
 let clients: { id: string, res: Response }[] = [];
+let wsClients: any[] = [];
+
+wss.on('connection', (ws) => {
+    wsClients.push(ws);
+    colorprint.NOTICE(`[WS Client Connected] Count: ${wsClients.length}`);
+    
+    // Send initial state immediately
+    ws.send(JSON.stringify({ type: "initial", data: initialInfo }));
+
+    ws.on('close', () => {
+        wsClients = wsClients.filter(c => c !== ws);
+        colorprint.DEBUG(`[WS Client Disconnected] Count: ${wsClients.length}`);
+    });
+
+    ws.on('error', (err) => {
+        console.error('[WS Error]', err);
+    });
+});
 
 function broadcast(data: any) {
-    const msg = `data: ${JSON.stringify(data)}\n\n`;
-    clients.forEach(client => client.res.write(msg));
+    // 1. SSE Broadcast
+    const sseMsg = `data: ${JSON.stringify(data)}\n\n`;
+    clients.forEach(client => client.res.write(sseMsg));
+
+    // 2. WS Broadcast
+    const wsMsg = JSON.stringify(data);
+    wsClients.forEach(ws => {
+        if (ws.readyState === 1) { // WebSocket.OPEN
+            ws.send(wsMsg);
+        }
+    });
 }
 
 app.get("/sse", (req, res) => {

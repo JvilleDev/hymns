@@ -204,6 +204,14 @@ watch(currentIndex, () => {
   scrollToActiveLine()
 })
 
+// Re-cargar cantos cuando la conexión se recupera/establece
+watch(() => api.isHealthy.value, (healthy) => {
+  if (healthy && songs.value.length === 0) {
+    console.log('[Index] Conexión establecida, cargando cantos...')
+    fetchSongs()
+  }
+})
+
 onUnmounted(() => {
   disconnect()
 })

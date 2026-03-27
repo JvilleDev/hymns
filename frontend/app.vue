@@ -16,6 +16,7 @@ useHead({
 <template>
   <NuxtRouteAnnouncer />
   <TooltipProvider />
+  <ConnectionDialog />
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
