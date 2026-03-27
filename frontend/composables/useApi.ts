@@ -2,8 +2,21 @@
 let discoveryPromise: Promise<void> | null = null;
 
 export const useApi = () => {
-  const { apiUrl: baseUrl, backendUrl: directUrlFallback } = useRuntimeConfig().public
-  const directUrl = (directUrlFallback as string) || "http://localhost:3100"
+  const { apiUrl: baseUrl, backendUrl: configDirectUrl } = useRuntimeConfig().public
+  
+  // Calcular la URL directa (fallback) dinámicamente si no está en el config
+  const getDirectUrl = () => {
+    if (configDirectUrl) return configDirectUrl as string;
+    if (import.meta.client) {
+      // Si estamos en el cliente, usamos el mismo host pero el puerto 3100
+      const protocol = window.location.protocol;
+      const hostname = window.location.hostname;
+      return `${protocol}//${hostname}:3100`;
+    }
+    return "http://localhost:3100";
+  };
+
+  const directUrl = getDirectUrl();
 
   // El estado de la URL base activa para toda la aplicación
   const activeBaseUrl = useState<string>('api_active_url', () => baseUrl)

@@ -447,8 +447,8 @@ interface Canto {
 
 // -- Start Server --
 
-server.listen(PORT, async () => {
-    colorprint.INFO("Server running in http://localhost:" + PORT);
+server.listen(PORT, "0.0.0.0", async () => {
+    colorprint.INFO("Server running in http://0.0.0.0:" + PORT);
     await prepareDb();
     await setupFuse();
 });
