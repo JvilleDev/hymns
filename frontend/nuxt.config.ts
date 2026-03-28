@@ -27,7 +27,7 @@ export default defineNuxtConfig({
   },
   googleFonts: {
     families: {
-      'Outfit': true,
+      'Manrope': [400, 500, 600, 700, 800],
     }
   },
   routeRules: {

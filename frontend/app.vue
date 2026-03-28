@@ -22,7 +22,6 @@ useHead({
   </NuxtLayout>
 </template>
 <style>
-/* Base Smoothness */
 html,
 body,
 #__nuxt {
@@ -30,7 +29,10 @@ body,
   padding: 0;
   width: 100%;
   min-height: 100svh;
-  font-family: 'Outfit', sans-serif;
+}
+
+* {
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Custom Selection */

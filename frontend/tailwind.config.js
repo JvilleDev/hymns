@@ -61,6 +61,10 @@ export default {
         "surface-2": "var(--surface-2)",
         "surface-3": "var(--surface-3)",
       },
+      fontFamily: {
+        sans: ["Inter", "sans-serif"],
+        display: ["Manrope", "sans-serif"],
+      },
       borderRadius: {
         xl: "calc(var(--radius) + 4px)",
         lg: "var(--radius)",

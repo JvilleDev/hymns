@@ -7,6 +7,7 @@ const items = [
   { title: "Visor", value: "/visor", icon: "tabler:eye", description: "Control de proyección" },
   { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Lower Third / Cinta de noticias" },
 ];
+const { isManualConnectionTrigger } = useApi();
 const route = useRoute();
 
 const currentPage = computed(() => {
@@ -46,9 +47,32 @@ onMounted(() => {
         </NuxtLink>
       </nav>
 
-      <div class="md:hidden">
-        <!-- Mobile Label Placeholder or Avatar -->
-        <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{{ items.find(i => i.value === route.path)?.title || 'Himnario' }}</span>
+      <div class="flex items-center gap-2">
+        <div class="hidden md:block">
+          <GButton 
+            variant="ghost" 
+            size="icon" 
+            class="rounded-xl text-muted-foreground hover:text-primary transition-colors"
+            tooltip="Configurar URL del servidor"
+            @click="isManualConnectionTrigger = true"
+          >
+            <Icon name="tabler:settings-automation" class="size-5" />
+          </GButton>
+        </div>
+
+        <div class="md:hidden flex items-center gap-3">
+          <!-- Mobile Label Placeholder or Avatar -->
+          <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{{ items.find(i => i.value === route.path)?.title || 'Himnario' }}</span>
+          
+          <GButton 
+            variant="ghost" 
+            size="icon" 
+            class="size-8 rounded-lg text-muted-foreground"
+            @click="isManualConnectionTrigger = true"
+          >
+            <Icon name="tabler:settings-automation" class="size-4" />
+          </GButton>
+        </div>
       </div>
     </header>
 

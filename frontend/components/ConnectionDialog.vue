@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 
-const { isConnectionError, retryConnection, activeBaseUrl } = useApi()
+const { isConnectionError, isManualConnectionTrigger, retryConnection, activeBaseUrl } = useApi()
 const urlInput = ref('')
 const isRetrying = ref(false)
+
+const isOpen = computed({
+  get: () => isConnectionError.value || isManualConnectionTrigger.value,
+  set: (val) => {
+    isConnectionError.value = val
+    isManualConnectionTrigger.value = val
+  }
+})
+
+const dialogTitle = computed(() => isManualConnectionTrigger.value ? 'Configuración de Servidor' : 'Servidor no encontrado')
+const dialogDescription = computed(() => isManualConnectionTrigger.value 
+  ? 'Ajusta la dirección del backend. Esto reiniciará la conexión con el servidor especificado.' 
+  : 'No se pudo establecer conexión con el backend. Por favor, especifica la dirección IP y el puerto para continuar.')
 
 onMounted(() => {
   // Inicializar input con la URL actual (sin el protocolo para facilitar edición rápida)
@@ -17,6 +30,8 @@ const handleConnect = async () => {
   isRetrying.value = true
   try {
     await retryConnection(urlInput.value)
+    // Cerrar si tiene éxito
+    isOpen.value = false
   } catch (err) {
     console.error('[ConnectionDialog] Reintento fallido:', err)
   } finally {
@@ -27,9 +42,9 @@ const handleConnect = async () => {
 
 <template>
   <GDialog 
-    v-model="isConnectionError"
-    title="Servidor no encontrado"
-    description="No se pudo establecer conexión con el backend. Por favor, especifica la dirección IP y el puerto para continuar."
+    v-model="isOpen"
+    :title="dialogTitle"
+    :description="dialogDescription"
     class="max-w-md"
   >
     <div class="space-y-4 py-2">

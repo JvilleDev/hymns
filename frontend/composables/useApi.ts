@@ -28,6 +28,9 @@ export const useApi = () => {
   // Estado para saber si hay un error de conexión crítico que requiere intervención
   const isConnectionError = useState<boolean>('api_connection_error', () => false)
 
+  // Estado para saber si el usuario solicitó abrir el diálogo manualmente
+  const isManualConnectionTrigger = useState<boolean>('api_manual_trigger', () => false)
+
   // Estado para saber si ya hemos comprobado que la conexión es exitosa
   const isHealthy = useState<boolean>('api_is_healthy', () => false)
 
@@ -137,6 +140,7 @@ export const useApi = () => {
     activeBaseUrl,
     isHealthy,
     isConnectionError,
+    isManualConnectionTrigger,
     retryConnection: async (inputUrl: string) => {
       // Limpiar input (eliminar espacios, asegurar http://)
       let cleaned = inputUrl.trim();
