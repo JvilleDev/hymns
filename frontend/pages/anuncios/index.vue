@@ -3,11 +3,20 @@ import { toast } from 'vue-sonner'
 import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
 import { onKeyStroke } from '@vueuse/core'
 
-const { announcement, setAnnouncement, transcription, setTranscriptionActive, connect, socket, isConnected } = useRealtime()
+const { 
+  announcement, 
+  setAnnouncement, 
+  transcription, 
+  setTranscriptionActive, 
+  connect, 
+  isConnected, 
+  connectionStatus 
+} = useRealtime()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
 
 const textInput = ref('')
+const currentTopic = ref('')
 const position = ref<'top' | 'bottom'>('bottom')
 const isLoading = ref(false)
 const history = ref<any[]>([])
@@ -224,6 +233,14 @@ const scrollToActive = () => {
 const fetchHistory = async () => {
   try {
     history.value = await getAnnouncements()
+    
+    // Si no hay un tema actual seleccionado, cargar el último del historial
+    if (!currentTopic.value && history.value.length > 0) {
+      const lastItemWithTopic = history.value.find(item => item.topic)
+      if (lastItemWithTopic) {
+        currentTopic.value = lastItemWithTopic.topic
+      }
+    }
   } catch (e) {
     toast.error('Error al cargar historial')
   }
@@ -237,7 +254,7 @@ const sendAnnouncement = async () => {
   isLoading.value = true
   try {
     // 1. Save to history
-    await createAnnouncement(textInput.value, position.value)
+    await createAnnouncement(textInput.value, position.value, currentTopic.value)
     
     // 2. Activate on screen (only if auto-send is enabled)
     if (autoSendToAir.value) {
@@ -256,6 +273,19 @@ const sendAnnouncement = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const copyToInput = (item: any) => {
+  textInput.value = item.text
+  position.value = item.position || 'bottom'
+  if (item.topic) {
+    currentTopic.value = item.topic
+  }
+  toast.info('Texto copiado al editor')
+}
+
+const isActive = (item: any) => {
+  return announcement.value.active && announcement.value.text === item.text && announcement.value.position === (item.position || 'bottom')
 }
 
 const toggleVisibility = () => {
@@ -366,14 +396,33 @@ onMounted(() => {
                   </p>
                 </div>
                 <div class="flex items-center gap-2">
-                  <div class="size-2 rounded-full" :class="isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 animate-pulse'"></div>
+                  <div class="size-2 rounded-full transition-all duration-500" 
+                    :class="{
+                      'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-in zoom-in duration-300': connectionStatus === 'connected',
+                      'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)] animate-pulse': connectionStatus === 'connecting',
+                      'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse': connectionStatus === 'disconnected'
+                    }">
+                  </div>
                   <span class="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/70">
-                    {{isConnected ? "Conectado" : "Desconectado"}}
+                    {{ connectionStatus === 'connected' ? "Conectado" : connectionStatus === 'connecting' ? "Conectando..." : "Desconectado" }}
                   </span>
                 </div>
               </div>
 
               <div class="space-y-4">
+                <div class="space-y-2">
+                  <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tema / Biblioteca</label>
+                  <div class="relative">
+                    <Icon name="tabler:library" class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <input 
+                      v-model="currentTopic" 
+                      type="text" 
+                      placeholder="Ej: Culto de Jóvenes, Anuncios Generales..." 
+                      class="w-full bg-muted/50 border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+                </div>
+
                 <div class="relative">
                   <!-- Icon Autocomplete Menu -->
                   <Teleport to="body">
@@ -573,8 +622,10 @@ onMounted(() => {
           <div class="flex-1 flex flex-col overflow-hidden">
             <div class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
               <div>
-                <h2 class="text-lg font-bold tracking-tight mb-1">Historial</h2>
-                <p class="text-xs text-muted-foreground">Gestiona tus anuncios previos</p>
+                <h2 class="text-lg font-bold tracking-tight mb-1 truncate max-w-[200px]" :title="currentTopic || 'Historial'">
+                  {{ currentTopic || 'Historial' }}
+                </h2>
+                <p class="text-xs text-muted-foreground">{{ currentTopic ? 'Anuncios de este tema' : 'Gestiona tus anuncios previos' }}</p>
               </div>
               <div class="flex items-center gap-2">
                 <GButton 
@@ -632,11 +683,22 @@ onMounted(() => {
 
                   <div class="flex-1 min-w-0 pr-2">
                     <div class="flex items-start justify-between mb-2">
-                      <span class="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">
-                        {{ new Date(item.createdAt).toLocaleDateString() }} - {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-                      </span>
-                      <div class="px-2 py-0.5 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50">
-                        {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
+                      <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">
+                          {{ new Date(item.createdAt).toLocaleDateString() }} - {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                        </span>
+                        <span v-if="item.topic" class="text-[10px] font-bold text-primary/70 uppercase tracking-widest flex items-center gap-1 mt-0.5">
+                          <Icon name="tabler:library" class="size-3" />
+                          {{ item.topic }}
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div v-if="isActive(item)" class="px-2 py-0.5 rounded bg-green-500 text-[10px] uppercase font-bold text-white shadow-[0_0_10px_rgba(34,197,94,0.4)] animate-pulse">
+                          AL AIRE
+                        </div>
+                        <div class="px-2 py-0.5 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50">
+                          {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
+                        </div>
                       </div>
                     </div>
 
@@ -656,7 +718,11 @@ onMounted(() => {
                         <Icon name="tabler:send" class="size-3.5" />
                         Reenviar
                       </GButton>
-                      <button @click="deleteItem(item.id)" class="p-1.5 text-muted-foreground hover:text-red-500 transition-colors">
+                      <GButton @click="copyToInput(item)" variant="ghost" size="sm" class="h-8 gap-1.5 px-3 text-muted-foreground hover:text-foreground border border-border/50">
+                        <Icon name="tabler:copy" class="size-3.5" />
+                        Copiar
+                      </GButton>
+                      <button @click="deleteItem(item.id)" class="p-1.5 text-muted-foreground hover:text-red-500 transition-colors ml-auto">
                         <Icon name="tabler:trash" class="size-4" />
                       </button>
                     </div>
@@ -674,8 +740,10 @@ onMounted(() => {
         <div class="flex flex-col h-full bg-background">
           <div class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
             <div>
-              <h2 class="text-lg font-bold tracking-tight mb-1">Historial</h2>
-              <p class="text-xs text-muted-foreground">Gestiona tus anuncios</p>
+              <h2 class="text-lg font-bold tracking-tight mb-1 truncate max-w-[180px]">
+                {{ currentTopic || 'Historial' }}
+              </h2>
+              <p class="text-xs text-muted-foreground">{{ currentTopic ? 'Anuncios de este tema' : 'Gestiona tus anuncios' }}</p>
             </div>
             <div class="flex items-center gap-2">
                <GButton 
@@ -736,11 +804,19 @@ onMounted(() => {
 
                 <div class="flex-1 min-w-0" @click="!isSelecting && resendFromHistory(item); !isSelecting && (showMobileHistory = false)">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
-                      {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-                    </span>
-                    <div class="px-1.5 py-0.5 rounded bg-muted/50 text-[8px] uppercase font-bold text-muted-foreground border border-border/50">
-                      {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
+                    <div class="flex flex-col">
+                      <span class="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
+                        {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                      </span>
+                      <span v-if="item.topic" class="text-[8px] font-bold text-primary/70 uppercase tracking-widest mt-0.5">
+                        {{ item.topic }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <div v-if="isActive(item)" class="size-2 rounded-full bg-green-500 animate-pulse shockwave-green"></div>
+                      <div class="px-1.5 py-0.5 rounded bg-muted/50 text-[8px] uppercase font-bold text-muted-foreground border border-border/50">
+                        {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
+                      </div>
                     </div>
                   </div>
                   <div class="text-sm font-bold text-foreground leading-tight truncate">

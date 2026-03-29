@@ -1,6 +1,7 @@
 // Variable de módulo para actuar como "lock" global durante la fase de descubrimiento en el cliente
 let discoveryPromise: Promise<void> | null = null;
 const MANUAL_URL_KEY = 'api_manual_backend_url';
+const LAST_WORKING_URL_KEY = 'api_last_working_url';
 
 export const useApi = () => {
   const { apiUrl: baseUrl, backendUrl: configDirectUrl } = useRuntimeConfig().public
@@ -34,10 +35,21 @@ export const useApi = () => {
   // Estado para saber si ya hemos comprobado que la conexión es exitosa
   const isHealthy = useState<boolean>('api_is_healthy', () => false)
 
-  // Cargar URL manual de localStorage en el cliente
-  if (import.meta.client && !manualUrl.value) {
-    const saved = localStorage.getItem(MANUAL_URL_KEY);
-    if (saved) manualUrl.value = saved;
+  // Cargar URL manual y última URL funcional de localStorage en el cliente
+  if (import.meta.client) {
+    if (!manualUrl.value) {
+      const saved = localStorage.getItem(MANUAL_URL_KEY);
+      if (saved) manualUrl.value = saved;
+    }
+    
+    // Si tenemos URL manual o una que funcionó antes, usarla INMEDIATAMENTE para evitar el fallback a /backend
+    const lastWorking = localStorage.getItem(LAST_WORKING_URL_KEY);
+    const preferred = manualUrl.value || lastWorking;
+    
+    if (preferred && activeBaseUrl.value === baseUrl) {
+      console.log(`[API] Inicializando con URL preferida: ${preferred}`);
+      activeBaseUrl.value = preferred;
+    }
   }
 
   /**
@@ -45,59 +57,68 @@ export const useApi = () => {
    * Si hay múltiples llamadas simultáneas, todas esperan a la misma promesa.
    */
   const ensureHealthy = async () => {
+    // Si ya sabemos que está saludable, o estamos en proceso de descubrirlo, no re-iniciar
     if (isHealthy.value) return;
 
     if (discoveryPromise) {
-      await discoveryPromise;
-      return;
+      return discoveryPromise;
     }
 
     discoveryPromise = (async () => {
-      // 1. Intentar con URL manual si existe
-      if (manualUrl.value) {
+      const lastWorking = import.meta.client ? localStorage.getItem(LAST_WORKING_URL_KEY) : null;
+      const manual = manualUrl.value;
+
+      // Lista de URLs para probar en orden de prioridad
+      const candidates = [
+        { url: manual, name: 'Manual' },
+        { url: lastWorking, name: 'Memoria' },
+        { url: baseUrl, name: 'Proxy/Config' },
+        { url: directUrl, name: 'Directo (3100)' }
+      ].filter(c => c.url && c.url !== '');
+
+      console.log(`[API] Iniciando descubrimiento de conexión (${candidates.length} candidatos)`);
+
+      for (const candidate of candidates) {
+        if (!candidate.url) continue;
+        
         try {
-          console.log(`[API] Probando URL manual: ${manualUrl.value}`);
-          await $fetch(`${manualUrl.value}/api/cantos`, { timeout: 3000 });
-          activeBaseUrl.value = manualUrl.value;
+          // Si el candidato es solo un path relativo (como /backend), lo probamos con cautela
+          const testUrl = candidate.url.startsWith('/') 
+            ? (import.meta.client ? `${window.location.origin}${candidate.url}` : candidate.url)
+            : candidate.url;
+
+          console.log(`[API] Probando ${candidate.name}: ${testUrl}`);
+          await $fetch(`${testUrl}/api/cantos`, { timeout: 2500 });
+          
+          // EXITOSO
+          activeBaseUrl.value = candidate.url;
           isHealthy.value = true;
           isConnectionError.value = false;
+          
+          if (import.meta.client && candidate.url !== baseUrl) {
+            localStorage.setItem(LAST_WORKING_URL_KEY, candidate.url);
+          }
+          
+          console.info(`[API] Conexión establecida via ${candidate.name}: ${candidate.url}`);
           return;
         } catch (e) {
-          console.warn(`[API] URL manual fallida: ${manualUrl.value}`);
+          console.warn(`[API] ${candidate.name} falló: ${candidate.url}`);
         }
       }
 
-      // 2. Intentar con URL base (proxy/config)
-      try {
-        console.log(`[API] Comprobando salud de: ${activeBaseUrl.value}`);
-        await $fetch(`${activeBaseUrl.value}/api/cantos`, { timeout: 3000 });
-        isHealthy.value = true;
-        isConnectionError.value = false;
-        console.log(`[API] Conexión saludable confirmada: ${activeBaseUrl.value}`);
-      } catch (err) {
-        console.warn(`[API] Fallo de salud en ${activeBaseUrl.value}, intentando fallback directo...`);
-        // 3. Intentar con fallback directo
-        try {
-          await $fetch(`${directUrl}/api/cantos`, { timeout: 3000 });
-          activeBaseUrl.value = directUrl;
-          isHealthy.value = true;
-          isConnectionError.value = false;
-          console.info(`[API] Fallback exitoso a: ${directUrl}`);
-        } catch (fallbackErr) {
-          console.error(`[API] Error crítico: No se pudo conectar ni al proxy ni al backend directo.`);
-          isHealthy.value = false;
-          isConnectionError.value = true;
-        }
-      } finally {
-        discoveryPromise = null;
-      }
-    })();
+      // Si llegamos aquí, NADA funcionó
+      console.error(`[API] Error crítico: No se pudo establecer ninguna conexión funcional.`);
+      isHealthy.value = false;
+      isConnectionError.value = true;
+    })().finally(() => {
+      discoveryPromise = null;
+    });
 
-    await discoveryPromise;
+    return discoveryPromise;
   }
 
   const request = async <T>(path: string, options: any = {}): Promise<T> => {
-    // Primero nos aseguramos de que el host es saludable (esto encola peticiones paralelas)
+    // Primero nos aseguramos de que el host es saludable
     await ensureHealthy();
     
     const cleanPath = path.startsWith('/') ? path : `/${path}`
@@ -106,9 +127,13 @@ export const useApi = () => {
     try {
       return await $fetch<T>(fullUrl, { ...options, timeout: 10000 })
     } catch (error: any) {
-      console.error(`[API] Error en ${path}:`, error)
-      // Si la petición falla por conexión, invalidamos la salud para forzar re-descubrimiento
-      if (error.name === 'FetchError' || error.code === 'ECONNREFUSED') {
+      // Solo logueamos si no es un error de redirección o algo esperado
+      if (error.status !== 304) {
+        console.error(`[API] Error en ${path}:`, error)
+      }
+      
+      // Si la petición falla por red, invalidamos salud para forzar re-descubrimiento en la próxima
+      if (error.name === 'FetchError' || error.name === 'AbortError' || !error.response) {
         isHealthy.value = false;
       }
       throw error
@@ -131,7 +156,7 @@ export const useApi = () => {
 
     // Anuncios
     getAnnouncements: () => request<any[]>('/api/anuncios'),
-    createAnnouncement: (text: string, position: 'top' | 'bottom' = 'bottom') => request<any>('/api/anuncios', { method: 'POST', body: { text, position } }),
+    createAnnouncement: (text: string, position: 'top' | 'bottom' = 'bottom', topic?: string) => request<any>('/api/anuncios', { method: 'POST', body: { text, position, topic } }),
     deleteAnnouncement: (id: string) => request<any>(`/api/anuncios/${id}`, { method: 'DELETE' }),
     clearAnnouncements: () => request<any>('/api/anuncios', { method: 'DELETE' }),
     deleteSelectedAnnouncements: (ids: string[]) => request<any>('/api/anuncios/delete-selected', { method: 'POST', body: { ids } }),
@@ -141,12 +166,12 @@ export const useApi = () => {
     isHealthy,
     isConnectionError,
     isManualConnectionTrigger,
-    retryConnection: async (inputUrl: string) => {
-      // Limpiar input (eliminar espacios, asegurar http://)
-      let cleaned = inputUrl.trim();
-      if (!cleaned.startsWith('http')) {
-        cleaned = `http://${cleaned}`;
-      }
+    retryConnection: async (inputUrl: string, useSsl: boolean = false) => {
+      // Limpiar input (eliminar espacios)
+      let cleaned = inputUrl.trim().replace(/^https?:\/\//, '');
+      
+      // Aplicar protocolo basado en switch
+      cleaned = `${useSsl ? 'https' : 'http'}://${cleaned}`;
       
       manualUrl.value = cleaned;
       if (import.meta.client) {
@@ -167,6 +192,14 @@ export const useApi = () => {
       // Convierte http:// a ws:// y https:// a wss://
       const wsBase = activeBaseUrl.value.replace(/^http/, 'ws');
       return `${wsBase}${path.startsWith('/') ? path : `/${path}`}`;
+    },
+    checkUrl: async (url: string): Promise<boolean> => {
+      try {
+        await $fetch(`${url}/api/cantos`, { timeout: 2000 });
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
   }
 }

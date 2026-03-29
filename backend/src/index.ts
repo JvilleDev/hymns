@@ -14,7 +14,29 @@ const db = new Database("./src/data/database.db");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
+
+// Explicitly handle WebSocket upgrades for /ws path
+server.on("upgrade", (request, socket, head) => {
+  const url = request.url || "";
+  const host = request.headers.host || "unknown";
+  
+  // Log for debugging tunnel issues
+  colorprint.DEBUG(`[Upgrade Request] Host: ${host}, URL: ${url}`);
+
+  // Use a more flexible path detection
+  const isWsPath = url === "/ws" || url.endsWith("/ws") || url.includes("/ws?");
+
+  if (isWsPath) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  } else {
+    colorprint.WARN(`[Upgrade Rejected] Path not matched: ${url}`);
+    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    socket.destroy();
+  }
+});
 
 let currentTunnelUrl = "";
 
@@ -32,6 +54,13 @@ let clients: { id: string; res: Response }[] = [];
 let wsClients: any[] = [];
 
 wss.on("connection", (ws) => {
+  // @ts-ignore
+  ws.isAlive = true;
+  ws.on("pong", () => {
+    // @ts-ignore
+    ws.isAlive = true;
+  });
+
   wsClients.push(ws);
   colorprint.NOTICE(`[WS Client Connected] Count: ${wsClients.length}`);
 
@@ -46,6 +75,19 @@ wss.on("connection", (ws) => {
   ws.on("error", (err) => {
     console.error("[WS Error]", err);
   });
+});
+
+// WS Heartbeat interval
+const wsInterval = setInterval(() => {
+  wss.clients.forEach((ws: any) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+process.on("close", () => {
+  clearInterval(wsInterval);
 });
 
 function getTunnel() {
@@ -118,7 +160,13 @@ app.get("/sse", (req, res) => {
     `data: ${JSON.stringify({ type: "initial", data: initialInfo })}\n\n`,
   );
 
+  // SSE Keep-alive interval
+  const keepAlive = setInterval(() => {
+    res.write(": keepalive\n\n");
+  }, 15000);
+
   req.on("close", () => {
+    clearInterval(keepAlive);
     clients = clients.filter((c) => c.id !== clientId);
     colorprint.DEBUG(`[SSE Client Disconnected] ID: ${clientId}`);
   });
@@ -611,7 +659,7 @@ app.get("/api/anuncios", (req, res) => {
 
 app.post("/api/anuncios", (req, res) => {
   try {
-    const { text, position } = req.body;
+    const { text, position, topic } = req.body;
     if (!text) {
       res.status(400).json({ error: "Text is required" });
       return;
@@ -620,10 +668,10 @@ app.post("/api/anuncios", (req, res) => {
     const createdAt = Date.now();
     const pos = position || "bottom";
     const insert = db.query(
-      "INSERT INTO anuncios (id, text, position, createdAt) VALUES (?, ?, ?, ?)",
+      "INSERT INTO anuncios (id, text, position, topic, createdAt) VALUES (?, ?, ?, ?, ?)",
     );
-    insert.run(id, text, pos, createdAt);
-    res.json({ id, text, position: pos, createdAt });
+    insert.run(id, text, pos, topic || null, createdAt);
+    res.json({ id, text, position: pos, topic: topic || null, createdAt });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -788,9 +836,9 @@ async function prepareDb() {
       "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', createdAt INTEGER)",
     );
     try {
-      db.query("SELECT position FROM anuncios LIMIT 1").get();
+      db.query("SELECT topic FROM anuncios LIMIT 1").get();
     } catch (e) {
-      db.run("ALTER TABLE anuncios ADD COLUMN position TEXT DEFAULT 'bottom'");
+      db.run("ALTER TABLE anuncios ADD COLUMN topic TEXT");
     }
   } catch (error) {
     console.error("Error preparing database:", error);

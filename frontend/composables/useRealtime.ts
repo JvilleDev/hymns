@@ -18,6 +18,7 @@ export const useRealtime = () => {
   
   // Compartir el estado entre todas las instancias del composable usando useState
   const isConnected = useState('realtime:isConnected', () => false)
+  const connectionStatus = useState<'disconnected' | 'connecting' | 'connected'>('realtime:status', () => 'disconnected')
   const viewerActive = useState('realtime:viewerActive', () => false)
   const activeLine = useState('realtime:activeLine', () => '')
   const activeCantoId = useState('realtime:activeCantoId', () => '')
@@ -35,13 +36,6 @@ export const useRealtime = () => {
   }))
 
   const handleMessage = (payload: string) => {
-    if (!isConnected.value) {
-      isConnected.value = true
-      import('vue-sonner').then(({ toast }) => {
-        toast.success(`Servidor conectado (${sharedWS ? 'WebSocket' : 'SSE'})`)
-      })
-    }
-    
     try {
       const { type, data } = JSON.parse(payload)
       
@@ -112,11 +106,17 @@ export const useRealtime = () => {
                 ws.close()
                 reject(new Error('WS Timeout'))
             }
-        }, 3000)
+        }, 10000)
 
         ws.onopen = () => {
             clearTimeout(timeout)
             console.log('[Realtime] WebSocket connected')
+            isConnected.value = true
+            connectionStatus.value = 'connected'
+            
+            import('vue-sonner').then(({ toast }) => {
+                toast.success('Servidor conectado (WebSocket)')
+            })
             resolve()
         }
 
@@ -133,6 +133,7 @@ export const useRealtime = () => {
             sharedWS = null
             if (isConnected.value) {
                 isConnected.value = false
+                connectionStatus.value = 'disconnected'
                 console.log('[Realtime] WebSocket closed, retrying cascade...')
                 connect()
             }
@@ -148,8 +149,24 @@ export const useRealtime = () => {
         const es = new EventSource(url)
         sharedES = es
 
+        const timeout = setTimeout(() => {
+          if (es.readyState !== EventSource.OPEN) {
+            console.warn('[Realtime] SSE Timeout reached')
+            es.close()
+            sharedES = null
+            reject(new Error('SSE Timeout'))
+          }
+        }, 10000)
+
         es.onopen = () => {
+          clearTimeout(timeout)
           console.log('[Realtime] SSE connected')
+          isConnected.value = true
+          connectionStatus.value = 'connected'
+          
+          import('vue-sonner').then(({ toast }) => {
+            toast.success('Servidor conectado (SSE)')
+          })
           resolve()
         }
 
@@ -158,6 +175,7 @@ export const useRealtime = () => {
         }
 
         es.onerror = (err) => {
+          clearTimeout(timeout)
           es.close()
           sharedES = null
           reject(err)
@@ -172,6 +190,8 @@ export const useRealtime = () => {
     if (sharedWS?.readyState === WebSocket.OPEN || sharedWS?.readyState === WebSocket.CONNECTING) return
     if (sharedES?.readyState === EventSource.OPEN || sharedES?.readyState === EventSource.CONNECTING) return
 
+    connectionStatus.value = 'connecting'
+
     try {
         await tryWebSocket()
     } catch (wsErr) {
@@ -181,6 +201,7 @@ export const useRealtime = () => {
         } catch (sseErr) {
             console.error('[Realtime] Ambos protocolos fallaron.')
             isConnected.value = false
+            connectionStatus.value = 'disconnected'
             // Activar diálogo de error de conexión en useApi
             api.isHealthy.value = false
             api.isConnectionError.value = true
@@ -198,6 +219,7 @@ export const useRealtime = () => {
       sharedWS = null
     }
     isConnected.value = false
+    connectionStatus.value = 'disconnected'
   }
 
   const sendEvent = async (type: string, data: any) => {
@@ -241,6 +263,7 @@ export const useRealtime = () => {
 
   return {
     isConnected,
+    connectionStatus,
     viewerActive,
     activeLine,
     activeCantoId,
