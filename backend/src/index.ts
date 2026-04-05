@@ -236,6 +236,7 @@ app.post("/api/ws-events/:type", async (req, res) => {
         ...initialInfo.announcement,
         text: data.text,
         active: data.active,
+        topic: data.topic ?? initialInfo.announcement.topic ?? "ANUNCIO",
         position:
           data.position || initialInfo.announcement.position || "bottom",
       };
@@ -819,11 +820,12 @@ let initialInfo = {
   activeCantoId: "",
   activeIndex: 0,
   activeSong: null as ParsedSong | null,
-  announcement: {
-    text: "",
-    active: false,
-    position: "bottom" as "top" | "bottom",
-  },
+    announcement: {
+      text: "",
+      active: false,
+      position: "bottom" as "top" | "bottom",
+      topic: "ANUNCIO",
+    },
   transcription: { active: false, final: "", interim: "" },
 };
 
@@ -833,8 +835,13 @@ async function prepareDb() {
       "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)",
     );
     db.run(
-      "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', createdAt INTEGER)",
+      "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', topic TEXT, createdAt INTEGER)",
     );
+    try {
+      db.run("ALTER TABLE anuncios ADD COLUMN topic TEXT");
+    } catch (e) {
+      // Column already exists or table doesn't exist yet
+    }
     try {
       db.query("SELECT topic FROM anuncios LIMIT 1").get();
     } catch (e) {

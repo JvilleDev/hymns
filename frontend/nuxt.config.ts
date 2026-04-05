@@ -13,6 +13,7 @@ export default defineNuxtConfig({
     public: {
       apiUrl: "/backend",
       backendUrl: process.env.BACKEND_URL || "http://localhost:3100",
+      authPassword: process.env.NUXT_AUTH_PASSWORD || "2486",
     }
   },
   experimental: {

@@ -22,6 +22,7 @@ const isLoading = ref(false)
 const history = ref<any[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const showMobileHistory = ref(false)
+const transcriptionScrollRef = ref<HTMLElement | null>(null)
 
 // Select Logic
 const selectedIds = ref<Set<string>>(new Set())
@@ -369,6 +370,32 @@ watch(textInput, () => {
   checkSlashCommand()
 })
 
+// Sync currentTopic with real-time state
+watch(currentTopic, (newVal) => {
+  if (newVal !== announcement.value.topic) {
+    setAnnouncement({
+      ...announcement.value,
+      topic: newVal
+    })
+  }
+})
+
+// Sync UI if topic changes from another client
+watch(() => announcement.value.topic, (newVal) => {
+  if (newVal !== currentTopic.value) {
+    currentTopic.value = newVal || ''
+  }
+})
+
+// Auto-scroll transcription monitor
+watch([() => transcription.value.final, () => transcription.value.interim], () => {
+    nextTick(() => {
+        if (transcriptionScrollRef.value) {
+            transcriptionScrollRef.value.scrollTop = transcriptionScrollRef.value.scrollHeight
+        }
+    })
+})
+
 onMounted(() => {
   connect()
   fetchHistory()
@@ -522,16 +549,29 @@ onMounted(() => {
                         />
                       </div>
                       
-                      <div v-if="transcription.active" class="bg-background/50 rounded-lg p-3 border border-primary/10 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <div class="flex items-center gap-2 mb-2">
-                           <div class="size-1.5 bg-red-500 rounded-full animate-pulse"></div>
-                           <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest">Capturando...</span>
+                      <div v-if="transcription.active || transcription.final || transcription.interim" class="bg-background/50 rounded-lg p-3 border border-primary/10 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div class="flex items-center justify-between mb-2">
+                          <div class="flex items-center gap-2">
+                             <div class="size-1.5 rounded-full animate-pulse" :class="transcription.active ? 'bg-red-500' : 'bg-indigo-500'"></div>
+                             <span class="text-[9px] font-bold uppercase tracking-widest" :class="transcription.active ? 'text-red-500' : 'text-indigo-500'">
+                                {{ transcription.active ? 'Capturando al aire' : 'Monitor de voz' }}
+                             </span>
+                          </div>
+                          <div v-if="transcription.active" class="px-1.5 py-0.5 rounded bg-red-500 text-[8px] font-black text-white uppercase tracking-tighter shadow-sm shadow-red-500/20">
+                            On Air
+                          </div>
                         </div>
-                        <p class="text-xs text-foreground font-medium italic line-clamp-2">
-                          {{ transcription.final }}
-                          <span class="text-primary/60">{{ transcription.interim }}</span>
-                          <span v-if="!transcription.final && !transcription.interim">Esperando voz...</span>
-                        </p>
+                        <div 
+                          ref="transcriptionScrollRef"
+                          class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
+                          style="scrollbar-width: thin; scrollbar-color: var(--primary) transparent;"
+                        >
+                          <p class="text-xs text-foreground font-medium italic">
+                            {{ transcription.final }}
+                            <span class="text-primary/60">{{ transcription.interim }}</span>
+                            <span v-if="!transcription.final && !transcription.interim" class="text-muted-foreground/60">Esperando voz...</span>
+                          </p>
+                        </div>
                       </div>
 
                       <NuxtLink 

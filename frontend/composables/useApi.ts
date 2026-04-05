@@ -65,13 +65,23 @@ export const useApi = () => {
     }
 
     discoveryPromise = (async () => {
+      // Discovery from other clients (shared via server)
+      let discoveryUrl = null;
+      try {
+        const discoveryResponse = await $fetch<{ url: string | null }>('/api/discovery', { timeout: 1500 });
+        discoveryUrl = discoveryResponse.url;
+      } catch (e) {
+        console.warn('[API] Falló consulta al servicio de descubrimiento');
+      }
+
       const lastWorking = import.meta.client ? localStorage.getItem(LAST_WORKING_URL_KEY) : null;
       const manual = manualUrl.value;
 
       // Lista de URLs para probar en orden de prioridad
       const candidates = [
         { url: manual, name: 'Manual' },
-        { url: lastWorking, name: 'Memoria' },
+        { url: discoveryUrl, name: 'Descubrimiento (Shared)' },
+        { url: lastWorking, name: 'Memoria Local' },
         { url: baseUrl, name: 'Proxy/Config' },
         { url: directUrl, name: 'Directo (3100)' }
       ].filter(c => c.url && c.url !== '');
@@ -100,6 +110,18 @@ export const useApi = () => {
           }
           
           console.info(`[API] Conexión establecida via ${candidate.name}: ${candidate.url}`);
+          
+          // Si el URL que funcionó es distinto al que tiene el servidor grabado,
+          // intentamos propagarlo para que otros clientes lo usen automáticamente.
+          if (import.meta.client && (candidate.name === 'Manual' || candidate.name === 'Memoria Local')) {
+            try {
+              await $fetch('/api/discovery', { method: 'POST', body: { url: candidate.url }, timeout: 1000 });
+              console.log('[API] URL propagada al servicio de descubrimiento');
+            } catch (e) {
+              // Silencioso
+            }
+          }
+          
           return;
         } catch (e) {
           console.warn(`[API] ${candidate.name} falló: ${candidate.url}`);

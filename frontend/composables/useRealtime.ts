@@ -27,7 +27,8 @@ export const useRealtime = () => {
   const announcement = useState('realtime:announcement', () => ({
     text: '',
     active: false,
-    position: 'bottom' as 'top' | 'bottom'
+    position: 'bottom' as 'top' | 'bottom',
+    topic: 'ANUNCIO'
   }))
   const transcription = useState('realtime:transcription', () => ({
     active: false,
@@ -249,7 +250,7 @@ export const useRealtime = () => {
     viewerActive.value = state
   }
 
-  const setAnnouncement = (data: { text: string, active: boolean, position?: 'top' | 'bottom' }) => {
+  const setAnnouncement = (data: { text: string, active: boolean, position?: 'top' | 'bottom', topic?: string }) => {
     sendEvent('setAnnouncement', data)
   }
 
