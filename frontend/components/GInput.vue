@@ -40,15 +40,21 @@ const inputClass = computed(() => cn(
         <label v-if="label" class="block text-sm font-medium mb-1.5 ml-1 text-foreground/80">
             {{ label }}
         </label>
-        <div class="relative group">
+        <div class="relative group flex items-center">
+            <div v-if="$slots.prefix" class="absolute left-3 flex items-center pointer-events-none text-muted-foreground">
+                <slot name="prefix" />
+            </div>
             <template v-if="type === 'textarea'">
                 <textarea v-bind="$attrs" :value="modelValue" @input="onInput" :placeholder="placeholder" :disabled="disabled"
-                    :rows="rows" :class="cn(inputClass, 'resize-none')" />
+                    :rows="rows" :class="cn(inputClass, 'resize-none', $slots.prefix && 'pl-10', $slots.suffix && 'pr-10')" />
             </template>
             <template v-else>
                 <input v-bind="$attrs" :type="type" :value="modelValue" @input="onInput" :placeholder="placeholder" :disabled="disabled"
-                    :class="inputClass" />
+                    :class="cn(inputClass, $slots.prefix && 'pl-10', $slots.suffix && 'pr-10')" />
             </template>
+            <div v-if="$slots.suffix" class="absolute right-3 flex items-center text-muted-foreground">
+                <slot name="suffix" />
+            </div>
             <div
                 class="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-primary/50 to-transparent scale-x-0 group-focus-within:scale-x-100 transition-transform duration-500" />
         </div>

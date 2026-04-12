@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
 
-const { connect, updateTranscription, isConnected } = useRealtime()
+const { connect, updateTranscription, setTranscriptionProducing, isConnected } = useRealtime()
+const { clientId, isManualConnectionTrigger } = useApi()
 
 const isSupportedBrowser = ref(false)
 const isTranscribing = ref(false)
@@ -35,6 +36,7 @@ const initRecognition = () => {
   recognition.value.onstart = () => {
     isTranscribing.value = true
     errorCount.value = 0
+    setTranscriptionProducing(true)
   }
 
   recognition.value.onresult = (event: any) => {
@@ -52,6 +54,7 @@ const initRecognition = () => {
   recognition.value.onerror = (event: any) => {
     console.error('[STT] Error:', event.error)
     isTranscribing.value = false
+    setTranscriptionProducing(false)
     if (event.error !== 'not-allowed' && isUserActive.value && errorCount.value < maxErrors) {
       errorCount.value++
       setTimeout(() => startRecognition(), 1000)
@@ -60,7 +63,11 @@ const initRecognition = () => {
 
   recognition.value.onend = () => {
     isTranscribing.value = false
-    if (isUserActive.value && errorCount.value < maxErrors) startRecognition()
+    if (isUserActive.value && errorCount.value < maxErrors) {
+      startRecognition()
+    } else {
+      setTranscriptionProducing(false)
+    }
   }
 }
 
@@ -76,6 +83,7 @@ const toggleTranscription = () => {
   if (isTranscribing.value) {
     isUserActive.value = false
     recognition.value?.stop()
+    setTranscriptionProducing(false)
   } else {
     startRecognition()
   }
@@ -91,6 +99,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   recognition.value?.stop()
+  setTranscriptionProducing(false)
 })
 
 definePageMeta({
@@ -113,6 +122,12 @@ definePageMeta({
           <div class="flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 rounded-full border border-slate-800">
             <div class="size-1.5 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">{{ isConnected ? 'Online' : 'Offline' }}</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-3 py-1 bg-slate-900 rounded-full border border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors shadow-inner" @click="isManualConnectionTrigger = true" title="Cambiar ID de Cliente">
+            <Icon name="tabler:id" class="size-3.5 text-primary opacity-80" />
+            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">
+              {{ clientId?.length > 15 ? clientId.substring(0, 8) + '...' : clientId }}
+            </span>
           </div>
           <div v-if="isTranscribing" class="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/10 rounded-full border border-red-500/20">
             <div class="size-1.5 bg-red-500 rounded-full animate-pulse"></div>

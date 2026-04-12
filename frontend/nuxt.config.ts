@@ -11,8 +11,8 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     public: {
-      apiUrl: "/backend",
-      backendUrl: process.env.BACKEND_URL || "http://localhost:3100",
+      apiUrl: "https://hymns-back.jville.dev",
+      backendUrl: "https://hymns-back.jville.dev",
       authPassword: process.env.NUXT_AUTH_PASSWORD || "Jville24861937",
     }
   },
@@ -28,14 +28,8 @@ export default defineNuxtConfig({
   },
   googleFonts: {
     families: {
-      'Manrope': [400, 500, 600, 700, 800],
+      'Outfit': [400, 500, 600, 700, 800],
     }
-  },
-  routeRules: {
-    "/backend/**": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/**` },
-    "/sse": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/sse` },
-    "/search": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/search` },
-    "/import": { proxy: `${process.env.BACKEND_URL || "http://localhost:3100"}/import` },
   },
   ssr: true,
 })

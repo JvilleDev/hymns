@@ -32,7 +32,7 @@ body,
 }
 
 * {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Outfit', sans-serif;
 }
 
 /* Custom Selection */

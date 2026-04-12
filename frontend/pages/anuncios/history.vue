@@ -185,143 +185,193 @@ const generatePdf = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 text-neutral-900 p-4 sm:p-8 font-sans print:bg-white print:p-0">
-    <header class="mb-6 border-b border-neutral-200 pb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between print:border-neutral-300 print:mb-12">
-      <div class="flex items-center gap-4">
-          <div>
-              <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 uppercase leading-tight">
-                 {{ displayTopic }}
-              </h1>
-              <p class="text-sm sm:text-base text-neutral-500 font-medium">Buzón de escritos recientes</p>
+  <div class="min-h-screen lg:h-screen lg:flex lg:overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
+    
+    <!-- Left Panel: Announcements History -->
+    <div class="flex-1 h-full overflow-y-auto scroll-smooth group/container">
+      <div class="max-w-2xl mx-auto px-6 py-12 sm:py-20">
+        
+        <header class="mb-16 space-y-4 print:mb-12">
+          <div class="flex items-center gap-3">
+            <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-neutral-900 uppercase leading-none">
+                {{ displayTopic }}
+            </h1>
+            <div v-if="announcement.active" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse print:hidden">
+              <div class="size-1.5 bg-blue-600 rounded-full"></div>
+              <span class="text-[9px] font-black uppercase tracking-wider">En vivo</span>
+            </div>
           </div>
-      </div>
-      <div class="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t border-neutral-100 pt-3 sm:border-0 sm:pt-0">
-         <div class="flex items-center gap-2 print:hidden bg-neutral-100 px-3 py-1.5 rounded-full">
-            <Icon :name="announcement.active ? 'tabler:broadcast' : 'tabler:broadcast-off'" 
-                  class="size-4" :class="announcement.active ? 'text-blue-600 animate-pulse' : 'text-neutral-400'" />
-            <span class="text-[9px] font-black uppercase tracking-widest" :class="announcement.active ? 'text-blue-600' : 'text-neutral-400'">
-               {{ announcement.active ? 'En vivo' : 'Inactivo' }}
-            </span>
-         </div>
-         
-         <button 
-           @click="generatePdf"
-           class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-2xl transition-all shadow-lg shadow-blue-600/20 text-[10px] font-bold uppercase tracking-widest transform active:scale-95 print:hidden"
-         >
-           <Icon name="tabler:file-type-pdf" class="size-4" />
-           <span>Generar PDF</span>
-         </button>
-      </div>
-    </header>
 
-    <div class="max-w-4xl mx-auto space-y-6 print:max-w-none">
-      <div v-if="isLoading && !history.length" class="text-center py-20 text-neutral-400 print:hidden">
-          Cargando historial...
-      </div>
+          <button 
+            @click="generatePdf"
+            class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 transition-colors text-[10px] font-bold uppercase tracking-widest print:hidden border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 shadow-sm hover:shadow-md active:scale-95 transition-all w-fit"
+          >
+            <Icon name="tabler:file-type-pdf" class="size-4" />
+            <span>Exportar PDF</span>
+          </button>
+        </header>
 
-      <div v-else-if="!history.length" class="text-center py-20 border-2 border-dashed border-neutral-200 rounded-3xl bg-white/50 print:hidden">
-          <Icon name="tabler:inbox" class="size-16 text-neutral-300 mb-4" />
-          <p class="text-xl font-bold text-neutral-400">No hay anuncios registrados</p>
-      </div>
+        <div class="relative">
+          <!-- Vertical Timeline Line -->
+          <div class="absolute left-0 top-0 bottom-0 w-px bg-neutral-100 ml-4 sm:ml-0 overflow-hidden print:hidden"></div>
 
-      <TransitionGroup name="list" tag="div" class="space-y-6">
-        <div 
-            v-for="item in history" 
-            :key="item.id"
-            class="bg-white border transition-all duration-500 group relative rounded-[1rem]"
-            :class="[
-                announcement.active && announcement.text === item.text 
-                ? 'border-blue-500 shadow-[0_0_20px_rgba(79,70,229,0.15)] ring-1 ring-blue-500/20 scale-[1.02] z-10' 
-                : 'border-neutral-200 shadow-sm hover:shadow-md'
-            ]"
-        >
-            <!-- Live Indicator Badge -->
+          <TransitionGroup name="list" tag="div" class="space-y-16 relative">
             <div 
-                v-if="announcement.active && announcement.text === item.text"
-                class="absolute -top-3 left-6 bg-blue-600 text-white text-[9px] font-black px-2 py-1 rounded-md shadow-lg shadow-blue-600/30 uppercase tracking-[0.2em] flex items-center gap-1.5 animate-bounce-subtle"
+                v-for="item in history" 
+                :key="item.id"
+                class="relative pl-10 sm:pl-12 group/item"
             >
-                <div class="size-1.5 bg-white rounded-full animate-pulse"></div>
-                Ahora en pantalla
-            </div>
-
-            <div class="p-6 print:shadow-none print:border-neutral-100 print:break-inside-avoid">
-                <div class="flex items-start justify-between mb-4">
-                    <div class="flex flex-col gap-1">
-                        <span class="text-xs font-bold text-neutral-400 uppercase tracking-widest">
-                            {{ formatTimeAgo(new Date(item.createdAt)) }}
-                        </span>
-                        <span class="hidden print:block text-[10px] text-neutral-300 font-mono">
-                          {{ new Date(item.createdAt).toLocaleString() }}
-                        </span>
-                    </div>
-                    <button 
-                      @click="copyToClipboard(item.text)"
-                      class="p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-tighter print:hidden"
-                    >
-                      <Icon name="tabler:copy" class="size-4" />
-                      <span>Copiar</span>
-                    </button>
-                </div>
-                
+                <!-- Timeline Dot -->
                 <div 
-                    class="text-2xl md:text-3xl font-bold leading-tight transition-colors duration-500"
-                    :class="announcement.active && announcement.text === item.text ? 'text-blue-900' : 'text-neutral-900'"
+                  class="absolute left-[15.5px] sm:left-[-4.5px] top-3 size-2 rounded-full border-2 transition-all duration-500 z-10"
+                  :class="[
+                    announcement.active && announcement.text === item.text 
+                    ? 'bg-blue-600 border-blue-600 scale-125 shadow-[0_0_10px_rgba(37,99,235,0.3)]' 
+                    : 'bg-white border-neutral-200 group-hover/item:border-neutral-400'
+                  ]"
+                ></div>
+
+                <div 
+                  class="transition-all duration-500"
                 >
-                    <span class="inline-flex flex-wrap items-center gap-x-2">
-                        <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
-                            <Icon 
-                                v-if="segment.type === 'icon'" 
-                                :name="segment.value" 
-                                :class="segment.class"
-                            />
-                            <span 
-                                v-else 
-                                v-html="segment.value" 
-                                :class="segment.class"
-                            ></span>
-                        </template>
-                    </span>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                          <span class="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
+                              {{ formatTimeAgo(new Date(item.createdAt)) }}
+                          </span>
+                          <span v-if="announcement.active && announcement.text === item.text" 
+                                class="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-50 px-2 py-0.5 rounded">
+                            Ahora
+                          </span>
+                        </div>
+                        
+                        <button 
+                          @click="copyToClipboard(item.text)"
+                          class="p-1.5 text-neutral-400 hover:text-neutral-900 transition-all print:hidden"
+                          title="Copiar texto"
+                        >
+                          <Icon name="tabler:copy" class="size-4" />
+                        </button>
+                    </div>
+                    
+                    <div 
+                        class="text-2xl sm:text-3xl font-black leading-tight transition-colors duration-500"
+                        :class="announcement.active && announcement.text === item.text ? 'text-neutral-900' : 'text-neutral-700'"
+                    >
+                        <div class="inline-flex flex-wrap items-center gap-x-2">
+                            <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
+                                <Icon 
+                                    v-if="segment.type === 'icon'" 
+                                    :name="segment.value" 
+                                    :class="segment.class"
+                                    class="mb-1"
+                                />
+                                <span 
+                                    v-else 
+                                    v-html="segment.value" 
+                                    :class="segment.class"
+                                ></span>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="hidden print:block text-[10px] text-neutral-300 mt-2 font-mono">
+                      {{ new Date(item.createdAt).toLocaleString() }}
+                    </div>
                 </div>
             </div>
+          </TransitionGroup>
         </div>
-      </TransitionGroup>
+
+        <div v-if="isLoading && !history.length" class="text-center py-20 text-neutral-400 animate-pulse">
+            Sincronizando historial...
+        </div>
+
+        <div v-else-if="!history.length" class="text-center py-32">
+            <div class="size-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Icon name="tabler:hourglass-empty" class="size-8 text-neutral-200" />
+            </div>
+            <p class="text-[10px] font-black text-neutral-300 uppercase tracking-[0.3em]">Sin registros recientes</p>
+        </div>
+      </div>
     </div>
 
-    <!-- Live Transcription Floating Monitor -->
+    <!-- Right Panel: Live Transcription (Desktop) -->
+    <aside class="hidden lg:flex flex-col w-[450px] bg-black text-white h-full p-12 overflow-y-auto border-l border-white/10 scroll-smooth">
+      <div class="flex items-center gap-4 mb-12">
+        <div class="relative flex size-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
+          <span class="relative inline-flex rounded-full size-3"
+                :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
+        </div>
+        <div class="flex flex-col">
+          <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+          <span class="text-[10px] font-bold text-white/20 uppercase tracking-widest">
+            {{ transcription.active ? 'Audio capturado' : 'Esperando señal' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="space-y-8">
+        <div class="prose prose-invert prose-2xl">
+          <p class="text-3xl sm:text-4xl leading-tight tracking-tight">
+            <span class="text-white">{{ transcription.final }}</span>
+            <span class="text-white/30 italic">{{ transcription.interim }}</span>
+          </p>
+        </div>
+        
+        <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center border border-dashed border-white/10 rounded-3xl">
+          <Icon name="tabler:ear" class="size-12 text-white/5 mx-auto mb-4" />
+          <p class="text-xs font-bold text-white/20 uppercase tracking-widest italic">Silencio detectado</p>
+        </div>
+      </div>
+
+      <div class="mt-auto pt-12 border-t border-white/5">
+        <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-white/30">
+          <span>{{ new Date().toLocaleDateString() }}</span>
+          <span>Sincronizado</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Mobile Floating Monitor (Hidden on Desktop) -->
     <Teleport to="body">
       <Transition 
-        enter-active-class="transition duration-500 ease-out"
-        enter-from-class="translate-y-20 opacity-0"
-        enter-to-class="translate-y-0 opacity-100"
-        leave-active-class="transition duration-300 ease-in"
-        leave-from-class="translate-y-0 opacity-100"
-        leave-to-class="translate-y-20 opacity-0"
+        enter-active-class="transition duration-700 ease-out"
+        enter-from-class="translate-y-24 opacity-0 scale-90"
+        enter-to-class="translate-y-0 opacity-100 scale-100"
+        leave-active-class="transition duration-500 ease-in"
+        leave-from-class="translate-y-0 opacity-100 scale-100"
+        leave-to-class="translate-y-24 opacity-0 scale-90"
       >
         <div 
           v-if="showMonitor"
-          class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-xl z-50 print:hidden"
+          class="fixed bottom-10 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 px-6 lg:hidden print:hidden"
         >
-          <div class="bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)] group">
+          <div class="bg-black/90 rounded-3xl p-6 shadow-2xl">
             <div class="min-w-0">
-               <div class="flex items-center gap-3 mb-1.5">
-                  <div class="size-2 rounded-full animate-pulse"
-                       :class="transcription.active ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]'">
+               <div class="flex items-center gap-3 mb-3">
+                  <div class="relative flex size-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                          :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
+                    <span class="relative inline-flex rounded-full size-2"
+                          :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
                   </div>
-                  <span class="text-[10px] font-black uppercase tracking-[0.2em]"
-                        :class="transcription.active ? 'text-red-500' : 'text-blue-400'">
-                    {{ transcription.active ? 'Voz al aire' : 'Transcripción automática' }}
+                  <span class="text-[10px] font-black uppercase tracking-[0.4em] text-white/50">
+                    {{ transcription.active ? 'Live Audio' : 'Processing' }}
                   </span>
-                  <div class="h-px flex-1 bg-white/10"></div>
+                  <div class="h-px flex-1 bg-white/5"></div>
                </div>
                <div 
                  ref="scrollContainer"
-                 class="max-h-16 overflow-y-auto pr-2 scroll-smooth"
-                 style="scrollbar-width: thin; scrollbar-color: rgba(59, 130, 246, 0.3) transparent;"
+                 class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
+                 style="scrollbar-width: none; -ms-overflow-style: none;"
                >
-                 <p class="text-base font-medium text-white leading-snug">
-                    <span class="text-neutral-200">{{ transcription.final }}</span>
-                    <span class="text-neutral-400/90 italic">{{ transcription.interim }}</span>
-                 </p>
+                 <p class="text-xl font-bold text-white leading-tight tracking-tight">
+                    <span class="opacity-100">{{ transcription.final }}</span>
+                    <span class="opacity-40 italic font-medium">{{ transcription.interim }}</span>
+                  </p>
                </div>
             </div>
           </div>
@@ -335,22 +385,23 @@ const generatePdf = () => {
 .list-move,
 .list-enter-active,
 .list-leave-active {
-  transition: all 0.5s ease;
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .list-enter-from,
 .list-leave-to {
   opacity: 0;
-  transform: translateY(-20px);
+  transform: translateY(10px);
 }
 
 .list-leave-active {
   position: absolute;
+  width: 100%;
 }
 
 @media print {
   @page {
-    margin: 1.5cm;
+    margin: 2cm;
   }
   
   body {
@@ -364,22 +415,5 @@ const generatePdf = () => {
   .print\:block {
     display: block !important;
   }
-  
-  .print\:no-shadow {
-    box-shadow: none !important;
-  }
-}
-
-@keyframes bounce-subtle {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-.animate-bounce-subtle {
-  animation: bounce-subtle 2s infinite ease-in-out;
 }
 </style>

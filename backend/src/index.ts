@@ -189,6 +189,14 @@ app.post("/api/ws-events/:type", async (req, res) => {
       });
       break;
 
+    case "setTranscriptionProducing":
+      state.transcription.producing = !!data;
+      broadcast(clientId, {
+        type: "transcriptionState",
+        data: state.transcription,
+      });
+      break;
+
     case "transcriptionUpdate":
       state.transcription.final = data.final;
       state.transcription.interim = data.interim;
@@ -555,7 +563,7 @@ interface InitialInfo {
     position: "top" | "bottom";
     topic: string;
   };
-  transcription: { active: boolean; final: string; interim: string };
+  transcription: { active: boolean; producing: boolean; final: string; interim: string };
 }
 
 const defaultInitialInfo = (): InitialInfo => ({
@@ -570,7 +578,7 @@ const defaultInitialInfo = (): InitialInfo => ({
     position: "bottom",
     topic: "ANUNCIO",
   },
-  transcription: { active: false, final: "", interim: "" },
+  transcription: { active: false, producing: false, final: "", interim: "" },
 });
 
 const clientStates = new Map<string, InitialInfo>();
@@ -594,6 +602,7 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.announcement.position = (row.announcementPosition as "top" | "bottom") || "bottom";
       state.announcement.topic = row.announcementTopic || "ANUNCIO";
       state.transcription.active = !!row.transcriptionActive;
+      state.transcription.producing = !!row.transcriptionProducing;
 
       // Load song if activeCantoId exists
       if (state.activeCantoId) {
@@ -622,8 +631,8 @@ function saveClientState(clientId: string, state: InitialInfo) {
       INSERT OR REPLACE INTO client_states (
         clientId, viewerActive, activeLine, activeCantoId, activeIndex, 
         announcementText, announcementActive, announcementPosition, 
-        announcementTopic, transcriptionActive
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        announcementTopic, transcriptionActive, transcriptionProducing
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     query.run(
       clientId,
@@ -635,7 +644,8 @@ function saveClientState(clientId: string, state: InitialInfo) {
       state.announcement.active ? 1 : 0,
       state.announcement.position,
       state.announcement.topic,
-      state.transcription.active ? 1 : 0
+      state.transcription.active ? 1 : 0,
+      state.transcription.producing ? 1 : 0
     );
   } catch (e) {
     console.error(`Error saving state for ${clientId}:`, e);
@@ -661,16 +671,14 @@ async function prepareDb() {
         announcementActive INTEGER,
         announcementPosition TEXT,
         announcementTopic TEXT,
-        transcriptionActive INTEGER
+        transcriptionActive INTEGER,
+        transcriptionProducing INTEGER
       )`,
     );
 
     // Migrations
     try {
-      db.run("ALTER TABLE anuncios ADD COLUMN clientId TEXT");
-    } catch (e) {}
-    try {
-      db.run("ALTER TABLE anuncios ADD COLUMN topic TEXT");
+      db.run("ALTER TABLE client_states ADD COLUMN transcriptionProducing INTEGER");
     } catch (e) {}
   } catch (error) {
     console.error("Error preparing database:", error);

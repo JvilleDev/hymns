@@ -31,6 +31,7 @@ export const useRealtime = () => {
   }))
   const transcription = useState('realtime:transcription', () => ({
     active: false,
+    producing: false,
     final: '',
     interim: ''
   }))
@@ -47,7 +48,7 @@ export const useRealtime = () => {
           activeIndex.value = data.activeIndex
           activeSong.value = data.activeSong || null
           announcement.value = data.announcement || { text: '', active: false, position: 'bottom' }
-          transcription.value = data.transcription || { active: false, final: '', interim: '' }
+          transcription.value = data.transcription || { active: false, producing: false, final: '', interim: '' }
           break
 
         case 'viewerActive':
@@ -191,6 +192,10 @@ export const useRealtime = () => {
     sendEvent('setTranscriptionActive', active)
   }
 
+  const setTranscriptionProducing = (producing: boolean) => {
+    sendEvent('setTranscriptionProducing', producing)
+  }
+
   const updateTranscription = (data: { final: string, interim: string }) => {
     sendEvent('transcriptionUpdate', data)
   }
@@ -213,6 +218,7 @@ export const useRealtime = () => {
     changeViewerState,
     setAnnouncement,
     setTranscriptionActive,
+    setTranscriptionProducing,
     updateTranscription
   }
 }
