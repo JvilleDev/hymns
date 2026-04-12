@@ -22,6 +22,7 @@ export const useApi = () => {
   // Connection status
   const isHealthy = useState<boolean>('api_is_healthy', () => true)
   const isConnectionError = useState<boolean>('api_connection_error', () => false)
+  const isManualConnectionTrigger = useState<boolean>('api_manual_trigger', () => false)
 
   const request = async <T>(path: string, options: any = {}): Promise<T> => {
     const cleanPath = path.startsWith('/') ? path : `/${path}`
@@ -78,6 +79,7 @@ export const useApi = () => {
     // Config & Helpers
     isHealthy,
     isConnectionError,
+    isManualConnectionTrigger,
     getFullUrl: (path: string) => {
       return `${backendUrl}${path.startsWith('/') ? path : `/${path}`}`
     },
