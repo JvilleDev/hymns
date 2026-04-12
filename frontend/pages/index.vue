@@ -312,24 +312,6 @@ function navigateToDeck() {
           </div>
 
           <div class="flex-grow h-0 overflow-y-auto min-h-0 relative" id="line-container">
-            <!-- Transcription Preview Overlay (Operator Only) -->
-            <div v-if="transcription.producing && !transcription.active" 
-              class="absolute bottom-4 left-4 right-4 z-10 p-4 bg-amber-950/90 border border-amber-500/30 rounded-2xl backdrop-blur-md shadow-2xl flex items-start gap-4 animate-in slide-in-from-bottom-4 duration-500">
-              <div class="p-2 bg-amber-500/20 rounded-full text-amber-500">
-                <Icon name="tabler:microphone" class="size-5" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500/70 mb-1">Previsualización STT (No Live)</p>
-                <p class="text-sm italic text-amber-200/90 leading-snug line-clamp-2">
-                  {{ transcription.final || 'Iniciando captura de voz...' }}
-                  <span class="text-amber-500/60">{{ transcription.interim }}</span>
-                </p>
-              </div>
-              <button @click="setTranscriptionActive(true)" class="px-3 h-8 bg-amber-500 text-amber-950 text-[10px] font-black uppercase rounded-lg hover:bg-amber-400 transition-colors">
-                Habiliar Live
-              </button>
-            </div>
-
             <div class="p-3 pb-32 space-y-1.5">
               <div v-for="(line, index) in activeSong.lines" :key="`${activeSong.id}-${index}`"
                 tabindex="0"
