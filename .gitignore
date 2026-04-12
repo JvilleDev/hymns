@@ -24,3 +24,4 @@ backend/data/**
 
 database.db
 cantos.json
+*log

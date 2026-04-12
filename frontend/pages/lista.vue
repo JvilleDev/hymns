@@ -19,7 +19,14 @@ const {
   deleteSong
 } = useSongs()
 
-onMounted(() => getSongs())
+const { isAdmin } = useAuth()
+
+onMounted(() => {
+  if (!isAdmin.value) {
+    return navigateTo('/')
+  }
+  getSongs()
+})
 </script>
 
 <template>

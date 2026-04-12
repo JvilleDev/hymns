@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { Toaster } from 'vue-sonner'
 
-const items = [
+const { isAdmin } = useAuth();
+
+const items = computed(() => [
   { title: "Inicio", value: "/", icon: "tabler:home", description: "Panel principal" },
-  { title: "Lista", value: "/lista", icon: "tabler:list", description: "Gestiona tus cantos e himnos" },
+  ...(isAdmin.value ? [{ title: "Lista", value: "/lista", icon: "tabler:list", description: "Gestiona tus cantos e himnos" }] : []),
   { title: "Visor", value: "/visor", icon: "tabler:eye", description: "Control de proyección" },
   { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Lower Third / Cinta de noticias" },
-];
+]);
+
 const { isManualConnectionTrigger } = useApi();
 const route = useRoute();
 
 const currentPage = computed(() => {
-  return items.find(i => i.value === route.path) || { title: 'Himnario', description: '' }
+  return items.value.find(i => i.value === route.path) || { title: 'Himnario', description: '' }
 })
 
 onMounted(() => {
@@ -53,10 +56,10 @@ onMounted(() => {
             variant="ghost" 
             size="icon" 
             class="rounded-xl text-muted-foreground hover:text-primary transition-colors"
-            tooltip="Configurar URL del servidor"
+            tooltip="Configuración de Cuenta"
             @click="isManualConnectionTrigger = true"
           >
-            <Icon name="tabler:settings-automation" class="size-5" />
+            <Icon name="tabler:user-cog" class="size-5" />
           </GButton>
         </div>
 
@@ -70,7 +73,7 @@ onMounted(() => {
             class="size-8 rounded-lg text-muted-foreground"
             @click="isManualConnectionTrigger = true"
           >
-            <Icon name="tabler:settings-automation" class="size-4" />
+            <Icon name="tabler:user-cog" class="size-4" />
           </GButton>
         </div>
       </div>

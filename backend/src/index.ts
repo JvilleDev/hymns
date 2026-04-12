@@ -8,7 +8,6 @@ import { WebSocketServer } from "ws";
 import colorprint from "colorprint";
 import cors from "cors";
 import Fuse from "fuse.js";
-import { tunnelmole } from "tunnelmole";
 
 const db = new Database("./src/data/database.db");
 
@@ -18,27 +17,18 @@ const wss = new WebSocketServer({ noServer: true });
 
 // Explicitly handle WebSocket upgrades for /ws path
 server.on("upgrade", (request, socket, head) => {
-  const url = request.url || "";
-  const host = request.headers.host || "unknown";
-  
-  // Log for debugging tunnel issues
-  colorprint.DEBUG(`[Upgrade Request] Host: ${host}, URL: ${url}`);
-
-  // Use a more flexible path detection
-  const isWsPath = url === "/ws" || url.endsWith("/ws") || url.includes("/ws?");
+  const url = new URL(request.url || "", `http://${request.headers.host}`);
+  const isWsPath = url.pathname === "/ws";
 
   if (isWsPath) {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
     });
   } else {
-    colorprint.WARN(`[Upgrade Rejected] Path not matched: ${url}`);
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
   }
 });
-
-let currentTunnelUrl = "";
 
 const PORT = 3100;
 
@@ -46,30 +36,40 @@ app.use(express.static("public"));
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "5mb" }));
 
+// -- Auth Middleware --
+const authAdmin = (req: any, res: any, next: any) => {
+  const authHeader = req.headers.authorization;
+  const masterPassword = process.env.ADMIN_PASSWORD || "2486";
+  if (authHeader === masterPassword) {
+    return next();
+  }
+  res.status(401).json({ error: "Unauthorized" });
+};
+
 let fuse: Fuse<Canto>;
 
-// -- Real-time Sync Logic (SSE & WS) --
+wss.on("connection", async (ws, request) => {
+  const url = new URL(request.url || "", `http://${request.headers.host}`);
+  const clientId = url.searchParams.get("clientId") || "default";
 
-let clients: { id: string; res: Response }[] = [];
-let wsClients: any[] = [];
-
-wss.on("connection", (ws) => {
+  // @ts-ignore
+  ws.clientId = clientId;
   // @ts-ignore
   ws.isAlive = true;
+
   ws.on("pong", () => {
     // @ts-ignore
     ws.isAlive = true;
   });
 
-  wsClients.push(ws);
-  colorprint.NOTICE(`[WS Client Connected] Count: ${wsClients.length}`);
+  colorprint.NOTICE(`[WS Connected] Client: ${clientId}`);
 
   // Send initial state immediately
-  ws.send(JSON.stringify({ type: "initial", data: initialInfo }));
+  const state = await getClientState(clientId);
+  ws.send(JSON.stringify({ type: "initial", data: state }));
 
   ws.on("close", () => {
-    wsClients = wsClients.filter((c) => c !== ws);
-    colorprint.DEBUG(`[WS Client Disconnected] Count: ${wsClients.length}`);
+    colorprint.DEBUG(`[WS Disconnected] Client: ${clientId}`);
   });
 
   ws.on("error", (err) => {
@@ -90,445 +90,166 @@ process.on("close", () => {
   clearInterval(wsInterval);
 });
 
-function getTunnel() {
-  return tunnelmole({
-    port: PORT,
-  });
-}
-
-function getLocalIp() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    const iface = interfaces[name];
-    if (!iface) continue;
-    for (const entry of iface) {
-      if (entry.family === "IPv4" && !entry.internal) {
-        return entry.address;
-      }
-    }
-  }
-  return "localhost";
-}
-
-async function sendNotification(
-  message: string,
-  url?: string,
-) {
-  console.log("NOTIFICATION");
-  console.log("TUNNEL HOSTNAME:", new URL(url || "").hostname)
-  const res = await fetch("https://ntfy.sh/himnario", {
-    method: "POST",
-    headers: {"Content-Type": "application/json", "Actions": `view, Abrir, ${url}, clear=true`},
-    body: message,
-  });
-  console.log(`NOTIFICATION STATUS: ${res.status}`);
-  console.log("NOTIFICATION SENT")
-}
-
-function broadcast(data: any) {
-  // 1. SSE Broadcast
-  const sseMsg = `data: ${JSON.stringify(data)}\n\n`;
-  clients.forEach((client) => client.res.write(sseMsg));
-
-  // 2. WS Broadcast
+function broadcast(clientId: string, data: any) {
   const wsMsg = JSON.stringify(data);
-  wsClients.forEach((ws) => {
-    if (ws.readyState === 1) {
-      // WebSocket.OPEN
+  wss.clients.forEach((ws: any) => {
+    if (ws.readyState === 1 && ws.clientId === clientId) {
       ws.send(wsMsg);
     }
   });
 }
 
-app.get("/sse", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-  // Common header to disable buffering in Nginx and other proxies
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-
-  const clientId = uuid();
-  clients.push({ id: clientId, res });
-
-  colorprint.NOTICE(`[SSE Client Connected] ID: ${clientId}`);
-
-  // Send initial state immediately
-  res.write(
-    `data: ${JSON.stringify({ type: "initial", data: initialInfo })}\n\n`,
-  );
-
-  // SSE Keep-alive interval
-  const keepAlive = setInterval(() => {
-    res.write(": keepalive\n\n");
-  }, 15000);
-
-  req.on("close", () => {
-    clearInterval(keepAlive);
-    clients = clients.filter((c) => c.id !== clientId);
-    colorprint.DEBUG(`[SSE Client Disconnected] ID: ${clientId}`);
-  });
-});
+// SSE removed in favor of WebSockets
 
 // -- Real-time Actions (Previously WS) --
 
 app.post("/api/ws-events/:type", async (req, res) => {
   const { type } = req.params;
   const { data } = req.body;
-  colorprint.DEBUG(`[Event] Type: ${type}`);
+  const clientId = (req.headers["x-client-id"] as string) || "default";
+  
+  colorprint.DEBUG(`[Event] Client: ${clientId}, Type: ${type}`);
+
+  const state = await getClientState(clientId);
 
   switch (type) {
     case "newLine":
-      colorprint.INFO(`[Line] ${data}`);
-      initialInfo.activeLine = data;
-      broadcast({ type: "line", data });
+      state.activeLine = data;
+      broadcast(clientId, { type: "line", data });
       break;
 
     case "changeCanto":
-      colorprint.INFO(`[Canto Change] New ID: ${data}`);
-      initialInfo.activeCantoId = data;
-      initialInfo.activeIndex = 0;
+      state.activeCantoId = data;
+      state.activeIndex = 0;
       try {
         const rawSongs = await getCantos(data);
         const rawSong = rawSongs[0];
         if (rawSong) {
           const parsed = parseSong(rawSong);
-          initialInfo.activeSong = parsed;
-          broadcast({ type: "activeSong", data: parsed });
+          state.activeSong = parsed;
+          broadcast(clientId, { type: "activeSong", data: parsed });
           if (parsed.lines.length > 0) {
-            initialInfo.activeLine = parsed.lines[0];
-            broadcast({ type: "line", data: initialInfo.activeLine });
-            broadcast({ type: "index", data: 0 });
+            state.activeLine = parsed.lines[0];
+            broadcast(clientId, { type: "line", data: state.activeLine });
+            broadcast(clientId, { type: "index", data: 0 });
           }
         }
       } catch (e) {
         console.error("Error parsing song:", e);
-        initialInfo.activeSong = null;
+        state.activeSong = null;
       }
       break;
 
     case "changeIndex":
-      colorprint.INFO(`[Index Change] Line: ${data + 1}`);
-      initialInfo.activeIndex = data;
+      state.activeIndex = data;
       if (
-        initialInfo.activeSong &&
-        initialInfo.activeSong.lines[data] !== undefined
+        state.activeSong &&
+        state.activeSong.lines[data] !== undefined
       ) {
-        initialInfo.activeLine = initialInfo.activeSong.lines[data];
-        broadcast({ type: "line", data: initialInfo.activeLine });
+        state.activeLine = state.activeSong.lines[data];
+        broadcast(clientId, { type: "line", data: state.activeLine });
       }
-      broadcast({ type: "index", data });
+      broadcast(clientId, { type: "index", data });
       break;
 
     case "view":
-      colorprint.WARN(`[Viewer State] ${data ? "ENABLED" : "DISABLED"}`);
-      initialInfo.viewerActive = data;
-      broadcast({ type: "viewerActive", data });
+      state.viewerActive = data;
+      broadcast(clientId, { type: "viewerActive", data });
       break;
 
     case "setAnnouncement":
-      colorprint.NOTICE(
-        `[Announcement] ${data.active ? "SHOW:" : "HIDE:"} ${data.text}`,
-      );
-      initialInfo.announcement = {
-        ...initialInfo.announcement,
+      state.announcement = {
+        ...state.announcement,
         text: data.text,
         active: data.active,
-        topic: data.topic ?? initialInfo.announcement.topic ?? "ANUNCIO",
-        position:
-          data.position || initialInfo.announcement.position || "bottom",
+        topic: data.topic ?? state.announcement.topic ?? "ANUNCIO",
+        position: data.position || state.announcement.position || "bottom",
       };
-      broadcast({ type: "announcement", data: initialInfo.announcement });
-      if (data.active && initialInfo.transcription.active) {
-        initialInfo.transcription.active = false;
-        broadcast({
+      broadcast(clientId, { type: "announcement", data: state.announcement });
+      if (data.active && state.transcription.active) {
+        state.transcription.active = false;
+        broadcast(clientId, {
           type: "transcriptionState",
-          data: initialInfo.transcription,
+          data: state.transcription,
         });
       }
       break;
 
     case "setTranscriptionActive":
-      colorprint.WARN(`[Transcription State] ${data ? "ENABLED" : "DISABLED"}`);
-      initialInfo.transcription.active = data;
+      state.transcription.active = data;
       if (data) {
-        initialInfo.announcement.active = false;
-        initialInfo.viewerActive = false;
-        broadcast({ type: "announcement", data: initialInfo.announcement });
-        broadcast({ type: "viewerActive", data: false });
+        state.announcement.active = false;
+        state.viewerActive = false;
+        broadcast(clientId, { type: "announcement", data: state.announcement });
+        broadcast(clientId, { type: "viewerActive", data: false });
       }
-      broadcast({
+      broadcast(clientId, {
         type: "transcriptionState",
-        data: initialInfo.transcription,
+        data: state.transcription,
       });
       break;
 
     case "transcriptionUpdate":
-      initialInfo.transcription.final = data.final;
-      initialInfo.transcription.interim = data.interim;
-      broadcast({ type: "transcriptionUpdate", data });
+      state.transcription.final = data.final;
+      state.transcription.interim = data.interim;
+      broadcast(clientId, { type: "transcriptionUpdate", data });
       break;
   }
 
+  saveClientState(clientId, state);
   res.json({ success: true });
 });
 
 // -- Standard API Routes --
 
 app.get("/", (req, res) => {
-  const isLocal = currentTunnelUrl.includes("localhost") || /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/.test(new URL(currentTunnelUrl || "http://localhost").hostname);
-  const hostname = currentTunnelUrl ? new URL(currentTunnelUrl).hostname : "---";
-  
-  const html = `
+  res.send(`
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HIMNARIO - Backend</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary: ${isLocal && currentTunnelUrl ? "#f59e0b" : "#6366f1"};
-            --primary-hover: ${isLocal && currentTunnelUrl ? "#d97706" : "#4f46e5"};
-            --bg: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --glass-border: rgba(255, 255, 255, 0.1);
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Outfit', sans-serif;
-        }
-
         body {
-            background: var(--bg);
-            background: radial-gradient(circle at top right, #1e1b4b, #0f172a);
-            color: var(--text-main);
-            min-height: 100vh;
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: 'Outfit', sans-serif;
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow: hidden;
+            min-height: 100vh;
+            margin: 0;
         }
-
-        .container {
-            width: 90%;
-            max-width: 500px;
-            perspective: 1000px;
-        }
-
         .card {
-            background: var(--card-bg);
+            background: rgba(30, 41, 59, 0.7);
             backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid var(--glass-border);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 24px;
             padding: 40px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            animation: cardEntrance 0.8s cubic-bezier(0.16, 1, 0.3, 1);
             text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
-
-        @keyframes cardEntrance {
-            from { opacity: 0; transform: translateY(30px) scale(0.95); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(var(--primary-rgb), 0.1);
-            color: var(--primary);
-            padding: 6px 16px;
-            border-radius: 100px;
-            font-size: 14px;
+        .status {
+            color: #6366f1;
             font-weight: 600;
-            margin-bottom: 24px;
-            border: 1px solid rgba(var(--primary-rgb), 0.2);
-            text-transform: uppercase;
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            background: var(--primary);
-            border-radius: 50%;
-            box-shadow: 0 0 10px var(--primary);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 0.4; transform: scale(0.8); }
-            50% { opacity: 1; transform: scale(1.1); }
-            100% { opacity: 0.4; transform: scale(0.8); }
-        }
-
-        h1 {
-            font-size: 32px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            letter-spacing: -0.02em;
-        }
-
-        p.subtitle {
-            color: var(--text-muted);
-            font-size: 16px;
-            margin-bottom: 32px;
-        }
-
-        .hostname-box {
-            background: rgba(15, 23, 42, 0.5);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 24px;
-            position: relative;
-            transition: all 0.3s ease;
-        }
-
-        .hostname-box:hover {
-            border-color: rgba(var(--primary-rgb), 0.4);
-            background: rgba(15, 23, 42, 0.7);
-        }
-
-        .hostname-label {
-            display: block;
-            font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            color: var(--text-muted);
             margin-bottom: 8px;
-            font-weight: 600;
         }
-
-        .hostname-value {
-            font-size: 20px;
-            font-weight: 400;
-            color: var(--primary);
-            word-break: break-all;
-        }
-
-        .copy-btn {
-            background: var(--primary);
-            color: white;
-            border: none;
-            width: 100%;
-            padding: 16px;
-            border-radius: 14px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .copy-btn:hover {
-            background: var(--primary-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(var(--primary-rgb), 0.4);
-        }
-
-        .copy-btn:active {
-            transform: translateY(0);
-        }
-
-        .footer-link {
-            display: inline-block;
-            margin-top: 24px;
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 14px;
-            transition: color 0.2s;
-        }
-
-        .footer-link:hover {
-            color: white;
-        }
-
-        /* Message alert */
-        #toast {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%) translateY(100px);
-            background: #10b981;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-weight: 600;
-            box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
-            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-            opacity: 0;
-        }
-
-        #toast.show {
-            transform: translateX(-50%) translateY(0);
-            opacity: 1;
-        }
+        h1 { margin: 0; font-size: 2rem; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="card">
-            <div class="status-badge">
-                <div class="dot"></div>
-                ${!currentTunnelUrl ? "CONECTANDO..." : isLocal ? "MODO LOCAL" : "TÚNEL ACTIVO"}
-            </div>
-            <h1>HIMNARIO</h1>
-            <p class="subtitle">Copie el hostname para el frontend</p>
-            
-            <div class="hostname-box">
-                <span class="hostname-label">Hostname</span>
-                <div class="hostname-value" id="hostname">${hostname}</div>
-            </div>
-
-            <button class="copy-btn" id="copyBtn" ${!currentTunnelUrl ? "disabled" : ""}>
-                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                Copiar Hostname
-            </button>
-
-            <a href="${currentTunnelUrl || "#"}" target="_blank" class="footer-link">
-                ${currentTunnelUrl ? (isLocal ? "Abrir IP local" : "Abrir URL completa") : "Esperando..."}
-            </a>
-        </div>
+    <div class="card">
+        <div class="status">● En línea</div>
+        <h1>Himnario Backend</h1>
+        <p style="color: #94a3b8">v2.0 - Multi-Tenant</p>
     </div>
-
-    <div id="toast">¡Hostname copiado al portapapeles!</div>
-
-    <script>
-        const btn = document.getElementById('copyBtn');
-        const textElement = document.getElementById('hostname');
-        const toast = document.getElementById('toast');
-
-        btn.addEventListener('click', async () => {
-            const text = textElement.innerText;
-            if (text === '---') return;
-            try {
-                await navigator.clipboard.writeText(text);
-                toast.classList.add('show');
-                setTimeout(() => toast.classList.remove('show'), 3000);
-            } catch (err) {
-                console.error('Error al copiar: ', err);
-            }
-        });
-    </script>
 </body>
 </html>
-  `;
-  res.send(html);
+  `);
 });
 
 app.get("/api/cantos", async (req, res) => {
@@ -540,7 +261,7 @@ app.get("/api/canto/:id", async (req, res) => {
   res.send(answer[0]);
 });
 
-app.post("/import", async (req, res) => {
+app.post("/import", authAdmin, async (req, res) => {
   try {
     if (!Array.isArray(req.body)) {
       res.status(400).json({ error: "El cuerpo debe ser un array de cantos." });
@@ -574,7 +295,7 @@ app.post("/import", async (req, res) => {
   }
 });
 
-app.post("/api/canto", async (req, res) => {
+app.post("/api/canto", authAdmin, async (req, res) => {
   try {
     const { title, type, nh, content } = req.body;
     const id = uuid();
@@ -589,7 +310,7 @@ app.post("/api/canto", async (req, res) => {
   }
 });
 
-app.put("/api/canto", async (req, res) => {
+app.put("/api/canto", authAdmin, async (req, res) => {
   try {
     const { id, title, type, nh, content } = req.body;
     if (!id) {
@@ -615,7 +336,7 @@ app.put("/api/canto", async (req, res) => {
   }
 });
 
-app.delete("/api/cantos", async (req, res) => {
+app.delete("/api/cantos", authAdmin, async (req, res) => {
   try {
     const query = db.query("DELETE FROM cantos");
     query.run();
@@ -631,7 +352,7 @@ app.get("/debug/routes", (req, res) => {
   res.json({ status: "ok", version: "sse-v1" });
 });
 
-app.delete("/api/canto/:id", async (req, res) => {
+app.delete("/api/canto/:id", authAdmin, async (req, res) => {
   try {
     const query = db.query("DELETE FROM cantos WHERE id = ?");
     const result = query.run(req.params.id);
@@ -648,10 +369,11 @@ app.delete("/api/canto/:id", async (req, res) => {
 
 app.get("/api/anuncios", (req, res) => {
   try {
+    const clientId = (req.headers["x-client-id"] as string) || "default";
     const query = db.query(
-      "SELECT * FROM anuncios ORDER BY createdAt DESC LIMIT 50",
+      "SELECT * FROM anuncios WHERE clientId = ? ORDER BY createdAt DESC LIMIT 50",
     );
-    const results = query.all();
+    const results = query.all(clientId);
     res.json(results);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -661,6 +383,7 @@ app.get("/api/anuncios", (req, res) => {
 app.post("/api/anuncios", (req, res) => {
   try {
     const { text, position, topic } = req.body;
+    const clientId = (req.headers["x-client-id"] as string) || "default";
     if (!text) {
       res.status(400).json({ error: "Text is required" });
       return;
@@ -669,10 +392,10 @@ app.post("/api/anuncios", (req, res) => {
     const createdAt = Date.now();
     const pos = position || "bottom";
     const insert = db.query(
-      "INSERT INTO anuncios (id, text, position, topic, createdAt) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO anuncios (id, text, position, topic, createdAt, clientId) VALUES (?, ?, ?, ?, ?, ?)",
     );
-    insert.run(id, text, pos, topic || null, createdAt);
-    res.json({ id, text, position: pos, topic: topic || null, createdAt });
+    insert.run(id, text, pos, topic || null, createdAt, clientId);
+    res.json({ id, text, position: pos, topic: topic || null, createdAt, clientId });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -680,8 +403,9 @@ app.post("/api/anuncios", (req, res) => {
 
 app.delete("/api/anuncios/:id", (req, res) => {
   try {
-    const query = db.query("DELETE FROM anuncios WHERE id = ?");
-    query.run(req.params.id);
+    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const query = db.query("DELETE FROM anuncios WHERE id = ? AND clientId = ?");
+    query.run(req.params.id, clientId);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -690,9 +414,10 @@ app.delete("/api/anuncios/:id", (req, res) => {
 
 app.delete("/api/anuncios", (req, res) => {
   try {
-    const query = db.query("DELETE FROM anuncios");
-    query.run();
-    res.json({ success: true, message: "All announcements deleted" });
+    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const query = db.query("DELETE FROM anuncios WHERE clientId = ?");
+    query.run(clientId);
+    res.json({ success: true, message: "All announcements deleted for this client" });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -701,14 +426,15 @@ app.delete("/api/anuncios", (req, res) => {
 app.post("/api/anuncios/delete-selected", (req, res) => {
   try {
     const { ids } = req.body;
+    const clientId = (req.headers["x-client-id"] as string) || "default";
     if (!Array.isArray(ids)) {
       res.status(400).json({ error: "IDs array is required" });
       return;
     }
-    const query = db.query("DELETE FROM anuncios WHERE id = ?");
+    const query = db.query("DELETE FROM anuncios WHERE id = ? AND clientId = ?");
     db.transaction(() => {
       for (const id of ids) {
-        query.run(id);
+        query.run(id, clientId);
       }
     })();
     res.json({ success: true, count: ids.length });
@@ -814,20 +540,104 @@ function parseSong(canto: Canto): ParsedSong {
   };
 }
 
-let initialInfo = {
+interface InitialInfo {
+  viewerActive: boolean;
+  activeLine: string;
+  activeCantoId: string;
+  activeIndex: number;
+  activeSong: ParsedSong | null;
+  announcement: {
+    text: string;
+    active: boolean;
+    position: "top" | "bottom";
+    topic: string;
+  };
+  transcription: { active: boolean; final: string; interim: string };
+}
+
+const defaultInitialInfo = (): InitialInfo => ({
   viewerActive: false,
   activeLine: "",
   activeCantoId: "",
   activeIndex: 0,
-  activeSong: null as ParsedSong | null,
-    announcement: {
-      text: "",
-      active: false,
-      position: "bottom" as "top" | "bottom",
-      topic: "ANUNCIO",
-    },
+  activeSong: null,
+  announcement: {
+    text: "",
+    active: false,
+    position: "bottom",
+    topic: "ANUNCIO",
+  },
   transcription: { active: false, final: "", interim: "" },
-};
+});
+
+const clientStates = new Map<string, InitialInfo>();
+
+async function getClientState(clientId: string): Promise<InitialInfo> {
+  if (clientStates.has(clientId)) {
+    return clientStates.get(clientId)!;
+  }
+
+  // Try to load from DB
+  try {
+    const row: any = db.query("SELECT * FROM client_states WHERE clientId = ?").get(clientId);
+    if (row) {
+      const state = defaultInitialInfo();
+      state.viewerActive = !!row.viewerActive;
+      state.activeLine = row.activeLine || "";
+      state.activeCantoId = row.activeCantoId || "";
+      state.activeIndex = row.activeIndex || 0;
+      state.announcement.text = row.announcementText || "";
+      state.announcement.active = !!row.announcementActive;
+      state.announcement.position = (row.announcementPosition as "top" | "bottom") || "bottom";
+      state.announcement.topic = row.announcementTopic || "ANUNCIO";
+      state.transcription.active = !!row.transcriptionActive;
+
+      // Load song if activeCantoId exists
+      if (state.activeCantoId) {
+        const songs = await getCantos(state.activeCantoId);
+        if (songs[0]) {
+          state.activeSong = parseSong(songs[0]);
+        }
+      }
+      
+      clientStates.set(clientId, state);
+      return state;
+    }
+  } catch (e) {
+    console.error(`Error loading state for ${clientId}:`, e);
+  }
+
+  // Not found, use default
+  const newState = defaultInitialInfo();
+  clientStates.set(clientId, newState);
+  return newState;
+}
+
+function saveClientState(clientId: string, state: InitialInfo) {
+  try {
+    const query = db.query(`
+      INSERT OR REPLACE INTO client_states (
+        clientId, viewerActive, activeLine, activeCantoId, activeIndex, 
+        announcementText, announcementActive, announcementPosition, 
+        announcementTopic, transcriptionActive
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    query.run(
+      clientId,
+      state.viewerActive ? 1 : 0,
+      state.activeLine,
+      state.activeCantoId,
+      state.activeIndex,
+      state.announcement.text,
+      state.announcement.active ? 1 : 0,
+      state.announcement.position,
+      state.announcement.topic,
+      state.transcription.active ? 1 : 0
+    );
+  } catch (e) {
+    console.error(`Error saving state for ${clientId}:`, e);
+  }
+}
 
 async function prepareDb() {
   try {
@@ -835,18 +645,30 @@ async function prepareDb() {
       "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)",
     );
     db.run(
-      "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', topic TEXT, createdAt INTEGER)",
+      "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', topic TEXT, createdAt INTEGER, clientId TEXT)",
     );
+    db.run(
+      `CREATE TABLE IF NOT EXISTS client_states (
+        clientId TEXT PRIMARY KEY,
+        viewerActive INTEGER,
+        activeLine TEXT,
+        activeCantoId TEXT,
+        activeIndex INTEGER,
+        announcementText TEXT,
+        announcementActive INTEGER,
+        announcementPosition TEXT,
+        announcementTopic TEXT,
+        transcriptionActive INTEGER
+      )`,
+    );
+
+    // Migrations
+    try {
+      db.run("ALTER TABLE anuncios ADD COLUMN clientId TEXT");
+    } catch (e) {}
     try {
       db.run("ALTER TABLE anuncios ADD COLUMN topic TEXT");
-    } catch (e) {
-      // Column already exists or table doesn't exist yet
-    }
-    try {
-      db.query("SELECT topic FROM anuncios LIMIT 1").get();
-    } catch (e) {
-      db.run("ALTER TABLE anuncios ADD COLUMN topic TEXT");
-    }
+    } catch (e) {}
   } catch (error) {
     console.error("Error preparing database:", error);
   }
@@ -893,61 +715,4 @@ server.listen(PORT, "0.0.0.0", async () => {
   colorprint.INFO("Server running in http://0.0.0.0:" + PORT);
   await prepareDb();
   await setupFuse();
-
-  let fallbackTriggered = false;
-  const originalExit = process.exit;
-
-  const triggerLocalFallback = (reason: string) => {
-    if (fallbackTriggered) return;
-    fallbackTriggered = true;
-
-    colorprint.WARN(`[TUNNEL] Switching to Local Mode: ${reason}`);
-    
-    // Restore original process.exit early
-    process.exit = originalExit;
-    
-    // Fallback logic
-    const localIp = getLocalIp();
-    currentTunnelUrl = `http://${localIp}:${PORT}`;
-    sendNotification("🤖 Backend is alive (Local Mode)!", currentTunnelUrl);
-  };
-
-  // Temp global error handlers to catch async library failures
-  const onUncaught = (err: Error) => triggerLocalFallback(`Uncaught Exception: ${err.message}`);
-  const onUnhandled = (reason: any) => triggerLocalFallback(`Unhandled Rejection: ${reason}`);
-
-  process.on("uncaughtException", onUncaught);
-  process.on("unhandledRejection", onUnhandled);
-
-  // Monkey-patch process.exit to prevent the library from killing the main process
-  // @ts-ignore
-  process.exit = (code?: number) => {
-    if (code !== 0 && code !== undefined) {
-      triggerLocalFallback(`Intercepted process.exit(${code})`);
-      return; // Do NOT exit!
-    }
-    return originalExit(code);
-  };
-
-  try {
-    // Race the tunnel initialization against a 10-second timeout
-    const url = await Promise.race([
-      getTunnel(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000))
-    ]) as string;
-
-    if (!fallbackTriggered) {
-      currentTunnelUrl = url;
-      sendNotification("🤖 Backend is alive!", url);
-    }
-  } catch (e: any) {
-    triggerLocalFallback(e.message);
-  } finally {
-    // Cleanup handlers after initialization phase
-    setTimeout(() => {
-      process.off("uncaughtException", onUncaught);
-      process.off("unhandledRejection", onUnhandled);
-      process.exit = originalExit;
-    }, 1000);
-  }
 });

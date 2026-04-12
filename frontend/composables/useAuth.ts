@@ -7,11 +7,12 @@ export const useAuth = () => {
   });
 
   const login = (password: string) => {
-    // Check against runtime config or .env
+    // En el nuevo sistema, guardamos la contraseña directamente como token
+    // El backend la validará en cada petición protegida
     const masterPassword = config.public.authPassword || '2486';
     
     if (password === masterPassword) {
-      authenticated.value = 'true';
+      authenticated.value = password;
       return true;
     }
     return false;
@@ -22,8 +23,11 @@ export const useAuth = () => {
     return navigateTo('/login');
   }
 
+  const isAdmin = computed(() => !!authenticated.value);
+
   return {
     authenticated,
+    isAdmin,
     login,
     logout
   };

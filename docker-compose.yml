@@ -1,39 +1,28 @@
 services:
   backend:
-    image: ghcr.io/jvilledev/backend:latest
-    container_name: backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hymns-backend
+    restart: unless-stopped
     ports:
-      - "3100:3100"
+      - "3100"
     volumes:
       - db_data:/app/src/data
 
   frontend:
-    image: ghcr.io/jvilledev/frontend:latest
-    container_name: frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hymns-frontend
+    restart: unless-stopped
     environment:
-      - BACKEND_URL=http://backend:3100
+      - BACKEND_URL=http://hymns-backend:3100
+      - NUXT_PUBLIC_API_URL=https://hymns-back.jville.dev
     ports:
-      - "3000:3000"
+      - "3000"
     depends_on:
       - backend
-
-  # Auto-update service (Watchtower)
-  # Detecta imágenes nuevas en GHCR y reinicia los contenedores automáticamente
-  watchtower:
-    image: containrrr/watchtower:latest
-    container_name: watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      # Intervalo de búsqueda en segundos (e.g., 300 = 5 minutos)
-      - WATCHTOWER_POLL_INTERVAL=300
-      # Elimina las imágenes antiguas para ahorrar espacio
-      - WATCHTOWER_CLEANUP=true
-      # Solo actualizará los contenedores que se le indiquen (opcional)
-      # - WATCHTOWER_INCLUDE_STOPPED=true
-    restart: always
-    # Solo monitoreamos el backend y el frontend
-    command: --cleanup backend frontend
 
 volumes:
   db_data:

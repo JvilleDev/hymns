@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 
-const { isConnectionError, isManualConnectionTrigger, retryConnection, activeBaseUrl, checkUrl } = useApi()
-const urlInput = ref('')
-const useSsl = ref(false)
-const isRetrying = ref(false)
-const testStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle')
-let debounceTimer: any = null
+const { isConnectionError, isManualConnectionTrigger, clientId, setClientId } = useApi()
+const { isConnected, connectionStatus } = useRealtime()
+
+const idInput = ref('')
+const isCopied = ref(false)
 
 const isOpen = computed({
   get: () => isConnectionError.value || isManualConnectionTrigger.value,
@@ -16,55 +15,38 @@ const isOpen = computed({
   }
 })
 
-const dialogTitle = computed(() => isManualConnectionTrigger.value ? 'Configuración de Servidor' : 'Servidor no encontrado')
-const dialogDescription = computed(() => isManualConnectionTrigger.value 
-  ? 'Ajusta la dirección del backend. Esto reiniciará la conexión con el servidor especificado.' 
-  : 'No se pudo establecer conexión con el backend. Por favor, especifica la dirección IP y el puerto para continuar.')
-
-const runTest = async () => {
-  if (!urlInput.value || urlInput.value.length < 3) {
-    testStatus.value = 'idle'
-    return
-  }
-  
-  testStatus.value = 'testing'
-  const protocol = useSsl.value ? 'https' : 'http'
-  const fullUrl = `${protocol}://${urlInput.value.trim().replace(/^https?:\/\//, '')}`
-  
-  const isOk = await checkUrl(fullUrl)
-  testStatus.value = isOk ? 'success' : 'error'
-}
-
-watch([urlInput, useSsl], () => {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  testStatus.value = 'testing'
-  debounceTimer = setTimeout(runTest, 600)
-})
-
-onUnmounted(() => {
-  if (debounceTimer) clearTimeout(debounceTimer)
-})
+const dialogTitle = computed(() => isConnected.value ? 'Configuración de Mi Cuenta' : 'Buscando servidor...')
+const dialogDescription = computed(() => isConnected.value 
+  ? 'Este es tu identificador único. Compártelo con otros dispositivos (visor, monitor, etc.) para sincronizarlos.' 
+  : 'Conectando con hymns-back.jville.dev. Podrás ver tus cantos y anuncios una vez establecida la conexión.')
 
 onMounted(() => {
-  // Inicializar input con la URL actual (sin el protocolo para facilitar edición rápida)
-  if (activeBaseUrl.value) {
-    urlInput.value = activeBaseUrl.value.replace(/^https?:\/\//, '')
-    useSsl.value = activeBaseUrl.value.startsWith('https')
-  }
+  idInput.value = clientId.value
 })
 
-const handleConnect = async () => {
-  if (!urlInput.value) return
-  isRetrying.value = true
-  try {
-    await retryConnection(urlInput.value, useSsl.value)
-    // Cerrar si tiene éxito
+const handleSave = () => {
+  if (idInput.value && idInput.value !== clientId.value) {
+    setClientId(idInput.value)
+    // Recargar página para asegurar que todo se reinicie con el nuevo ID
+    window.location.reload()
+  } else {
     isOpen.value = false
-  } catch (err) {
-    console.error('[ConnectionDialog] Reintento fallido:', err)
-  } finally {
-    isRetrying.value = false
   }
+}
+
+const copyId = async () => {
+  try {
+    await navigator.clipboard.writeText(clientId.value)
+    isCopied.value = true
+    setTimeout(() => { isCopied.value = false }, 2000)
+  } catch (err) {
+    console.error('Error al copiar:', err)
+  }
+}
+
+const generateNewId = () => {
+  const newId = crypto.randomUUID()
+  idInput.value = newId
 }
 </script>
 
@@ -75,54 +57,67 @@ const handleConnect = async () => {
     :description="dialogDescription"
     class="max-w-md"
   >
-    <div class="space-y-4 py-2">
-      <GInput 
-        v-model="urlInput"
-        label="Dirección del Servidor"
-        placeholder="ej: 192.168.1.40:3100"
-        autofocus
-        @keyup.enter="handleConnect"
-      />
-
-      <div class="space-y-3">
-        <GSwitch 
-          v-model="useSsl"
-          label="Usar conexión segura (HTTPS/SSL)"
-        />
-
-        <div v-if="testStatus !== 'idle'" class="flex items-center gap-2 px-1">
-          <template v-if="testStatus === 'testing'">
-            <Icon name="tabler:loader-2" class="size-4 text-primary animate-spin" />
-            <span class="text-xs text-muted-foreground italic">Probando conexión...</span>
-          </template>
-          <template v-else-if="testStatus === 'success'">
-            <Icon name="tabler:circle-check" class="size-4 text-green-500" />
-            <span class="text-xs text-green-600 font-medium tracking-tight">Conexión exitosa con el servidor</span>
-          </template>
-          <template v-else-if="testStatus === 'error'">
-            <Icon name="tabler:circle-x" class="size-4 text-destructive" />
-            <span class="text-xs text-destructive font-medium tracking-tight">No se pudo conectar al servidor</span>
-          </template>
+    <div class="space-y-6 py-4">
+      <!-- Status Badge -->
+      <div class="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/50">
+        <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Estado de Conexión</span>
+        <div class="flex items-center gap-2">
+          <div class="size-2 rounded-full animate-pulse" 
+            :class="isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'">
+          </div>
+          <span class="text-sm font-bold" :class="isConnected ? 'text-green-500' : 'text-amber-500'">
+            {{ isConnected ? 'Conectado' : 'Conectando...' }}
+          </span>
         </div>
       </div>
-      
-      <div class="p-3 bg-primary/5 border border-primary/10 rounded-xl flex items-start gap-3">
-        <Icon name="tabler:info-circle" class="size-5 text-primary shrink-0 mt-0.5" />
-        <div class="text-xs text-muted-foreground leading-relaxed">
-          <p class="font-medium text-foreground mb-1 italic">¿Cómo encontrarla?</p>
-          Si el servidor está en la misma red, usa la IP local del equipo que ejecuta el backend seguido de <code class="text-primary font-mono">:3100</code>.
+
+      <!-- Client ID Management -->
+      <div v-if="isConnected" class="space-y-4">
+        <div class="space-y-2">
+          <label class="text-xs font-bold text-primary uppercase tracking-widest ml-1">Mi Identificador (Client ID)</label>
+          <div class="relative group">
+            <GInput 
+              v-model="idInput"
+              placeholder="Introduce un ID..."
+              class="pr-24 font-mono text-sm h-12"
+            />
+            <div class="absolute right-1.5 top-1.5 flex gap-1">
+              <GButton variant="secondary" size="sm" class="h-9 px-3" @click="generateNewId" title="Generar nuevo ID">
+                <Icon name="tabler:refresh" class="size-4" />
+              </GButton>
+              <GButton variant="default" size="sm" class="h-9 px-3" @click="copyId">
+                <Icon :name="isCopied ? 'tabler:check' : 'tabler:copy'" class="size-4" />
+              </GButton>
+            </div>
+          </div>
+          <p class="text-[10px] text-muted-foreground ml-1 italic">
+            * Cambiar el ID hará que se recargue la aplicación para sincronizar los datos.
+          </p>
         </div>
+
+        <div class="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-start gap-3">
+          <Icon name="tabler:info-circle-filled" class="size-6 text-primary shrink-0 opacity-80" />
+          <div class="text-xs text-muted-foreground leading-relaxed">
+            <p class="font-bold text-foreground mb-1">¿Para qué sirve el ID?</p>
+            Permite que varios dispositivos (el que controla, el visor de la pantalla, el de los músicos) compartan la misma lista y anuncios en tiempo real.
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="flex flex-col items-center justify-center py-8 text-center space-y-4">
+        <Icon name="tabler:loader-2" class="size-12 text-primary animate-spin opacity-50" />
+        <p class="text-sm text-muted-foreground max-w-[200px]">Estableciendo túnel seguro con la nube...</p>
       </div>
     </div>
 
     <template #footer>
       <GButton 
         variant="default" 
-        class="w-full sm:w-auto"
-        :loading="isRetrying"
-        @click="handleConnect"
+        class="w-full sm:w-auto font-bold"
+        :disabled="!isConnected"
+        @click="handleSave"
       >
-        Intentar conectar
+        {{ idInput !== clientId ? 'Guardar y Reiniciar' : 'Entendido' }}
       </GButton>
     </template>
   </GDialog>

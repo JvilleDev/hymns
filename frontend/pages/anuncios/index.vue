@@ -14,6 +14,7 @@ const {
 } = useRealtime()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
+const { isAdmin } = useAuth()
 
 const textInput = ref('')
 const currentTopic = ref('')
@@ -660,7 +661,7 @@ onMounted(() => {
         <!-- Right Column: History (Desktop) -->
         <section class="hidden lg:flex flex-col bg-background overflow-hidden border-l border-border">
           <div class="flex-1 flex flex-col overflow-hidden">
-            <div class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
+            <div v-if="history.length > 0 && isAdmin" class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
               <div>
                 <h2 class="text-lg font-bold tracking-tight mb-1 truncate max-w-[200px]" :title="currentTopic || 'Historial'">
                   {{ currentTopic || 'Historial' }}
@@ -679,7 +680,6 @@ onMounted(() => {
                   Borrar ({{ selectedIds.size }})
                 </GButton>
                 <GButton 
-                  v-if="history.length > 0"
                   @click="clearAll"
                   variant="ghost" 
                   size="sm" 
@@ -688,6 +688,10 @@ onMounted(() => {
                   Limpiar Todo
                 </GButton>
               </div>
+            </div>
+            <div v-else class="px-6 pt-6 pb-4 border-b border-border shrink-0">
+               <h2 class="text-lg font-bold tracking-tight mb-1 truncate">{{ currentTopic || 'Historial' }}</h2>
+               <p class="text-xs text-muted-foreground">Historial de anuncios enviados</p>
             </div>
 
             <div v-if="history.length === 0" class="flex flex-col items-center justify-center h-full text-center p-6">
@@ -711,7 +715,7 @@ onMounted(() => {
                   :class="{ 'border-primary bg-primary/5 ring-1 ring-primary/20': selectedIds.has(item.id) }"
                 >
                   <!-- Checkbox area -->
-                  <div class="pt-1">
+                  <div v-if="isAdmin" class="pt-1">
                     <button 
                       @click="toggleSelect(item.id)"
                       class="size-5 rounded border-2 transition-all flex items-center justify-center"
@@ -762,7 +766,7 @@ onMounted(() => {
                         <Icon name="tabler:copy" class="size-3.5" />
                         Copiar
                       </GButton>
-                      <button @click="deleteItem(item.id)" class="p-1.5 text-muted-foreground hover:text-red-500 transition-colors ml-auto">
+                      <button v-if="isAdmin" @click="deleteItem(item.id)" class="p-1.5 text-muted-foreground hover:text-red-500 transition-colors ml-auto">
                         <Icon name="tabler:trash" class="size-4" />
                       </button>
                     </div>
@@ -787,7 +791,7 @@ onMounted(() => {
             </div>
             <div class="flex items-center gap-2">
                <GButton 
-                v-if="history.length > 0"
+                v-if="history.length > 0 && isAdmin"
                 @click="clearAll"
                 variant="ghost" 
                 size="sm" 
