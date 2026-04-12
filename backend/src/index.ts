@@ -370,10 +370,13 @@ app.delete("/api/canto/:id", authAdmin, async (req, res) => {
 app.get("/api/anuncios", (req, res) => {
   try {
     const clientId = (req.headers["x-client-id"] as string) || "default";
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+    
     const query = db.query(
-      "SELECT * FROM anuncios WHERE clientId = ? ORDER BY createdAt DESC LIMIT 50",
+      "SELECT * FROM anuncios WHERE clientId = ? ORDER BY createdAt DESC LIMIT ? OFFSET ?",
     );
-    const results = query.all(clientId);
+    const results = query.all(clientId, limit, offset);
     res.json(results);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
