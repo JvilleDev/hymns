@@ -21,7 +21,6 @@ const currentTopic = ref('')
 const position = ref<'top' | 'bottom'>('bottom')
 const isLoading = ref(false)
 const history = ref<any[]>([])
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const showMobileHistory = ref(false)
 const transcriptionScrollRef = ref<HTMLElement | null>(null)
 
@@ -75,133 +74,19 @@ const clearAll = async () => {
   }
 }
 
-// Autocomplete State
-const showIconMenu = ref(false)
-const iconMenuIndex = ref(0)
-const slashQuery = ref('')
-
-// Computed Filtered Icons
-const filteredIcons = computed(() => {
-  if (!slashQuery.value) return availableIcons
-  return availableIcons.filter(icon => 
-    icon.name.toLowerCase().includes(slashQuery.value.toLowerCase()) || 
-    icon.label.toLowerCase().includes(slashQuery.value.toLowerCase())
-  )
-})
-
-const menuStyle = ref({})
-
-// Textarea specific logic
-const checkSlashCommand = () => {
-  if (!textareaRef.value) return
-  
-  const el = textareaRef.value as HTMLTextAreaElement
-  const cursorPosition = el.selectionStart
-  const text = textInput.value
-  
-  const textBeforeCursor = text.slice(0, cursorPosition)
-  const lastSlashIndex = textBeforeCursor.lastIndexOf('/')
-  
-  if (lastSlashIndex !== -1) {
-     const command = textBeforeCursor.slice(lastSlashIndex + 1)
-     // Check if there's any space between slash and cursor
-     if (!/\s/.test(command)) {
-         showIconMenu.value = true
-         slashQuery.value = command
-         iconMenuIndex.value = 0
-         
-         // Use a more approximate positioning for the menu since we can't easily get precise XY coords in textarea
-         // or use a fixed position relative to the textarea
-         const rect = el.getBoundingClientRect()
-         menuStyle.value = {
-             position: 'fixed',
-             left: `${rect.left}px`,
-             bottom: `${window.innerHeight - rect.top + 8}px`, // Keep it simple: above or simple dropdown
-             width: '20rem',
-             zIndex: 9999
-         }
-         return
-     }
+// Quick-Fill logic
+const appendToEditor = (text: string) => {
+  if (!text) return
+  const cleanText = text.trim()
+  if (textInput.value.includes('</p>')) {
+      textInput.value = textInput.value.replace(/<\/p>$/, ` ${cleanText}</p>`)
+  } else {
+      textInput.value = textInput.value ? `${textInput.value} ${cleanText}` : cleanText
   }
-  
-  showIconMenu.value = false
-  slashQuery.value = ''
+  toast.info('Texto añadido al editor')
 }
 
-const insertIcon = (icon: any) => {
-  if (!textareaRef.value) return
-  
-  const el = textareaRef.value as HTMLTextAreaElement
-  const cursorPosition = el.selectionStart
-  const text = textInput.value
-  
-  const textBeforeCursor = text.slice(0, cursorPosition)
-  const lastSlashIndex = textBeforeCursor.lastIndexOf('/')
-  
-  if (lastSlashIndex !== -1) {
-      const prefix = text.slice(0, lastSlashIndex)
-      const suffix = text.slice(cursorPosition)
-      
-      const newText = `${prefix}/${icon.name} ${suffix}`
-      textInput.value = newText
-      
-      // Move cursor to end of inserted icon
-      nextTick(() => {
-          const newCursorPos = lastSlashIndex + icon.name.length + 2 // +1 for slash, +1 for space
-          el.focus()
-          el.setSelectionRange(newCursorPos, newCursorPos)
-      })
-  }
-  
-  showIconMenu.value = false
-  slashQuery.value = ''
-}
-
-
-const menuContainerRef = ref<HTMLElement | null>(null)
-const iconRef = ref<HTMLElement[]>([])
-
-// VueUse Shortcuts
-onKeyStroke(['Enter'], (e) => {
-  if ((e.metaKey || e.ctrlKey)) {
-    e.preventDefault()
-    sendAnnouncement()
-    return
-  }
-
-  if (showIconMenu.value) {
-    e.preventDefault()
-    if (filteredIcons.value.length > 0) {
-        insertIcon(filteredIcons.value[iconMenuIndex.value])
-    }
-  }
-}, { target: textareaRef })
-
-onKeyStroke(['Tab'], (e) => {
-  if (showIconMenu.value) {
-    e.preventDefault()
-    if (filteredIcons.value.length > 0) {
-        insertIcon(filteredIcons.value[iconMenuIndex.value])
-    }
-  }
-}, { target: textareaRef })
-
-onKeyStroke(['ArrowDown'], (e) => {
-  if (showIconMenu.value) {
-    e.preventDefault()
-    iconMenuIndex.value = (iconMenuIndex.value + 1) % filteredIcons.value.length
-    scrollToActive()
-  }
-}, { target: textareaRef })
-
-onKeyStroke(['ArrowUp'], (e) => {
-  if (showIconMenu.value) {
-    e.preventDefault()
-    iconMenuIndex.value = (iconMenuIndex.value - 1 + filteredIcons.value.length) % filteredIcons.value.length
-    scrollToActive()
-  }
-}, { target: textareaRef })
-
+// Shortcuts
 onKeyStroke(['l', 'L'], (e) => {
   if (e.metaKey || e.ctrlKey) {
     e.preventDefault()
@@ -209,34 +94,38 @@ onKeyStroke(['l', 'L'], (e) => {
   }
 })
 
-onKeyStroke(['Escape'], (e) => {
-  if (showIconMenu.value) {
-    showIconMenu.value = false
-  } else {
-    textInput.value = ''
+onKeyStroke(['Enter'], (e) => {
+  if (e.metaKey || e.ctrlKey) {
+    e.preventDefault()
+    sendAnnouncement()
   }
-}, { target: textareaRef })
+})
 
-const scrollToActive = () => {
-    nextTick(() => {
-        if (!iconRef.value || !iconRef.value[iconMenuIndex.value] || !menuContainerRef.value) return
-        
-        const activeEl = iconRef.value[iconMenuIndex.value]
-        const container = menuContainerRef.value
-        
-        if (activeEl.offsetTop + activeEl.clientHeight > container.scrollTop + container.clientHeight) {
-            container.scrollTop = activeEl.offsetTop + activeEl.clientHeight - container.clientHeight
-        } else if (activeEl.offsetTop < container.scrollTop) {
-            container.scrollTop = activeEl.offsetTop
-        }
-    })
-}
+onKeyStroke(['p', 'P'], (e) => {
+  if (e.metaKey || e.ctrlKey) {
+    e.preventDefault()
+    position.value = position.value === 'top' ? 'bottom' : 'top'
+    toast.info(`Ubicación: ${position.value === 'top' ? 'Superior' : 'Inferior'}`)
+  }
+})
+
+onKeyStroke(['v', 'V'], (e) => {
+  if (e.metaKey || e.ctrlKey) {
+    const target = e.target as HTMLElement
+    const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+    
+    if (isInput) return // Let the browser handle standard Paste
+
+    e.preventDefault()
+    const newState = !transcription.value.active
+    setTranscriptionActive(newState)
+    toast.success(`Voz Live: ${newState ? 'ACTIVADO' : 'DESACTIVADO'}`)
+  }
+})
 
 const fetchHistory = async () => {
   try {
     history.value = await getAnnouncements()
-    
-    // Si no hay un tema actual seleccionado, cargar el último del historial
     if (!currentTopic.value && history.value.length > 0) {
       const lastItemWithTopic = history.value.find(item => item.topic)
       if (lastItemWithTopic) {
@@ -251,14 +140,12 @@ const fetchHistory = async () => {
 const autoSendToAir = ref(true)
 
 const sendAnnouncement = async () => {
-  if (!textInput.value) return
+  if (!textInput.value || textInput.value === '<p></p>') return
 
   isLoading.value = true
   try {
-    // 1. Save to history
     await createAnnouncement(textInput.value, position.value, currentTopic.value)
     
-    // 2. Activate on screen (only if auto-send is enabled)
     if (autoSendToAir.value) {
         setAnnouncement({
           text: textInput.value,
@@ -267,7 +154,7 @@ const sendAnnouncement = async () => {
         })
     }
 
-    toast.success(autoSendToAir.value ? 'Anuncio enviado y guardado' : 'Anuncio guardado en historial')
+    toast.success(autoSendToAir.value ? 'Anuncio enviado' : 'Anuncio guardado')
     textInput.value = ''
     fetchHistory()
   } catch (e) {
@@ -279,11 +166,11 @@ const sendAnnouncement = async () => {
 
 const copyToInput = (item: any) => {
   textInput.value = item.text
-  position.value = item.position || 'bottom'
+  // position.value = item.position || 'bottom' // Respect global position
   if (item.topic) {
     currentTopic.value = item.topic
   }
-  toast.info('Texto copiado al editor')
+  toast.info('Copiado al editor')
 }
 
 const isActive = (item: any) => {
@@ -300,13 +187,13 @@ const toggleVisibility = () => {
 
 const resendFromHistory = (item: any) => {
   textInput.value = item.text
-  position.value = item.position || 'bottom'
+  // position.value = item.position || 'bottom' // Keep global position
   setAnnouncement({
     text: item.text,
     active: true,
-    position: item.position || 'bottom'
+    position: position.value // Use global position
   })
-  toast.success('Anuncio enviado')
+  toast.success('Anuncio al aire')
 }
 
 const deleteItem = async (id: string) => {
@@ -318,77 +205,86 @@ const deleteItem = async (id: string) => {
   }
 }
 
-// Parse announcement text to render icons
-const parseContent = (text: string) => {
+// Robust Parser for HTML content (mirrors LowerThird logic)
+const parseHTMLContent = (html: string) => {
+  if (!html) return []
   const segments: Array<{ type: 'text' | 'icon', value: string, class?: string }> = []
-  const regex = /\/([a-zA-Z0-9-]+)/g
-  let lastIndex = 0
-  let match
-
-  while ((match = regex.exec(text)) !== null) {
-    // Add text before icon
-    if (match.index > lastIndex) {
-      segments.push({
-        type: 'text',
-        value: text.slice(lastIndex, match.index)
-      })
+  
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  
+  const walk = (node: Node, currentStyles: { bold?: boolean, italic?: boolean, color?: string } = {}) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) {
+        const classes = [
+            currentStyles.color ? `text-${currentStyles.color}-600` : '',
+            currentStyles.bold ? 'font-black' : 'font-bold', 
+            currentStyles.italic ? 'italic' : ''
+        ].filter(Boolean).join(' ')
+        
+        segments.push({
+            type: 'text',
+            value: node.textContent,
+            class: classes
+        })
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement
+      const newStyles = { ...currentStyles }
+      
+      if (['STRONG', 'B'].includes(el.tagName)) newStyles.bold = true
+      if (['EM', 'I'].includes(el.tagName)) newStyles.italic = true
+      
+      if (el.classList.contains('announcement-icon') || el.hasAttribute('data-icon')) {
+        const iconName = el.getAttribute('data-icon')
+        if (iconName) {
+            const iconDef = availableIcons.find(i => i.name === iconName)
+            if (iconDef) {
+                 let iconColorClass = ''
+                 if (iconName === 'david') iconColorClass = 'text-primary'
+                 
+                 segments.push({
+                     type: 'icon',
+                     value: iconDef.icon,
+                     class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
+                 })
+                 return 
+            }
+        }
+      }
+      
+      el.childNodes.forEach(child => walk(child, newStyles))
+      if (el.tagName === 'P') {
+        segments.push({ type: 'text', value: ' ', class: '' })
+      }
     }
-
-    // Find icon
-    const iconName = match[1]
-    const icon = availableIcons.find(i => i.name === iconName)
-    
-    if (icon) {
-      segments.push({
-        type: 'icon',
-        value: icon.icon,
-        class: 'inline-block size-6 md:size-7'
-      })
-    } else {
-      // If icon not found, keep the text
-      segments.push({
-        type: 'text',
-        value: match[0]
-      })
-    }
-
-    lastIndex = regex.lastIndex
   }
-
-  // Add remaining text
-  if (lastIndex < text.length) {
-    segments.push({
-      type: 'text',
-      value: text.slice(lastIndex)
-    })
-  }
-
+  
+  doc.body.childNodes.forEach(child => walk(child))
   return segments
 }
 
-// Watch textInput for slash commands
-watch(textInput, () => {
-  checkSlashCommand()
+// Suggested topics based on history
+const suggestedTopics = computed(() => {
+    const topics = history.value
+        .map(h => h.topic)
+        .filter((t, i, arr) => t && arr.indexOf(t) === i)
+        .slice(0, 8)
+    return topics
 })
 
-// Sync currentTopic with real-time state
 watch(currentTopic, (newVal) => {
   if (newVal !== announcement.value.topic) {
-    setAnnouncement({
-      ...announcement.value,
-      topic: newVal
-    })
+    setAnnouncement({ ...announcement.value, topic: newVal })
   }
 })
 
-// Sync UI if topic changes from another client
 watch(() => announcement.value.topic, (newVal) => {
   if (newVal !== currentTopic.value) {
     currentTopic.value = newVal || ''
   }
 })
 
-// Auto-scroll transcription monitor
 watch([() => transcription.value.final, () => transcription.value.interim], () => {
     nextTick(() => {
         if (transcriptionScrollRef.value) {
@@ -405,494 +301,323 @@ onMounted(() => {
 
 <template>
   <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
+    <!-- Desktop Command Center -->
     <div class="flex-1 flex overflow-hidden relative">
-      <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 overflow-hidden">
-        
-        <!-- Left Column: Control Panel -->
-        <section class="flex flex-col border-r border-border bg-muted/5 overflow-y-auto p-6 md:p-8 w-full">
-          <div class="space-y-6">
-            <div class="bg-card border border-border rounded-xl p-6 shadow-sm space-y-6">
-              <div class="flex items-start justify-between">
-                <div>
-                  <h2 class="text-lg font-bold tracking-tight mb-1">Crear Anuncio</h2>
-                  <p class="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted border border-border text-[9px] font-mono leading-none">
-                      <Icon name="tabler:command" class="size-2.5" />
-                      ENTER
-                    </span>
-                    para enviar
-                  </p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <div class="size-2 rounded-full transition-all duration-500" 
-                    :class="{
-                      'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-in zoom-in duration-300': connectionStatus === 'connected',
-                      'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)] animate-pulse': connectionStatus === 'connecting',
-                      'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse': connectionStatus === 'disconnected'
-                    }">
-                  </div>
-                  <span class="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/70">
-                    {{ connectionStatus === 'connected' ? "Conectado" : connectionStatus === 'connecting' ? "Conectando..." : "Desconectado" }}
-                  </span>
-                </div>
-              </div>
-
-              <div class="space-y-4">
-                <div class="space-y-2">
-                  <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tema / Biblioteca</label>
-                  <div class="relative">
-                    <Icon name="tabler:library" class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                    <input 
-                      v-model="currentTopic" 
-                      type="text" 
-                      placeholder="Ej: Culto de Jóvenes, Anuncios Generales..." 
-                      class="w-full bg-muted/50 border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                    />
-                  </div>
-                </div>
-
+      
+      <!-- LEFT SIDEBAR: Library & Quick Topics -->
+      <aside class="hidden xl:flex flex-col w-64 border-r border-border bg-muted/20 shrink-0 overflow-hidden">
+        <div class="p-6 border-b border-border">
+          <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-4">Biblioteca</h3>
+          
+          <div class="space-y-4">
+             <div class="space-y-2">
+                <label class="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Tema Actual</label>
                 <div class="relative">
-                  <!-- Icon Autocomplete Menu -->
-                  <Teleport to="body">
-                    <div 
-                      v-if="showIconMenu && filteredIcons.length > 0"
-                      class="bg-popover border border-border rounded-lg shadow-lg overflow-hidden flex flex-col"
-                      :style="menuStyle"
-                    >
-                      <div class="p-2 bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border-b border-border">
-                        Insertar Icono
-                      </div>
-                      <div class="max-h-48 overflow-y-auto p-1" ref="menuContainerRef">
-                        <button
-                          v-for="(icon, idx) in filteredIcons"
-                          :key="icon.name"
-                          ref="iconRef"
-                          class="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors"
-                          :class="idx === iconMenuIndex ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'"
-                          @click="insertIcon(icon)"
-                        >
-                           <Icon :name="icon.icon" class="size-4" />
-                           <span class="font-bold font-mono text-xs bg-muted border border-border px-1.5 py-0.5 rounded shadow-sm text-foreground">/{{ icon.name }}</span>
-                           <span class="ml-auto text-xs opacity-70">{{ icon.label }}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </Teleport>
-
-                  <!-- Contenteditable div with icon rendering -->
-                  <textarea
-                    ref="textareaRef"
-                    v-model="textInput"
-                    class="announcement-input w-full min-h-[6rem] bg-background border border-border rounded-lg p-4 text-lg focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium resize-none"
-                    :class="{ 'border-primary/50 ring-2 ring-primary/10': showIconMenu }"
-                    style="max-height: 12rem;"
-                    placeholder="Escribe un anuncio..."
-                  ></textarea>
-                  
-                  <!-- Command Indicator Badge -->
-                  <div 
-                    v-if="showIconMenu"
-                    class="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded bg-primary/10 border border-primary/20 text-[10px] font-bold text-primary animate-in fade-in zoom-in duration-200"
-                  >
-                    <Icon name="tabler:terminal-2" class="size-3" />
-                    MODO COMANDO
-                  </div>
-                  
-                  <div class="absolute bottom-3 right-3 text-xs text-muted-foreground pointer-events-none">
-                    {{ textInput.length }} caracteres
-                  </div>
+                  <input 
+                    v-model="currentTopic" 
+                    type="text" 
+                    placeholder="Escribir tema..." 
+                    class="w-full bg-background border border-border rounded-md px-3 py-1.5 text-xs focus:ring-1 focus:ring-primary outline-none transition-all"
+                  />
                 </div>
+             </div>
 
-                <div class="flex flex-col gap-3">
-                  <div class="flex items-center justify-between">
-                    <label class="text-sm font-bold">Posición</label>
-                    <div class="flex gap-2">
-                      <button 
-                        @click="position = 'top'" 
-                        class="px-4 py-2 rounded-lg text-sm font-bold transition-all"
-                        :class="position === 'top' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted text-muted-foreground hover:bg-muted/80'"
-                      >
-                        Arriba
-                      </button>
-                      <button 
-                        @click="position = 'bottom'" 
-                        class="px-4 py-2 rounded-lg text-sm font-bold transition-all"
-                        :class="position === 'bottom' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted text-muted-foreground hover:bg-muted/80'"
-                      >
-                        Abajo
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <label class="text-sm font-bold block">Enviar al aire automáticamente</label>
-                      <p class="text-xs text-muted-foreground">Mostrar inmediatamente en pantalla</p>
-                    </div>
-                    <GSwitch v-model="autoSendToAir" />
-                  </div>
-
-                  <div class="pt-4 border-t border-border">
-                    <div class="bg-primary/5 border border-primary/10 rounded-xl p-4 space-y-4">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                          <div class="size-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
-                            <Icon name="tabler:message-chatbot" class="size-5 text-primary" />
-                          </div>
-                          <div>
-                            <label class="text-sm font-bold block">Transcripción Automática</label>
-                            <p class="text-[10px] text-muted-foreground">Sustituye cantos y anuncios</p>
-                          </div>
-                        </div>
-                        <GSwitch 
-                          :model-value="transcription.active" 
-                          @update:model-value="setTranscriptionActive" 
-                        />
-                      </div>
-                      
-                      <div v-if="transcription.active || transcription.final || transcription.interim" class="bg-background/50 rounded-lg p-3 border border-primary/10 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <div class="flex items-center justify-between mb-2">
-                          <div class="flex items-center gap-2">
-                             <div class="size-1.5 rounded-full animate-pulse" :class="transcription.active ? 'bg-red-500' : 'bg-indigo-500'"></div>
-                             <span class="text-[9px] font-bold uppercase tracking-widest" :class="transcription.active ? 'text-red-500' : 'text-indigo-500'">
-                                {{ transcription.active ? 'Capturando al aire' : 'Monitor de voz' }}
-                             </span>
-                          </div>
-                          <div v-if="transcription.active" class="px-1.5 py-0.5 rounded bg-red-500 text-[8px] font-black text-white uppercase tracking-tighter shadow-sm shadow-red-500/20">
-                            On Air
-                          </div>
-                        </div>
-                        <div 
-                          ref="transcriptionScrollRef"
-                          class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
-                          style="scrollbar-width: thin; scrollbar-color: var(--primary) transparent;"
-                        >
-                          <p class="text-xs text-foreground font-medium italic">
-                            {{ transcription.final }}
-                            <span class="text-primary/60">{{ transcription.interim }}</span>
-                            <span v-if="!transcription.final && !transcription.interim" class="text-muted-foreground/60">Esperando voz...</span>
-                          </p>
-                        </div>
-                      </div>
-
-                      <NuxtLink 
-                        to="/transcripcion" 
-                        target="_blank"
-                        class="flex items-center justify-center gap-2 w-full py-2 text-[10px] font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors border border-primary/20 bg-background"
-                      >
-                        <Icon name="tabler:external-link" class="size-3" />
-                        ABRIR TRANSPORTE DE VOZ
-                      </NuxtLink>
-                    </div>
-                  </div>
+             <div class="space-y-2">
+                <label class="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Temas Recientes</label>
+                <div class="flex flex-wrap gap-1.5">
+                   <button 
+                     v-for="topic in suggestedTopics" 
+                     :key="topic"
+                     @click="currentTopic = topic"
+                     class="px-2 py-1 rounded bg-background border border-border text-[10px] font-medium hover:border-primary transition-colors"
+                     :class="{ 'border-primary text-primary bg-primary/5': currentTopic === topic }"
+                   >
+                     {{ topic }}
+                   </button>
+                   <p v-if="suggestedTopics.length === 0" class="text-[10px] italic text-muted-foreground/60">No hay temas registrados</p>
                 </div>
-
-                <GButton 
-                  @click="sendAnnouncement" 
-                  :disabled="!textInput || isLoading"
-                  variant="default"
-                  size="lg"
-                  class="w-full font-bold"
-                >
-                  <Icon name="tabler:send" class="size-5 mr-2" />
-                  {{ autoSendToAir ? 'Enviar y Guardar' : 'Guardar en Historial' }}
-                </GButton>
-              </div>
-            </div>
-
-            <!-- Live Preview Card -->
-            <div class="relative overflow-hidden group">
-              <div 
-                class="absolute inset-0 bg-gradient-to-br transition-all duration-500"
-                :class="announcement.active ? 'from-green-500/10 via-transparent to-primary/5 opacity-100' : 'from-muted/20 to-transparent opacity-50'"
-              ></div>
-              
-              <div class="relative bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <div class="flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider"
-                      :class="announcement.active 
-                        ? 'bg-green-500/10 border-green-500/20 text-green-600' 
-                        : 'bg-muted border-border text-muted-foreground'"
-                    >
-                      <span v-if="announcement.active" class="relative flex h-2 w-2">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                      </span>
-                      {{ announcement.active ? 'Mostrando' : 'Oculto' }}
-                    </div>
-                  </div>
-                  
-                  <div class="flex items-center gap-3">
-                    <p class="hidden md:block text-[10px] text-muted-foreground font-mono">
-                      <span class="px-1 border rounded bg-muted">⌘</span> + L
-                    </p>
-                    <button 
-                      @click="toggleVisibility" 
-                      class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 bg-muted"
-                      :class="{ 'bg-primary': announcement.active }"
-                    >
-                      <span 
-                        class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                        :class="announcement.active ? 'translate-x-5' : 'translate-x-0'"
-                      ></span>
-                    </button>
-                  </div>
-                </div>
-
-                <div class="min-h-[3rem] flex items-center transition-all duration-300" :class="{ 'opacity-50 blur-[1px]': !announcement.active }">
-                  <p v-if="announcement.text" class="text-lg font-bold text-foreground leading-tight">
-                    <template v-for="(segment, idx) in parseContent(announcement.text)" :key="idx">
-                      <Icon 
-                        v-if="segment.type === 'icon'" 
-                        :name="segment.value" 
-                        :class="segment.class"
-                      />
-                      <span v-else>{{ segment.value }}</span>
-                    </template>
-                  </p>
-                  <p v-else class="text-sm italic text-muted-foreground">No hay anuncio activo</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Right Column: History (Desktop) -->
-        <section class="hidden lg:flex flex-col bg-background overflow-hidden border-l border-border">
-          <div class="flex-1 flex flex-col overflow-hidden">
-            <div v-if="history.length > 0 && isAdmin" class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
-              <div>
-                <h2 class="text-lg font-bold tracking-tight mb-1 truncate max-w-[200px]" :title="currentTopic || 'Historial'">
-                  {{ currentTopic || 'Historial' }}
-                </h2>
-                <p class="text-xs text-muted-foreground">{{ currentTopic ? 'Anuncios de este tema' : 'Gestiona tus anuncios previos' }}</p>
-              </div>
-              <div class="flex items-center gap-2">
-                <GButton 
-                  v-if="isSelecting"
-                  @click="deleteSelected"
-                  variant="ghost" 
-                  size="sm" 
-                  class="text-red-500 hover:text-red-600 hover:bg-red-50"
-                >
-                  <Icon name="tabler:trash" class="size-4 mr-1" />
-                  Borrar ({{ selectedIds.size }})
-                </GButton>
-                <GButton 
-                  @click="clearAll"
-                  variant="ghost" 
-                  size="sm" 
-                  class="text-muted-foreground hover:text-red-600 hover:bg-red-50"
-                >
-                  Limpiar Todo
-                </GButton>
-              </div>
-            </div>
-            <div v-else class="px-6 pt-6 pb-4 border-b border-border shrink-0">
-               <h2 class="text-lg font-bold tracking-tight mb-1 truncate">{{ currentTopic || 'Historial' }}</h2>
-               <p class="text-xs text-muted-foreground">Historial de anuncios enviados</p>
-            </div>
-
-            <div v-if="history.length === 0" class="flex flex-col items-center justify-center h-full text-center p-6">
-              <Icon name="tabler:history" class="size-12 text-muted-foreground/20 mb-4" />
-              <p class="text-sm text-muted-foreground font-medium">No hay historial de anuncios</p>
-            </div>
-
-            <div v-else class="flex-1 overflow-y-auto px-6 py-4">
-              <div class="flex items-center justify-between mb-4 px-2">
-                <button @click="selectAll" class="text-xs font-bold text-primary hover:underline flex items-center gap-1.5">
-                  <Icon :name="selectedIds.size === history.length ? 'tabler:square-rounded-minus' : 'tabler:square-rounded-check'" class="size-4" />
-                  {{ selectedIds.size === history.length ? 'Deseleccionar todo' : 'Seleccionar todo' }}
-                </button>
-              </div>
-
-              <div class="grid gap-4">
-                <div 
-                  v-for="item in history" 
-                  :key="item.id"
-                  class="group relative flex items-start gap-4 p-5 bg-card hover:bg-muted/10 border border-border hover:border-primary/20 rounded-xl transition-all shadow-sm"
-                  :class="{ 'border-primary bg-primary/5 ring-1 ring-primary/20': selectedIds.has(item.id) }"
-                >
-                  <!-- Checkbox area -->
-                  <div v-if="isAdmin" class="pt-1">
-                    <button 
-                      @click="toggleSelect(item.id)"
-                      class="size-5 rounded border-2 transition-all flex items-center justify-center"
-                      :class="selectedIds.has(item.id) ? 'bg-primary border-primary text-white' : 'border-muted-foreground/30 hover:border-primary/50 bg-background'"
-                    >
-                      <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-3" stroke-width="3" />
-                    </button>
-                  </div>
-
-                  <div class="flex-1 min-w-0 pr-2">
-                    <div class="flex items-start justify-between mb-2">
-                      <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">
-                          {{ new Date(item.createdAt).toLocaleDateString() }} - {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-                        </span>
-                        <span v-if="item.topic" class="text-[10px] font-bold text-primary/70 uppercase tracking-widest flex items-center gap-1 mt-0.5">
-                          <Icon name="tabler:library" class="size-3" />
-                          {{ item.topic }}
-                        </span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <div v-if="isActive(item)" class="px-2 py-0.5 rounded bg-green-500 text-[10px] uppercase font-bold text-white shadow-[0_0_10px_rgba(34,197,94,0.4)] animate-pulse">
-                          AL AIRE
-                        </div>
-                        <div class="px-2 py-0.5 rounded bg-muted/50 text-[10px] uppercase font-bold text-muted-foreground border border-border/50">
-                          {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="text-base font-bold text-foreground leading-tight inline-flex flex-wrap items-center gap-x-1 mb-4">
-                      <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
-                        <Icon 
-                          v-if="segment.type === 'icon'" 
-                          :name="segment.value" 
-                          :class="segment.class"
-                        />
-                        <span v-else>{{ segment.value }}</span>
-                      </template>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <GButton @click="resendFromHistory(item)" variant="secondary" size="sm" class="h-8 gap-1.5 px-3">
-                        <Icon name="tabler:send" class="size-3.5" />
-                        Reenviar
-                      </GButton>
-                      <GButton @click="copyToInput(item)" variant="ghost" size="sm" class="h-8 gap-1.5 px-3 text-muted-foreground hover:text-foreground border border-border/50">
-                        <Icon name="tabler:copy" class="size-3.5" />
-                        Copiar
-                      </GButton>
-                      <button v-if="isAdmin" @click="deleteItem(item.id)" class="p-1.5 text-muted-foreground hover:text-red-500 transition-colors ml-auto">
-                        <Icon name="tabler:trash" class="size-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-      </div>
-
-      <!-- Mobile History Popup -->
-      <GSheet v-model="showMobileHistory">
-        <div class="flex flex-col h-full bg-background">
-          <div class="px-6 pt-6 pb-4 border-b border-border shrink-0 flex items-center justify-between">
-            <div>
-              <h2 class="text-lg font-bold tracking-tight mb-1 truncate max-w-[180px]">
-                {{ currentTopic || 'Historial' }}
-              </h2>
-              <p class="text-xs text-muted-foreground">{{ currentTopic ? 'Anuncios de este tema' : 'Gestiona tus anuncios' }}</p>
-            </div>
-            <div class="flex items-center gap-2">
-               <GButton 
-                v-if="history.length > 0 && isAdmin"
-                @click="clearAll"
-                variant="ghost" 
-                size="sm" 
-                class="text-red-500"
-              >
-                Limpiar Todo
-              </GButton>
-            </div>
-          </div>
-
-          <div v-if="history.length === 0" class="flex flex-col items-center justify-center flex-1 text-center p-6">
-            <Icon name="tabler:history" class="size-12 text-muted-foreground/20 mb-4" />
-            <p class="text-sm text-muted-foreground font-medium">No hay historial</p>
-          </div>
-
-          <div v-else class="flex-1 overflow-y-auto px-6 py-4">
-            <div class="flex items-center justify-between mb-4">
-               <div class="flex items-center gap-2">
-                  <GButton 
-                    v-if="isSelecting"
-                    @click="deleteSelected"
-                    variant="default" 
-                    size="sm" 
-                    class="bg-red-500 hover:bg-red-600 h-8"
-                  >
-                    Borrar seleccionados ({{ selectedIds.size }})
-                  </GButton>
-                  <button v-else @click="selectAll" class="text-xs font-bold text-primary">
-                    Seleccionar todo
-                  </button>
-               </div>
-               <button v-if="isSelecting" @click="selectedIds.clear()" class="text-xs font-bold text-muted-foreground">
-                  Cancelar
-               </button>
-            </div>
-
-            <div class="grid gap-3">
-              <div 
-                v-for="item in history" 
-                :key="item.id"
-                class="flex items-center gap-3 p-4 bg-muted/30 border border-border rounded-xl active:scale-[0.98] transition-transform"
-                :class="{ 'border-primary bg-primary/5': selectedIds.has(item.id) }"
-                @click="isSelecting ? toggleSelect(item.id) : null"
-              >
-                 <div v-if="isSelecting || true" class="shrink-0">
-                    <button 
-                      @click.stop="toggleSelect(item.id)"
-                      class="size-5 rounded border-2 transition-all flex items-center justify-center"
-                      :class="selectedIds.has(item.id) ? 'bg-primary border-primary text-white' : 'border-muted-foreground/30 bg-background'"
-                    >
-                      <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-3" stroke-width="3" />
-                    </button>
-                 </div>
-
-                <div class="flex-1 min-w-0" @click="!isSelecting && resendFromHistory(item); !isSelecting && (showMobileHistory = false)">
-                  <div class="flex items-center justify-between mb-1">
-                    <div class="flex flex-col">
-                      <span class="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
-                        {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-                      </span>
-                      <span v-if="item.topic" class="text-[8px] font-bold text-primary/70 uppercase tracking-widest mt-0.5">
-                        {{ item.topic }}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                      <div v-if="isActive(item)" class="size-2 rounded-full bg-green-500 animate-pulse shockwave-green"></div>
-                      <div class="px-1.5 py-0.5 rounded bg-muted/50 text-[8px] uppercase font-bold text-muted-foreground border border-border/50">
-                        {{ item.position === 'top' ? 'Arriba' : 'Abajo' }}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="text-sm font-bold text-foreground leading-tight truncate">
-                    <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
-                      <Icon 
-                        v-if="segment.type === 'icon'" 
-                        :name="segment.value" 
-                        :class="segment.class"
-                      />
-                      <span v-else>{{ segment.value }}</span>
-                    </template>
-                  </div>
-                </div>
-
-                <GButton v-if="!isSelecting" @click.stop="resendFromHistory(item); showMobileHistory = false" variant="ghost" size="icon" class="size-8">
-                  <Icon name="tabler:send" class="size-4" />
-                </GButton>
-              </div>
-            </div>
+             </div>
           </div>
         </div>
-      </GSheet>
 
-      <!-- Mobile History Button -->
-      <button 
-        @click="showMobileHistory = true"
-        class="lg:hidden absolute bottom-6 right-6 size-12 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center z-40 transition-transform active:scale-95"
-      >
-        <Icon name="tabler:history" class="size-6" />
-      </button>
+        <div class="flex-1 overflow-y-auto p-6">
+           <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-4">Comandos</h3>
+           <div class="grid gap-2">
+              <div class="flex items-center justify-between p-2 rounded border border-border bg-background/50">
+                 <span class="text-[10px] font-bold">Al Aire / Off</span>
+                 <span class="text-[9px] font-mono bg-muted px-1 rounded">CMD + L</span>
+              </div>
+              <div class="flex items-center justify-between p-2 rounded border border-border bg-background/50">
+                 <span class="text-[10px] font-bold">Enviar Texto</span>
+                 <span class="text-[9px] font-mono bg-muted px-1 rounded">CMD + ENTER</span>
+              </div>
+              <div class="flex items-center justify-between p-2 rounded border border-border bg-background/50">
+                 <span class="text-[10px] font-bold">Ubicación</span>
+                 <span class="text-[9px] font-mono bg-muted px-1 rounded">CMD + P</span>
+              </div>
+              <div class="flex items-center justify-between p-2 rounded border border-border bg-background/50">
+                 <span class="text-[10px] font-bold">Voz Live</span>
+                 <span class="text-[9px] font-mono bg-muted px-1 rounded">CMD + V</span>
+              </div>
+           </div>
+        </div>
+      </aside>
+
+      <!-- CENTRAL PANEL: Studio Monitor & Editor -->
+      <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+        
+
+        <!-- Editor Area -->
+        <div class="flex-1 overflow-y-auto p-6 md:p-10 bg-background">
+          <div class="max-w-4xl mx-auto space-y-10">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+              <!-- Content Form -->
+              <div class="lg:col-span-8 space-y-8">
+                 <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                       <div class="flex items-center gap-2">
+                          <div class="size-2 bg-primary rounded-full"></div>
+                          <label class="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground">Editor de Contenido</label>
+                       </div>
+                       <span class="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-primary/10 text-primary">{{ position === 'top' ? 'Superior' : 'Inferior' }}</span>
+                    </div>
+                    <AnnouncementsEditor v-model="textInput" @submit="sendAnnouncement" />
+                 </div>
+
+                 <div class="flex items-center gap-6">
+                    <div class="flex-1 grid grid-cols-2 gap-2 bg-muted/40 p-1.5 rounded-xl border border-border/50 shadow-inner">
+                       <button 
+                         @click="position = 'top'" 
+                         class="py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                         :class="position === 'top' ? 'bg-background shadow-md text-primary border border-border/50' : 'text-muted-foreground hover:bg-muted'"
+                       >
+                         Superior
+                       </button>
+                       <button 
+                         @click="position = 'bottom'" 
+                         class="py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                         :class="position === 'bottom' ? 'bg-background shadow-md text-primary border border-border/50' : 'text-muted-foreground hover:bg-muted'"
+                       >
+                         Inferior
+                       </button>
+                    </div>
+
+                    <button 
+                      @click="sendAnnouncement"
+                      :disabled="!textInput || isLoading"
+                      class="flex items-center justify-center gap-3 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-black text-[11px] uppercase tracking-[0.2em] disabled:opacity-50 transition-all hover:scale-[1.02] active:scale-95 shadow-xl shadow-primary/20"
+                    >
+                       <Icon name="tabler:player-play" class="size-4" />
+                       {{ autoSendToAir ? 'Poner al Aire' : 'Guardar en Cola' }}
+                    </button>
+                 </div>
+              </div>
+
+              <!-- Extra Controls -->
+              <div class="lg:col-span-4 space-y-6">
+                 <div class="bg-muted/30 border border-border/50 rounded-2xl p-6 space-y-6 shadow-sm">
+                    <div class="flex items-center justify-between">
+                       <div>
+                          <label class="text-[10px] font-black uppercase tracking-wider block mb-0.5">Auto-Emisión</label>
+                          <p class="text-[10px] text-muted-foreground">Transmitir al pulsar Guardar</p>
+                       </div>
+                       <GSwitch v-model="autoSendToAir" />
+                    </div>
+
+                    <div class="h-px bg-border/50"></div>
+
+                    <!-- Voice Transport Quick Link -->
+                    <div class="space-y-4">
+                       <div class="flex items-center justify-between">
+                          <div class="flex items-center gap-2">
+                             <div class="size-2.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.4)]"></div>
+                             <span class="text-[10px] font-black uppercase tracking-widest text-indigo-500">Voz Live</span>
+                          </div>
+                          <GSwitch 
+                            :model-value="transcription.active" 
+                            @update:model-value="setTranscriptionActive" 
+                          />
+                       </div>
+                       <NuxtLink 
+                          to="/transcripcion" 
+                          target="_blank"
+                          class="flex items-center justify-center gap-3 w-full py-3 bg-background border border-border rounded-xl text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-primary hover:border-primary transition-all hover:shadow-md"
+                       >
+                          <Icon name="tabler:terminal" class="size-3.5" />
+                          Abrir Terminal
+                       </NuxtLink>
+                    </div>
+                 </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </main>
+
+      <!-- RIGHT SIDEBAR: Transcription & History -->
+      <aside class="hidden lg:flex flex-col w-80 border-l border-border bg-muted/10 shrink-0 overflow-hidden">
+         
+         <!-- Top: Live Transcription Monitor -->
+         <div class="h-1/3 border-b border-border p-6 flex flex-col min-h-[220px]">
+            <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-6 flex items-center gap-2">
+               <Icon name="tabler:terminal-2" class="size-4" />
+               Transcripción en Vivo
+            </h3>
+            
+            <div 
+               ref="transcriptionScrollRef"
+               class="flex-1 bg-black rounded-xl border border-white/5 p-5 overflow-y-auto scroll-smooth font-mono text-[11px] leading-relaxed group shadow-2xl relative"
+            >
+               <div v-if="!transcription.final && !transcription.interim" class="h-full flex flex-col items-center justify-center text-white/10">
+                  <Icon name="tabler:activity" class="size-10 mb-2 animate-pulse" />
+                  <span class="text-[9px] uppercase font-bold tracking-[0.4em] text-center">Motor Inactivo</span>
+               </div>
+               <div v-else class="space-y-3">
+                  <p class="text-white/80">
+                     <span 
+                        @click="appendToEditor(transcription.final)"
+                        class="hover:text-primary cursor-pointer transition-colors decoration-dotted underline-offset-4 hover:underline"
+                     >
+                        {{ transcription.final }}
+                     </span>
+                     <span class="text-primary/60 animate-pulse">{{ transcription.interim }}</span>
+                  </p>
+                  <p v-if="transcription.final" class="text-[9px] text-primary/40 font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                     ↑ Toca el segmento para capturar
+                  </p>
+               </div>
+
+               <!-- Terminal Glow -->
+               <div class="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-primary/10 to-transparent pointer-events-none opacity-50"></div>
+            </div>
+         </div>
+
+         <!-- Bottom: Command History -->
+         <div class="flex-1 flex flex-col overflow-hidden bg-background">
+            <div class="p-6 border-b border-border flex items-center justify-between">
+               <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Historial</h3>
+               <div class="flex items-center gap-3">
+                  <button v-if="isSelecting && isAdmin" @click="deleteSelected" class="flex items-center gap-1 text-[9px] font-black text-red-500 bg-red-500/10 px-2 py-1 rounded hover:bg-red-500/20 uppercase tracking-tighter transition-colors">
+                     <Icon name="tabler:trash" class="size-3" />
+                     Eliminar ({{ selectedIds.size }})
+                  </button>
+                  <button v-if="isAdmin && !isSelecting" @click="clearAll" class="text-[9px] font-black text-red-500/60 hover:text-red-500 uppercase tracking-tighter transition-colors">
+                     Eliminar Todos
+                  </button>
+                  <button v-if="isAdmin" @click="selectAll" class="text-[9px] font-black text-primary hover:text-primary/80 uppercase tracking-tighter transition-colors">
+                     {{ selectedIds.size === history.length && history.length > 0 ? 'Deseleccionar' : 'Seleccionar Todo' }}
+                  </button>
+               </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+               <div v-if="history.length === 0" class="h-full flex flex-col items-center justify-center text-muted-foreground/10">
+                  <Icon name="tabler:archive" class="size-12 mb-2" />
+                  <p class="text-[9px] font-black uppercase tracking-widest">Historial Vacío</p>
+               </div>
+               
+               <div 
+                 v-for="item in history" 
+                 :key="item.id"
+                 class="p-5 rounded-xl transition-all group relative border-2"
+                 :class="[
+                    isActive(item) ? 'bg-primary/5 border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.05)]' : 'bg-background border-border hover:border-primary/30',
+                    selectedIds.has(item.id) ? 'border-primary ring-2 ring-primary/20' : ''
+                 ]"
+                 @click="isSelecting ? toggleSelect(item.id) : null"
+               >
+                  <!-- Selection Indicator -->
+                  <div v-if="isAdmin" class="absolute -left-3 top-5 z-20">
+                     <button @click.stop="toggleSelect(item.id)" class="size-5 rounded-full border-2 border-border bg-background flex items-center justify-center transition-all shadow-sm" :class="{ 'bg-primary border-primary': selectedIds.has(item.id) }">
+                        <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-2.5 text-white" stroke-width="4" />
+                     </button>
+                  </div>
+
+                  <div class="flex items-start justify-between mb-3 border-b border-border/50 pb-2">
+                      <span class="text-[9px] font-black text-muted-foreground/30 uppercase tracking-tighter">{{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+                      <div class="flex items-center gap-2">
+                         <div v-if="isActive(item)" class="size-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
+                         <span class="text-[8px] font-black uppercase tracking-[0.2em]" :class="isActive(item) ? 'text-green-500' : 'text-muted-foreground/30'">{{ item.position }}</span>
+                      </div>
+                  </div>
+
+                  <div class="text-[14px] font-bold text-foreground leading-tight line-clamp-3 mb-4">
+                     <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
+                        <Icon v-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
+                        <span v-else v-html="segment.value" :class="segment.class"></span>
+                     </template>
+                  </div>
+
+                  <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
+                      <button @click.stop="resendFromHistory(item)" class="flex-1 py-1.5 rounded-md bg-primary text-white text-[9px] font-black uppercase tracking-widest shadow-sm">Reenviar</button>
+                      <button @click.stop="copyToInput(item)" class="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-[9px] font-black uppercase tracking-widest hover:bg-muted/80">Cargar</button>
+                      <button v-if="isAdmin" @click.stop="deleteItem(item.id)" class="p-1.5 text-muted-foreground/40 hover:text-red-500 transition-colors">
+                         <Icon name="tabler:trash" class="size-4" />
+                      </button>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </aside>
 
     </div>
+
+    <!-- Mobile History Popup -->
+    <GSheet v-model="showMobileHistory">
+        <div class="flex flex-col h-full bg-background p-8">
+          <div class="flex items-center justify-between mb-8">
+             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Cola en Vivo</h2>
+             <button @click="showMobileHistory = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-8" /></button>
+          </div>
+          
+          <div class="flex-1 overflow-y-auto space-y-4">
+             <div 
+               v-for="item in history" 
+               :key="item.id"
+               @click="resendFromHistory(item); showMobileHistory = false"
+               class="p-5 rounded-2xl border-2 border-border bg-muted/20 active:bg-primary/10 active:border-primary transition-all flex items-center gap-5 shadow-sm"
+             >
+                <div class="flex-1 min-w-0">
+                   <div class="flex items-center justify-between mb-2">
+                      <span class="text-[10px] font-black text-muted-foreground/40 uppercase">{{ new Date(item.createdAt).toLocaleTimeString() }}</span>
+                      <span class="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-muted border border-border">{{ item.position }}</span>
+                   </div>
+                   <div class="text-[15px] font-bold truncate text-foreground">
+                      {{ item.text.replace(/<[^>]+>/g, '') }}
+                   </div>
+                </div>
+                <Icon name="tabler:chevron-right" class="size-6 text-muted-foreground" />
+             </div>
+          </div>
+        </div>
+    </GSheet>
+
+    <!-- Mobile History Trigger -->
+    <button 
+        @click="showMobileHistory = true"
+        class="lg:hidden fixed bottom-8 right-8 size-16 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
+    >
+        <Icon name="tabler:history" class="size-8" />
+    </button>
+    
   </div>
 </template>
 
+<style scoped>
+/* High contrast terminal feel for transcription */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+</style>

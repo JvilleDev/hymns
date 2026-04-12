@@ -13,8 +13,7 @@ const api = useApi()
 const { 
   activeIndex, activeLine, viewerActive, 
   connect, disconnect, changeViewerState, 
-  sendLine, sendIndex, sendCanto, activeSong,
-  transcription, setTranscriptionActive
+  sendLine, sendIndex, sendCanto, activeSong
 } = useRealtime()
 const isMac = ref(false)
 
@@ -246,19 +245,7 @@ function navigateToDeck() {
       </div>
 
       <div class="flex items-center gap-4">
-        <!-- Live Transcription Indicator -->
-        <div v-if="transcription.producing && !transcription.active" 
-          class="hidden lg:flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-full border border-amber-500/20 animate-pulse group cursor-help"
-          title="Alguien está transcribiendo. Activa el switch para mostrarlo en el visor.">
-          <div class="size-2 bg-amber-500 rounded-full"></div>
-          <span class="text-[10px] font-black uppercase tracking-widest text-amber-600">Audio entrante</span>
-        </div>
-
-        <div class="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-xl border border-border/50">
-          <GSwitch :modelValue="transcription.active" @update:modelValue="setTranscriptionActive" label="Transcripción" class="font-bold text-xs" />
-          <div class="w-px h-4 bg-border mx-1"></div>
-          <GSwitch :modelValue="viewerActive" @update:modelValue="changeViewerState" label="Visor" class="font-bold text-xs" />
-        </div>
+        <GSwitch :modelValue="viewerActive" @update:modelValue="changeViewerState" label="Visor Externo" class="font-bold text-xs" />
 
         <GButton variant="outline" size="icon" class="md:hidden" @click="sheetOpen = true">
           <Icon name="tabler:music" class="size-6" />

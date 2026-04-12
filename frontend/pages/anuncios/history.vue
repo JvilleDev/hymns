@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useAnnouncementIcons } from '@/composables/useAnnouncementIcons'
 import { toast } from 'vue-sonner'
 
 definePageMeta({
@@ -8,7 +7,7 @@ definePageMeta({
 
 const { getAnnouncements } = useApi()
 const { announcement, transcription, connect, disconnect } = useRealtime()
-const { icons } = useAnnouncementIcons()
+const { parseHTML } = useContentParser()
 
 const history = ref<any[]>([])
 const isLoading = ref(true)
@@ -100,84 +99,6 @@ const displayTopic = computed(() => {
     return latestWithTopic?.topic || 'Historial'
 })
 
-// Parsing logic (similar to LowerThird.vue) to render icons
-const parseContent = (text: string) => {
-  const segments: Array<{ type: 'text' | 'icon', value: string, class?: string }> = []
-  
-  const iconNames = icons.map(i => i.name).join('|')
-  const regex = new RegExp(`(\\[/?(?:red|blue|purple)\\]|\\[/\\]|\\*\\*|\\*|/(?:${iconNames}))`, 'gi')
-  
-  const parts = text.split(regex)
-  
-  let color = ''
-  let bold = false
-  let italic = false
-  
-  parts.forEach(part => {
-    if (!part) return
-    
-    // Tags
-    if (part.startsWith('[') && part.endsWith(']')) {
-        const content = part.slice(1, -1).toLowerCase()
-        if (content.startsWith('/') || content === '/') {
-            color = ''
-        } else if (['red', 'blue', 'purple'].includes(content)) {
-            color = content
-        }
-        return
-    }
-    
-    // Formatting
-    if (part === '**') { bold = !bold; return }
-    if (part === '*') { italic = !italic; return }
-    
-    // Icons
-    if (part.startsWith('/')) {
-        const name = part.slice(1).toLowerCase()
-        const iconDef = icons.find(i => i.name === name)
-        if (iconDef) {
-            let iconColorClass = ''
-            if (name === 'check') iconColorClass = 'text-green-500'
-            else if (name === 'heart') iconColorClass = 'text-red-500'
-            else if (name === 'star') iconColorClass = 'text-yellow-500'
-            
-            const finalColorClass = color ? `text-${color}-600` : iconColorClass
-
-            segments.push({
-                type: 'icon',
-                value: iconDef.icon,
-                class: `inline-block align-text-bottom mb-1 size-[1.2em] ${finalColorClass}`
-            })
-            return 
-        }
-    }
-    
-    // Text
-    let val = part
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;")
-    
-    val = val.replace(/WSS:/gi, '<span class="text-red-600">WSS:</span>')
-    val = val.replace(/WMB/gi, '<span class="text-purple-600">WMB</span>')
-    
-    const classes = [
-        color ? `text-${color}-600` : '',
-        bold ? 'font-black' : '', 
-        italic ? 'italic' : ''
-    ].filter(Boolean).join(' ')
-    
-    segments.push({
-        type: 'text',
-        value: val,
-        class: classes
-    })
-  })
-  
-  return segments
-}
 
 const generatePdf = () => {
   window.print()
@@ -259,7 +180,7 @@ const generatePdf = () => {
                         :class="announcement.active && announcement.text === item.text ? 'text-neutral-900' : 'text-neutral-700'"
                     >
                         <div class="inline-flex flex-wrap items-center gap-x-2">
-                            <template v-for="(segment, idx) in parseContent(item.text)" :key="idx">
+                            <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
                                 <Icon 
                                     v-if="segment.type === 'icon'" 
                                     :name="segment.value" 

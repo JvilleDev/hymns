@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Toaster } from 'vue-sonner'
+import { cn } from '~/utils'
 
 const { isAdmin } = useAuth();
 
@@ -14,6 +15,12 @@ const { logout } = useAuth();
 
 const { isManualConnectionTrigger } = useApi();
 const route = useRoute();
+const isSettingsOpen = ref(false);
+const settingsRef = ref(null);
+
+onClickOutside(settingsRef, () => {
+  isSettingsOpen.value = false;
+});
 
 const currentPage = computed(() => {
   return items.value.find(i => i.value === route.path) || { title: 'Himnario', description: '' }
@@ -52,54 +59,84 @@ onMounted(() => {
         </NuxtLink>
       </nav>
 
-      <div class="flex items-center gap-2">
-        <div class="hidden md:flex items-center gap-2">
-          <GButton 
-            variant="ghost" 
-            size="icon" 
-            class="rounded-xl text-muted-foreground hover:text-primary transition-colors"
-            tooltip="Configuración de Cuenta"
-            @click="isManualConnectionTrigger = true"
-          >
-            <Icon name="tabler:user-cog" class="size-5" />
-          </GButton>
+      <div class="flex items-center gap-2 relative" ref="settingsRef">
+        <!-- Page Title (Mobile Only, next to gear) -->
+        <span class="sm:hidden text-[10px] font-bold uppercase tracking-widest text-muted-foreground mr-1">{{ currentPage.title }}</span>
 
-          <!-- Botón de Admin/Logout -->
-          <GButton 
-            v-if="!isAdmin"
-            variant="outline" 
-            size="sm" 
-            class="rounded-xl font-bold flex items-center gap-2 border-primary/20 hover:bg-primary/5"
-            @click="navigateTo('/login')"
-          >
-            <Icon name="tabler:lock" class="size-4" />
-            <span>Acceso Admin</span>
-          </GButton>
-          <GButton 
-            v-else
-            variant="ghost" 
-            size="sm" 
-            class="rounded-xl font-bold flex items-center gap-2 text-red-500 hover:bg-red-500/10"
-            @click="logout"
-          >
-            <Icon name="tabler:logout" class="size-4" />
-            <span>Cerrar Sesión</span>
-          </GButton>
-        </div>
+        <!-- Unified Settings Toggle -->
+        <GButton 
+          variant="ghost" 
+          size="icon" 
+          :class="cn(
+            'rounded-xl text-muted-foreground hover:text-primary transition-all duration-300', 
+            isSettingsOpen && 'bg-muted text-primary'
+          )"
+          @click.stop="isSettingsOpen = !isSettingsOpen"
+        >
+          <Icon 
+            name="tabler:settings" 
+            class="size-5 transition-transform duration-500" 
+            :class="{ 'rotate-90': isSettingsOpen }" 
+          />
+        </GButton>
 
-        <div class="md:hidden flex items-center gap-3">
-          <!-- Mobile Label Placeholder or Avatar -->
-          <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{{ items.find(i => i.value === route.path)?.title || 'Himnario' }}</span>
-          
-          <GButton 
-            variant="ghost" 
-            size="icon" 
-            class="size-8 rounded-lg text-muted-foreground"
-            @click="isManualConnectionTrigger = true"
-          >
-            <Icon name="tabler:user-cog" class="size-4" />
-          </GButton>
-        </div>
+        <!-- Shared Settings Dropdown -->
+        <Transition
+          enter-active-class="transition duration-300 ease-out"
+          enter-from-class="translate-y-2 opacity-0 scale-95"
+          enter-to-class="translate-y-0 opacity-100 scale-100"
+          leave-active-class="transition duration-200 ease-in"
+          leave-from-class="translate-y-0 opacity-100 scale-100"
+          leave-to-class="translate-y-2 opacity-0 scale-95"
+        >
+          <div v-if="isSettingsOpen" class="absolute right-0 top-full mt-3 w-64 origin-top-right rounded-2xl border border-border bg-background/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden ring-1 ring-black/5">
+            <div class="p-2.5 space-y-1">
+              <!-- User ID Settings -->
+              <button 
+                @click="isManualConnectionTrigger = true; isSettingsOpen = false"
+                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all text-left"
+              >
+                <div class="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <Icon name="tabler:user-cog" class="size-4" />
+                </div>
+                <div class="flex flex-col">
+                  <span>Configuración Cuenta</span>
+                  <span class="text-[10px] text-muted-foreground/60 font-medium">Sincronizar dispositivos</span>
+                </div>
+              </button>
+              
+              <div class="h-px bg-border/50 mx-2 my-1"></div>
+
+              <!-- Admin Action -->
+              <button 
+                v-if="!isAdmin"
+                @click="navigateTo('/login'); isSettingsOpen = false"
+                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-primary hover:bg-primary/5 transition-all text-left group"
+              >
+                <div class="size-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground group-hover:scale-110 transition-transform">
+                  <Icon name="tabler:lock" class="size-4" />
+                </div>
+                <div class="flex flex-col">
+                  <span class="uppercase tracking-widest text-[10px]">Acceso Admin</span>
+                  <span class="text-[10px] text-muted-foreground/80 font-medium normal-case">Gestionar cantos</span>
+                </div>
+              </button>
+              <button 
+                v-else
+                @click="logout(); isSettingsOpen = false"
+                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-500 hover:bg-red-500/10 transition-all text-left group"
+              >
+                 <div class="size-8 rounded-lg bg-red-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform">
+                  <Icon name="tabler:logout" class="size-4" />
+                </div>
+                <div class="flex flex-col">
+                  <span class="uppercase tracking-widest text-[10px]">Cerrar Sesión</span>
+                  <span class="text-[10px] text-red-400/60 font-medium normal-case">Salir del panel</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </Transition>
       </div>
     </header>
 

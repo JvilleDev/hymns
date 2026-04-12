@@ -20,7 +20,7 @@ watch([() => props.final, () => props.interim], () => {
 </script>
 
 <template>
-  <div class="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md text-black shadow-[0_-8px_40px_rgba(0,0,0,0.2)] h-[140px] border-t border-slate-200 overflow-hidden flex flex-col">
+  <div class="fixed bottom-0 left-0 right-0 z-50 bg-white text-black shadow-[0_-10px_50px_rgba(0,0,0,0.3)] h-[140px] border-t-4 border-primary overflow-hidden flex flex-col">
     <!-- Automatic Transcription Indicator -->
     <div class="absolute top-3 right-6 z-10 flex items-center gap-2 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-full">
       <div class="size-1.5 bg-red-500 rounded-full animate-pulse"></div>

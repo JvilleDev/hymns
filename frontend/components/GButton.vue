@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+
+defineOptions({
+    inheritAttrs: false
+})
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '~/utils'
 
@@ -42,7 +46,11 @@ const props = defineProps<Props>()
 </script>
 
 <template>
-    <button :class="cn(buttonVariants({ variant, size }), props.class)" v-tooltip="tooltip">
+    <button 
+        v-bind="$attrs"
+        :class="cn(buttonVariants({ variant, size }), props.class)" 
+        v-tooltip="tooltip"
+    >
         <template v-if="loading">
             <Icon name="mdi:loading" class="mr-2 h-4 w-4 animate-spin" />
         </template>

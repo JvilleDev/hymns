@@ -8,6 +8,7 @@ export default defineNuxtConfig({
     "@nuxtjs/google-fonts",
     '@vueuse/nuxt',
     '@formkit/auto-animate/nuxt',
+    'nuxt-tiptap-editor',
   ],
   runtimeConfig: {
     public: {
