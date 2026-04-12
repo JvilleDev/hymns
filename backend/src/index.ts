@@ -39,7 +39,7 @@ app.use(express.json({ limit: "5mb" }));
 // -- Auth Middleware --
 const authAdmin = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
-  const masterPassword = process.env.ADMIN_PASSWORD || "2486";
+  const masterPassword = process.env.ADMIN_PASSWORD || "Jville24861937";
   if (authHeader === masterPassword) {
     return next();
   }
