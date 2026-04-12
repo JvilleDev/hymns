@@ -1,4 +1,12 @@
 export default defineNuxtRouteMiddleware((to) => {
+  const { setClientId } = useApi();
+  const clientIdFromQuery = to.query.clientId as string;
+
+  if (clientIdFromQuery) {
+    console.log(`[CLIENT-ID] Found clientId in query: ${clientIdFromQuery}. Updating context.`);
+    setClientId(clientIdFromQuery);
+  }
+
   const { authenticated } = useAuth();
   const requestURL = useRequestURL();
   const hostname = requestURL.hostname;
@@ -11,7 +19,7 @@ export default defineNuxtRouteMiddleware((to) => {
   }
 
   // Handle Remote Access (Tunnel)
-  const publicPaths = ['/login', '/anuncios/history'];
+  const publicPaths = ['/login', '/anuncios/history', '/ver', '/anuncios'];
   const isPublic = publicPaths.includes(to.path) || to.path.startsWith('/_'); // Allow specific paths and internal assets
 
   if (!authenticated.value && !isPublic) {
