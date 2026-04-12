@@ -7,7 +7,8 @@ import sys
 
 # --- API Configuration ---
 # Change this to the IP/URL of your backend instance
-API_BASE_URL = "http://192.168.1.20:3100"
+API_BASE_URL = "https://hymns-back.jville.dev"
+API_AUTH_TOKEN = "[TOKEN-HERE :D]"
 # -------------------------
 
 
@@ -145,7 +146,7 @@ def extract_himnario(pdf_path, output_json, start_page=6):  # Page 7 is index 6
             delete_url = f"{API_BASE_URL}/api/cantos"
             print(f"1. Deleting all existing songs at {delete_url}...")
             try:
-                delete_res = requests.delete(delete_url, timeout=10)
+                delete_res = requests.delete(delete_url, timeout=10, headers={"Authorization": API_AUTH_TOKEN})
                 delete_res.raise_for_status()
                 print(f"   Success: {delete_res.text}")
             except Exception as e:
@@ -155,7 +156,7 @@ def extract_himnario(pdf_path, output_json, start_page=6):  # Page 7 is index 6
             # Request 2: Import all new songs
             import_url = f"{API_BASE_URL}/import"
             print(f"2. Importing {len(cantos)} new songs to {import_url}...")
-            import_res = requests.post(import_url, json=cantos, timeout=30)
+            import_res = requests.post(import_url, json=cantos, timeout=30, headers={"Authorization": API_AUTH_TOKEN})
             import_res.raise_for_status()
             print(f"   Success: {import_res.json().get('message', 'Import completed')}")
             print(f"   Count: {import_res.json().get('count', len(cantos))}")

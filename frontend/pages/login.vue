@@ -7,8 +7,8 @@ const showPassword = ref(false);
 const handleLogin = async () => {
   error.value = false;
   if (login(password.value)) {
-    // Redirect to home or wherever the user was headed
-    return navigateTo('/');
+    // Redirect to list where admin powers are most needed
+    return navigateTo('/lista');
   }
   error.value = true;
 };

@@ -22,9 +22,6 @@ const {
 const { isAdmin } = useAuth()
 
 onMounted(() => {
-  if (!isAdmin.value) {
-    return navigateTo('/')
-  }
   getSongs()
 })
 </script>
@@ -44,6 +41,7 @@ onMounted(() => {
       <SongList 
         :songs="filteredSongs" 
         :is-loading="isLoading" 
+        :is-admin="isAdmin"
         @edit="openEditSheet" 
         @delete="deleteSong" 
         class="h-full"
@@ -52,6 +50,7 @@ onMounted(() => {
 
     <!-- Botón flotante -->
     <GButton 
+      v-if="isAdmin"
       size="lg" 
       class="fixed bottom-8 right-8 rounded-full shadow-2xl p-0 w-14 h-14 bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:scale-105 z-50" 
       @click="openCreatesSheet"

@@ -4,6 +4,7 @@ import type { Song } from '@/types/song'
 defineProps<{
   songs: Song[]
   isLoading: boolean
+  isAdmin: boolean
 }>()
 
 defineEmits<{
@@ -23,16 +24,16 @@ defineEmits<{
               <th scope="col" class="px-4 py-3 w-[30%] font-normal">Título</th>
               <th scope="col" class="px-4 py-3 w-[40%] font-normal text-muted-foreground hidden md:table-cell">Letra</th>
               <th scope="col" class="px-4 py-3 w-[120px] font-normal">Categoría</th>
-              <th scope="col" class="px-4 py-3 w-[100px] text-right font-normal"></th>
+              <th v-if="isAdmin" scope="col" class="px-4 py-3 w-[100px] text-right font-normal"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border/30">
-            <tr v-for="song in songs" :key="song.id" 
-              class="group hover:bg-muted/40 transition-colors cursor-default"
-              @click.self="$emit('edit', song)"
-            >
-              <!-- Number Column -->
-              <td class="px-4 py-3 text-center" @click="$emit('edit', song)">
+              <tr v-for="song in songs" :key="song.id" 
+                class="group hover:bg-muted/40 transition-colors cursor-default"
+                @click.self="isAdmin && $emit('edit', song)"
+              >
+                <!-- Number Column -->
+                <td class="px-4 py-3 text-center" @click="isAdmin && $emit('edit', song)">
                 <span v-if="song.type === 'Canto'" class="font-mono text-muted-foreground text-xs">
                   {{ song.nh }}
                 </span>
@@ -40,19 +41,19 @@ defineEmits<{
               </td>
 
               <!-- Title Column -->
-              <td class="px-4 py-3 font-medium text-foreground" @click="$emit('edit', song)">
+              <td class="px-4 py-3 font-medium text-foreground" @click="isAdmin && $emit('edit', song)">
                 {{ song.title }}
               </td>
 
               <!-- Content Snippet Column (Hidden on mobile) -->
-              <td class="px-4 py-3 hidden md:table-cell max-w-md" @click="$emit('edit', song)">
+              <td class="px-4 py-3 hidden md:table-cell max-w-md" @click="isAdmin && $emit('edit', song)">
                 <p class="truncate text-muted-foreground/70 text-xs font-normal">
                   {{ song.content?.replace(/\n/g, ' ') }}
                 </p>
               </td>
 
               <!-- Category Column -->
-              <td class="px-4 py-3" @click="$emit('edit', song)">
+              <td class="px-4 py-3" @click="isAdmin && $emit('edit', song)">
                 <span 
                   class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium"
                   :class="song.type === 'Especial' 
@@ -64,7 +65,7 @@ defineEmits<{
               </td>
 
               <!-- Actions Column -->
-              <td class="px-4 py-3 text-right">
+              <td v-if="isAdmin" class="px-4 py-3 text-right">
                 <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
                     @click.stop="$emit('edit', song)" 

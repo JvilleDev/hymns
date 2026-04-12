@@ -10,6 +10,11 @@ export const useApi = () => {
     sameSite: 'lax'
   });
 
+  const isClientIdSetCookie = useCookie('himnario_client_id_set', {
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+    sameSite: 'lax'
+  });
+
   const getClientId = () => {
     if (!clientIdCookie.value) {
       clientIdCookie.value = uuid();
@@ -18,6 +23,7 @@ export const useApi = () => {
   };
 
   const clientId = useState('api:clientId', () => getClientId());
+  const isClientIdSet = useState('api:isClientIdSet', () => !!isClientIdSetCookie.value);
 
   // Connection status
   const isHealthy = useState<boolean>('api_is_healthy', () => true)
@@ -55,6 +61,8 @@ export const useApi = () => {
     setClientId: (id: string) => {
       clientIdCookie.value = id;
       clientId.value = id;
+      isClientIdSetCookie.value = 'true';
+      isClientIdSet.value = true;
     },
     // Generic methods
     get: <T>(path: string, options: any = {}) => request<T>(path, { ...options, method: 'GET' }),
@@ -80,6 +88,7 @@ export const useApi = () => {
     isHealthy,
     isConnectionError,
     isManualConnectionTrigger,
+    isClientIdSet,
     getFullUrl: (path: string) => {
       return `${backendUrl}${path.startsWith('/') ? path : `/${path}`}`
     },

@@ -4,11 +4,13 @@ import { Toaster } from 'vue-sonner'
 const { isAdmin } = useAuth();
 
 const items = computed(() => [
-  { title: "Inicio", value: "/", icon: "tabler:home", description: "Panel principal" },
-  ...(isAdmin.value ? [{ title: "Lista", value: "/lista", icon: "tabler:list", description: "Gestiona tus cantos e himnos" }] : []),
+  { title: "Inicio", value: "/", icon: "tabler:home", description: "En pantalla viva" },
+  { title: "Lista", value: "/lista", icon: "tabler:list", description: "Base de datos global" },
   { title: "Visor", value: "/visor", icon: "tabler:eye", description: "Control de proyección" },
-  { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Lower Third / Cinta de noticias" },
+  { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Gestión de escritos" },
 ]);
+
+const { logout } = useAuth();
 
 const { isManualConnectionTrigger } = useApi();
 const route = useRoute();
@@ -60,6 +62,28 @@ onMounted(() => {
             @click="isManualConnectionTrigger = true"
           >
             <Icon name="tabler:user-cog" class="size-5" />
+          </GButton>
+
+          <!-- Botón de Admin/Logout -->
+          <GButton 
+            v-if="!isAdmin"
+            variant="outline" 
+            size="sm" 
+            class="rounded-xl font-bold flex items-center gap-2 border-primary/20 hover:bg-primary/5"
+            @click="navigateTo('/login')"
+          >
+            <Icon name="tabler:lock" class="size-4" />
+            <span>Acceso Admin</span>
+          </GButton>
+          <GButton 
+            v-else
+            variant="ghost" 
+            size="sm" 
+            class="rounded-xl font-bold flex items-center gap-2 text-red-500 hover:bg-red-500/10"
+            @click="logout"
+          >
+            <Icon name="tabler:logout" class="size-4" />
+            <span>Cerrar Sesión</span>
           </GButton>
         </div>
 

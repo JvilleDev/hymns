@@ -1,24 +1,33 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 
-const { isConnectionError, isManualConnectionTrigger, clientId, setClientId } = useApi()
+const { isConnectionError, isManualConnectionTrigger, clientId, setClientId, isClientIdSet } = useApi()
 const { isConnected, connectionStatus } = useRealtime()
 
 const idInput = ref('')
 const isCopied = ref(false)
 
 const isOpen = computed({
-  get: () => isConnectionError.value || isManualConnectionTrigger.value,
+  get: () => isConnectionError.value || isManualConnectionTrigger.value || !isClientIdSet.value,
   set: (val) => {
+    // Si no está configurado el ID, no permitimos cerrar el diálogo manualmente
+    if (!isClientIdSet.value && !val) return
     isConnectionError.value = val
     isManualConnectionTrigger.value = val
   }
 })
 
-const dialogTitle = computed(() => isConnected.value ? 'Configuración de Mi Cuenta' : 'Buscando servidor...')
-const dialogDescription = computed(() => isConnected.value 
-  ? 'Este es tu identificador único. Compártelo con otros dispositivos (visor, monitor, etc.) para sincronizarlos.' 
-  : 'Conectando con hymns-back.jville.dev. Podrás ver tus cantos y anuncios una vez establecida la conexión.')
+const dialogTitle = computed(() => {
+  if (!isClientIdSet.value) return 'Configuración Inicial'
+  return isConnected.value ? 'Configuración de Cuenta' : 'Buscando servidor...'
+})
+
+const dialogDescription = computed(() => {
+  if (!isClientIdSet.value) return 'Bienvenido. Para comenzar, confirma o genera tu identificador único para sincronizar tus dispositivos.'
+  return isConnected.value 
+    ? 'Este es tu identificador único. Compártelo con otros dispositivos (visor, monitor, etc.) para sincronizarlos.' 
+    : 'Conectando con el servidor remoto. Podrás ver tus cantos y anuncios una vez establecida la conexión.'
+})
 
 onMounted(() => {
   idInput.value = clientId.value
@@ -117,7 +126,7 @@ const generateNewId = () => {
         :disabled="!isConnected"
         @click="handleSave"
       >
-        {{ idInput !== clientId ? 'Guardar y Reiniciar' : 'Entendido' }}
+        {{ !isClientIdSet ? 'Comenzar' : (idInput !== clientId ? 'Guardar y Reiniciar' : 'Entendido') }}
       </GButton>
     </template>
   </GDialog>
