@@ -17,6 +17,7 @@ const desktopScrollContainer = ref<HTMLElement | null>(null)
 const showMonitor = ref(false)
 const hideTimeout = ref<NodeJS.Timeout|null>(null)
 const transcriptionHistory = ref('')
+const showFullHistory = ref(false)
 
 // Accumulate transcription history
 watch(() => transcription.value.final, (newFinal) => {
@@ -26,21 +27,12 @@ watch(() => transcription.value.final, (newFinal) => {
   }
 })
 
-// Compute words for animated stream
-const transcriptionWords = computed(() => {
-  const finalWords = transcriptionHistory.value.split(/\s+/).filter(Boolean).map((w, i) => ({
-    id: `f-${i}`,
-    text: w,
-    isInterim: false
-  }))
-  
-  const interimWords = transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
+// Words only for the interim stream
+const interimWords = computed(() => {
+  return transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
     id: `i-${i}`,
-    text: w,
-    isInterim: true
+    text: w
   }))
-  
-  return [...finalWords, ...interimWords]
 })
 
 const fetchHistory = async () => {
@@ -268,19 +260,32 @@ const generatePdf = () => {
       </div>
 
       <div class="space-y-8">
+        <!-- Collapsible History -->
+        <div v-if="transcriptionHistory" class="space-y-4">
+           <button 
+             @click="showFullHistory = !showFullHistory"
+             class="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
+           >
+              <Icon :name="showFullHistory ? 'tabler:chevron-down' : 'tabler:chevron-right'" class="size-4" />
+              {{ showFullHistory ? 'Minimizar Registro' : 'Ver Registro Completo' }}
+           </button>
+           
+           <div v-if="showFullHistory" class="text-xl font-normal text-white/50 leading-relaxed max-h-[300px] overflow-y-auto pr-4 scroll-smooth">
+              {{ transcriptionHistory }}
+           </div>
+        </div>
+
+        <!-- Live Partial Stream -->
         <div class="prose prose-invert max-w-none">
            <TransitionGroup 
              name="word-stream" 
              tag="p" 
-             class="text-3xl sm:text-4xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2"
+             class="text-3xl sm:text-4xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2 font-bold text-white opacity-100"
            >
               <span 
-                 v-for="word in transcriptionWords" 
+                 v-for="word in interimWords" 
                  :key="word.id"
                  class="transition-colors"
-                 :class="[
-                   word.isInterim ? 'text-white/60 font-medium' : 'text-white font-black'
-                 ]"
               >
                  {{ word.text }}
               </span>
@@ -334,16 +339,16 @@ const generatePdf = () => {
                    class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
                    style="scrollbar-width: none; -ms-overflow-style: none;"
                  >
+                   <!-- Live Partial Stream (Mini) -->
                    <TransitionGroup 
                      name="word-stream-mini" 
                      tag="p" 
-                     class="text-xl font-bold leading-tight tracking-tight flex flex-wrap gap-x-1.5"
+                     class="text-xl font-bold leading-tight tracking-tight flex flex-wrap gap-x-1.5 text-white opacity-100"
                    >
                      <span 
-                       v-for="word in transcriptionWords" 
+                       v-for="word in interimWords" 
                        :key="word.id"
                        class="transition-colors"
-                       :class="word.isInterim ? 'text-white/60 font-medium' : 'text-white'"
                      >
                        {{ word.text }}
                      </span>

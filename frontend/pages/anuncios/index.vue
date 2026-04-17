@@ -24,6 +24,7 @@ const history = ref<any[]>([])
 const showMobileHistory = ref(false)
 const transcriptionScrollRef = ref<HTMLElement | null>(null)
 const transcriptionHistory = ref('')
+const showFullHistory = ref(false)
 
 // Accumulate transcription history
 watch(() => transcription.value.final, (newFinal) => {
@@ -33,21 +34,12 @@ watch(() => transcription.value.final, (newFinal) => {
   }
 })
 
-// Compute words for animated stream
-const transcriptionWords = computed(() => {
-  const finalWords = transcriptionHistory.value.split(/\s+/).filter(Boolean).map((w, i) => ({
-    id: `f-${i}`,
-    text: w,
-    isInterim: false
-  }))
-  
-  const interimWords = transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
+// Words only for the interim stream
+const interimWords = computed(() => {
+  return transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
     id: `i-${i}`,
-    text: w,
-    isInterim: true
+    text: w
   }))
-  
-  return [...finalWords, ...interimWords]
 })
 
 // Select Logic
@@ -500,25 +492,42 @@ onMounted(() => {
                   <Icon name="tabler:activity" class="size-10 mb-2 animate-pulse" />
                   <span class="text-[9px] uppercase font-bold tracking-[0.4em] text-center">Motor Inactivo</span>
                </div>
-                <div v-else class="relative overflow-hidden">
+                <div v-else class="relative space-y-4">
+                   <!-- Collapsible History -->
+                   <div v-if="transcriptionHistory" class="space-y-2">
+                      <button 
+                        @click="showFullHistory = !showFullHistory"
+                        class="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-colors"
+                      >
+                         <Icon :name="showFullHistory ? 'tabler:chevron-down' : 'tabler:chevron-right'" class="size-3" />
+                         {{ showFullHistory ? 'Ocultar Historial' : 'Ver Historial' }}
+                      </button>
+                      
+                      <div v-if="showFullHistory" class="text-white/60 font-normal leading-relaxed text-[10px] bg-white/5 p-3 rounded-lg border border-white/5">
+                         {{ transcriptionHistory }}
+                         <div class="mt-2 pt-2 border-t border-white/5 flex justify-end">
+                            <button @click="appendToEditor(transcriptionHistory)" class="text-[8px] font-bold uppercase tracking-tighter hover:text-primary">Copiar al editor</button>
+                         </div>
+                      </div>
+                   </div>
+
+                   <!-- Live Partial Stream -->
                    <TransitionGroup 
                      name="word-stream" 
                      tag="p" 
-                     class="text-white leading-relaxed flex flex-wrap gap-x-1 gap-y-1"
+                     class="text-white font-bold leading-relaxed flex flex-wrap gap-x-1 gap-y-1 opacity-100"
                    >
                       <span 
-                         v-for="word in transcriptionWords" 
+                         v-for="word in interimWords" 
                          :key="word.id"
-                         @click="appendToEditor(transcriptionHistory)"
-                         class="cursor-pointer transition-colors hover:text-primary decoration-dotted underline-offset-4 hover:underline"
-                         :class="{ 'text-white/90': word.isInterim }"
+                         class="inline-block"
                       >
                          {{ word.text }}
                       </span>
                    </TransitionGroup>
                    
-                   <p v-if="transcriptionWords.length > 0" class="mt-4 text-[9px] text-primary/40 font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
-                      ↑ Toca para capturar historial completo
+                   <p v-if="interimWords.length > 0" class="text-[9px] text-primary/40 font-black uppercase tracking-tighter animate-pulse">
+                      Capturando señal...
                    </p>
                 </div>
 
