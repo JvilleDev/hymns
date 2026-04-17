@@ -23,6 +23,32 @@ const isLoading = ref(false)
 const history = ref<any[]>([])
 const showMobileHistory = ref(false)
 const transcriptionScrollRef = ref<HTMLElement | null>(null)
+const transcriptionHistory = ref('')
+
+// Accumulate transcription history
+watch(() => transcription.value.final, (newFinal) => {
+  if (newFinal) {
+    const space = transcriptionHistory.value && !transcriptionHistory.value.endsWith(' ') ? ' ' : ''
+    transcriptionHistory.value += space + newFinal
+  }
+})
+
+// Compute words for animated stream
+const transcriptionWords = computed(() => {
+  const finalWords = transcriptionHistory.value.split(/\s+/).filter(Boolean).map((w, i) => ({
+    id: `f-${i}`,
+    text: w,
+    isInterim: false
+  }))
+  
+  const interimWords = transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
+    id: `i-${i}`,
+    text: w,
+    isInterim: true
+  }))
+  
+  return [...finalWords, ...interimWords]
+})
 
 // Select Logic
 const selectedIds = ref<Set<string>>(new Set())
@@ -474,20 +500,27 @@ onMounted(() => {
                   <Icon name="tabler:activity" class="size-10 mb-2 animate-pulse" />
                   <span class="text-[9px] uppercase font-bold tracking-[0.4em] text-center">Motor Inactivo</span>
                </div>
-               <div v-else class="space-y-3">
-                  <p class="text-white/80">
-                     <span 
-                        @click="appendToEditor(transcription.final)"
-                        class="hover:text-primary cursor-pointer transition-colors decoration-dotted underline-offset-4 hover:underline"
-                     >
-                        {{ transcription.final }}
-                     </span>
-                     <span class="text-primary/60 animate-pulse">{{ transcription.interim }}</span>
-                  </p>
-                  <p v-if="transcription.final" class="text-[9px] text-primary/40 font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
-                     ↑ Toca el segmento para capturar
-                  </p>
-               </div>
+                <div v-else class="relative overflow-hidden">
+                   <TransitionGroup 
+                     name="word-stream" 
+                     tag="p" 
+                     class="text-white leading-relaxed flex flex-wrap gap-x-1 gap-y-1"
+                   >
+                      <span 
+                         v-for="word in transcriptionWords" 
+                         :key="word.id"
+                         @click="appendToEditor(transcriptionHistory)"
+                         class="cursor-pointer transition-colors hover:text-primary decoration-dotted underline-offset-4 hover:underline"
+                         :class="{ 'text-white/90': word.isInterim }"
+                      >
+                         {{ word.text }}
+                      </span>
+                   </TransitionGroup>
+                   
+                   <p v-if="transcriptionWords.length > 0" class="mt-4 text-[9px] text-primary/40 font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                      ↑ Toca para capturar historial completo
+                   </p>
+                </div>
 
                <!-- Terminal Glow -->
                <div class="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-primary/10 to-transparent pointer-events-none opacity-50"></div>
@@ -619,5 +652,21 @@ onMounted(() => {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
+}
+
+/* Streaming word animation */
+.word-stream-enter-active {
+  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+  transition-delay: 0.05s;
+}
+
+.word-stream-enter-from {
+  opacity: 0;
+  transform: translateY(4px) scale(0.95);
+  filter: blur(4px);
+}
+
+.word-stream-move {
+  transition: transform 0.4s ease;
 }
 </style>

@@ -13,8 +13,35 @@ const history = ref<any[]>([])
 const isLoading = ref(true)
 const pollInterval = ref<NodeJS.Timeout | null>(null)
 const scrollContainer = ref<HTMLElement | null>(null)
+const desktopScrollContainer = ref<HTMLElement | null>(null)
 const showMonitor = ref(false)
 const hideTimeout = ref<NodeJS.Timeout|null>(null)
+const transcriptionHistory = ref('')
+
+// Accumulate transcription history
+watch(() => transcription.value.final, (newFinal) => {
+  if (newFinal) {
+    const space = transcriptionHistory.value && !transcriptionHistory.value.endsWith(' ') ? ' ' : ''
+    transcriptionHistory.value += space + newFinal
+  }
+})
+
+// Compute words for animated stream
+const transcriptionWords = computed(() => {
+  const finalWords = transcriptionHistory.value.split(/\s+/).filter(Boolean).map((w, i) => ({
+    id: `f-${i}`,
+    text: w,
+    isInterim: false
+  }))
+  
+  const interimWords = transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
+    id: `i-${i}`,
+    text: w,
+    isInterim: true
+  }))
+  
+  return [...finalWords, ...interimWords]
+})
 
 const fetchHistory = async () => {
   try {
@@ -61,6 +88,9 @@ watch([() => transcription.value.final, () => transcription.value.interim], ([ne
     nextTick(() => {
         if (scrollContainer.value) {
             scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
+        }
+        if (desktopScrollContainer.value) {
+            desktopScrollContainer.value.scrollTop = desktopScrollContainer.value.scrollHeight
         }
     })
 })
@@ -218,7 +248,10 @@ const generatePdf = () => {
     </div>
 
     <!-- Right Panel: Live Transcription (Desktop) -->
-    <aside class="hidden lg:flex flex-col w-[450px] bg-black text-white h-full p-12 overflow-y-auto border-l border-white/10 scroll-smooth">
+    <aside 
+      ref="desktopScrollContainer"
+      class="hidden lg:flex flex-col w-[450px] bg-black text-white h-full p-12 overflow-y-auto border-l border-white/10 scroll-smooth"
+    >
       <div class="flex items-center gap-4 mb-12">
         <div class="relative flex size-3">
           <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
@@ -235,11 +268,23 @@ const generatePdf = () => {
       </div>
 
       <div class="space-y-8">
-        <div class="prose prose-invert prose-2xl">
-          <p class="text-3xl sm:text-4xl leading-tight tracking-tight">
-            <span class="text-white">{{ transcription.final }}</span>
-            <span class="text-white/30 italic">{{ transcription.interim }}</span>
-          </p>
+        <div class="prose prose-invert max-w-none">
+           <TransitionGroup 
+             name="word-stream" 
+             tag="p" 
+             class="text-3xl sm:text-4xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2"
+           >
+              <span 
+                 v-for="word in transcriptionWords" 
+                 :key="word.id"
+                 class="transition-colors"
+                 :class="[
+                   word.isInterim ? 'text-white/60 font-medium' : 'text-white font-black'
+                 ]"
+              >
+                 {{ word.text }}
+              </span>
+           </TransitionGroup>
         </div>
         
         <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center border border-dashed border-white/10 rounded-3xl">
@@ -284,16 +329,26 @@ const generatePdf = () => {
                   </span>
                   <div class="h-px flex-1 bg-white/5"></div>
                </div>
-               <div 
-                 ref="scrollContainer"
-                 class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
-                 style="scrollbar-width: none; -ms-overflow-style: none;"
-               >
-                 <p class="text-xl font-bold text-white leading-tight tracking-tight">
-                    <span class="opacity-100">{{ transcription.final }}</span>
-                    <span class="opacity-40 italic font-medium">{{ transcription.interim }}</span>
-                  </p>
-               </div>
+                 <div 
+                   ref="scrollContainer"
+                   class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
+                   style="scrollbar-width: none; -ms-overflow-style: none;"
+                 >
+                   <TransitionGroup 
+                     name="word-stream-mini" 
+                     tag="p" 
+                     class="text-xl font-bold leading-tight tracking-tight flex flex-wrap gap-x-1.5"
+                   >
+                     <span 
+                       v-for="word in transcriptionWords" 
+                       :key="word.id"
+                       class="transition-colors"
+                       :class="word.isInterim ? 'text-white/60 font-medium' : 'text-white'"
+                     >
+                       {{ word.text }}
+                     </span>
+                   </TransitionGroup>
+                 </div>
             </div>
           </div>
         </div>
@@ -336,5 +391,24 @@ const generatePdf = () => {
   .print\:block {
     display: block !important;
   }
+}
+
+/* Streaming word animation */
+.word-stream-enter-active,
+.word-stream-mini-enter-active {
+  transition: all 0.4s cubic-bezier(0.2, 0, 0, 1);
+  transition-delay: 0.1s;
+}
+
+.word-stream-enter-from,
+.word-stream-mini-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scale(0.9);
+  filter: blur(8px);
+}
+
+.word-stream-move,
+.word-stream-mini-move {
+  transition: transform 0.5s ease;
 }
 </style>
