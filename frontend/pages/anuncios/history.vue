@@ -280,7 +280,7 @@ const generatePdf = () => {
            <TransitionGroup 
              name="word-stream" 
              tag="p" 
-             class="text-3xl sm:text-4xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2 font-bold text-white opacity-100"
+             class="text-3xl sm:text-4xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
            >
               <span 
                  v-for="word in interimWords" 
@@ -343,7 +343,7 @@ const generatePdf = () => {
                    <TransitionGroup 
                      name="word-stream-mini" 
                      tag="p" 
-                     class="text-xl font-normal leading-tight tracking-tight flex flex-wrap gap-x-1.5 text-white opacity-100"
+                     class="text-xl leading-tight tracking-tight flex flex-wrap gap-x-1.5 text-white opacity-100"
                    >
                      <span 
                        v-for="word in interimWords" 
