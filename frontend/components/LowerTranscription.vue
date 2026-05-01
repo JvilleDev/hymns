@@ -1,44 +1,3 @@
-<template>
-  <div 
-    class="fixed left-0 right-0 z-50 bg-white text-black overflow-hidden py-6 font-bold border-y border-black/10 shadow-[0_-8px_40px_rgba(0,0,0,0.25)]"
-    :class="[position === 'top' ? 'top-0 shadow-xl' : 'bottom-0']"
-  >
-    <!-- Transcription Container -->
-    <div class="relative max-w-[95vw] mx-auto">
-      <!-- Left Gradient Overlay -->
-      <div class="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
-      
-      <div 
-        ref="containerRef"
-        class="overflow-x-auto no-scrollbar flex items-center"
-      >
-        <div class="w-full text-center min-w-max">
-          <p class="text-[clamp(1.5rem,5vh,6vh)] font-black leading-tight uppercase tracking-tight font-outfit whitespace-nowrap inline-flex items-center">
-            <!-- Animated Interim Stream -->
-            <TransitionGroup name="word-stream" tag="span" class="inline-flex gap-x-2">
-              <span 
-                v-for="word in interimWords" 
-                :key="word.id"
-                class="inline-block text-black"
-              >
-                {{ word.text }}
-              </span>
-            </TransitionGroup>
-          
-          <!-- Caret -->
-          <span v-if="interim || final" class="inline-block w-[0.15em] h-[0.9em] bg-black/10 ml-2 translate-y-[0.1em] animate-pulse"></span>
-          
-          <!-- Idle State -->
-          <span v-if="!final && !interim" class="text-black/10 italic text-[3vh] font-medium tracking-normal lowercase">
-            esperando voz...
-          </span>
-        </p>
-      </div>
-    </div>
-  </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 const props = defineProps<{
   final: string
@@ -48,43 +7,90 @@ const props = defineProps<{
 
 const containerRef = ref<HTMLElement | null>(null)
 
-const interimWords = computed(() => {
-  return props.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
-    id: `w-${i}-${w}`,
-    text: w
+// Use a simple split but keep it responsive
+const words = computed(() => {
+  const allText = props.interim || ''
+  return allText.split(/\s+/).filter(Boolean).map((text, i) => ({
+    id: `word-${i}`,
+    text
   }))
 })
 
-const scrollToEnd = () => {
+const scrollToBottom = () => {
   if (containerRef.value) {
-    containerRef.value.scrollLeft = containerRef.value.scrollWidth
+    containerRef.value.scrollTop = containerRef.value.scrollHeight
   }
 }
 
-watch([() => props.final, () => props.interim], () => {
-  nextTick(scrollToEnd)
-})
+watch(words, () => {
+  nextTick(scrollToBottom)
+}, { deep: true })
 </script>
 
+<template>
+  <div 
+    class="fixed left-0 right-0 z-50 flex justify-center pointer-events-none px-6"
+    :class="[position === 'top' ? 'top-10' : 'bottom-10']"
+  >
+    <Transition name="pill">
+      <div 
+        v-if="interim || final"
+        class="bg-white/95 backdrop-blur-xl px-12 py-5 rounded-[2.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.2)] border border-black/5 flex flex-col justify-center w-full max-w-[90vw] xl:max-w-6xl overflow-hidden relative"
+      >
+        <!-- Top fade for scrolling text -->
+        <div class="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-white/95 to-transparent pointer-events-none z-10 rounded-t-[2.5rem]"></div>
+
+        <!-- Vertical Flow Container -->
+        <div 
+          ref="containerRef"
+          class="w-full text-center overflow-y-auto no-scrollbar scroll-smooth relative z-0 py-1 font-outfit text-[clamp(1.5rem,4vh,5vh)] leading-[1.3]"
+          style="height: 2.6em;"
+        >
+          <TransitionGroup 
+            name="word-pop" 
+            tag="p" 
+            class="font-black uppercase tracking-tight text-neutral-900"
+          >
+            <span 
+              v-for="word in words" 
+              :key="word.id"
+              class="inline-block mr-3"
+            >
+              {{ word.text }}
+            </span>
+          </TransitionGroup>
+        </div>
+
+        <!-- Bottom fade -->
+        <div class="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-white/95 to-transparent pointer-events-none z-10 rounded-b-[2.5rem]"></div>
+      </div>
+    </Transition>
+  </div>
+</template>
+
 <style scoped>
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* Word entry: pop-up effect */
+.word-pop-enter-active {
+  transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Word stream animation: subtle fade only */
-.word-stream-enter-active {
-  transition: opacity 0.15s ease-out;
-}
-
-.word-stream-enter-from {
+.word-pop-enter-from {
   opacity: 0;
+  transform: scale(0.9);
+  filter: blur(4px);
 }
 
-.word-stream-move {
-  transition: transform 0.2s ease;
+/* Smooth shifting as new words push old ones */
+.word-pop-move {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Pill appearance transition */
+.pill-enter-active, .pill-leave-active {
+  transition: all 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.pill-enter-from, .pill-leave-to {
+  opacity: 0;
+  transform: translateY(30px) scale(0.9);
 }
 </style>

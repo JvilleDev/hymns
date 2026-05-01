@@ -9,8 +9,23 @@ const isTranscribing = ref(false)
 const recognition = ref<any>(null)
 const interimTranscript = ref('')
 const finalTranscript = ref('')
+const fullHistory = ref('')
 const errorCount = ref(0)
 const maxErrors = 10
+
+const inactivityTimer = ref<NodeJS.Timeout | null>(null)
+
+const resetInactivityTimer = () => {
+  if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  if (isTranscribing.value) {
+    inactivityTimer.value = setTimeout(() => {
+      console.log('[STT] Inactividad detectada (3s). Reiniciando instancia...')
+      if (recognition.value) {
+        recognition.value.stop() // Trigger onend -> restart
+      }
+    }, 3000)
+  }
+}
 
 const checkBrowser = () => {
   const ua = navigator.userAgent.toLowerCase()
@@ -37,14 +52,23 @@ const initRecognition = () => {
     isTranscribing.value = true
     errorCount.value = 0
     setTranscriptionProducing(true)
+    resetInactivityTimer()
   }
 
   recognition.value.onresult = (event: any) => {
+    resetInactivityTimer()
     let interimTxt = ''
     let finalTxt = ''
     for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) finalTxt += event.results[i][0].transcript
-      else interimTxt += event.results[i][0].transcript
+      if (event.results[i].isFinal) {
+        finalTxt += event.results[i][0].transcript
+        // Append to full history with proper spacing
+        const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
+        fullHistory.value += space + event.results[i][0].transcript
+      }
+      else {
+        interimTxt += event.results[i][0].transcript
+      }
     }
     interimTranscript.value = interimTxt
     if (finalTxt) finalTranscript.value = finalTxt
@@ -55,6 +79,8 @@ const initRecognition = () => {
     console.error('[STT] Error:', event.error)
     isTranscribing.value = false
     setTranscriptionProducing(false)
+    if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+    
     if (event.error !== 'not-allowed' && isUserActive.value && errorCount.value < maxErrors) {
       errorCount.value++
       setTimeout(() => startRecognition(), 1000)
@@ -63,6 +89,8 @@ const initRecognition = () => {
 
   recognition.value.onend = () => {
     isTranscribing.value = false
+    if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+    
     if (isUserActive.value && errorCount.value < maxErrors) {
       startRecognition()
     } else {
@@ -84,10 +112,21 @@ const toggleTranscription = () => {
     isUserActive.value = false
     recognition.value?.stop()
     setTranscriptionProducing(false)
+    if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   } else {
     startRecognition()
   }
 }
+
+// Auto-scroll the history container
+const historyContainer = ref<HTMLElement | null>(null)
+watch([() => fullHistory.value, () => interimTranscript.value], () => {
+  nextTick(() => {
+    if (historyContainer.value) {
+      historyContainer.value.scrollTop = historyContainer.value.scrollHeight
+    }
+  })
+})
 
 onMounted(() => {
   checkBrowser()
@@ -100,6 +139,7 @@ onMounted(() => {
 onUnmounted(() => {
   recognition.value?.stop()
   setTranscriptionProducing(false)
+  if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
 })
 
 definePageMeta({
@@ -108,56 +148,78 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="min-h-screen bg-black text-white font-outfit flex flex-col items-center justify-center p-6 text-center">
-    <div v-if="!isSupportedBrowser" class="p-8 border border-red-900/30 bg-red-950/20 rounded-3xl max-w-sm">
-      <Icon name="tabler:browser-off" class="size-12 text-red-500 mb-4" />
+  <div class="min-h-screen bg-white text-neutral-900 font-sans flex flex-col items-center justify-center p-6">
+    <div v-if="!isSupportedBrowser" class="p-8 border border-red-200 bg-red-50 rounded-3xl max-w-sm text-center">
+      <Icon name="tabler:browser-off" class="size-12 text-red-500 mb-4 mx-auto" />
       <h1 class="text-xl font-bold mb-2">Usar Chrome o Safari</h1>
-      <p class="text-sm text-slate-400">Este sistema solo funciona en navegadores con soporte oficial de Web Speech API.</p>
+      <p class="text-sm text-neutral-500">Este sistema solo funciona en navegadores con soporte oficial de Web Speech API.</p>
     </div>
 
-    <div v-else class="space-y-8 w-full max-w-lg">
-      <div class="space-y-2">
-        <h1 class="text-2xl font-black tracking-tighter uppercase italic">Transporte STT</h1>
-        <div class="flex items-center justify-center gap-3">
-          <div class="flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 rounded-full border border-slate-800">
-            <div class="size-1.5 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
-            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">{{ isConnected ? 'Online' : 'Offline' }}</span>
+    <div v-else class="w-full max-w-3xl flex flex-col h-[85vh]">
+      
+      <!-- Header Area -->
+      <header class="mb-10 flex flex-col sm:flex-row items-center justify-between gap-6 shrink-0">
+        <div class="space-y-2 text-center sm:text-left">
+          <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-neutral-900 uppercase leading-none">
+            Generador STT
+          </h1>
+          <div class="flex flex-wrap items-center justify-center sm:justify-start gap-3">
+            <div class="flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 rounded-full border border-neutral-200">
+              <div class="size-1.5 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
+              <span class="text-[9px] font-bold uppercase tracking-widest text-neutral-500">{{ isConnected ? 'Socket Activo' : 'Offline' }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 px-3 py-1 bg-neutral-100 rounded-full border border-neutral-200 cursor-pointer hover:bg-neutral-200 transition-colors" @click="isManualConnectionTrigger = true" title="Cambiar ID de Cliente">
+              <Icon name="tabler:id" class="size-3.5 text-blue-600" />
+              <span class="text-[10px] font-bold uppercase tracking-widest text-neutral-600">
+                {{ clientId?.length > 15 ? clientId.substring(0, 8) + '...' : clientId }}
+              </span>
+            </div>
+            <div v-if="isTranscribing" class="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 rounded-full border border-blue-100">
+              <div class="size-1.5 bg-blue-600 rounded-full animate-pulse"></div>
+              <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">En vivo</span>
+            </div>
           </div>
-          <div class="flex items-center gap-1.5 px-3 py-1 bg-slate-900 rounded-full border border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors shadow-inner" @click="isManualConnectionTrigger = true" title="Cambiar ID de Cliente">
-            <Icon name="tabler:id" class="size-3.5 text-primary opacity-80" />
-            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">
-              {{ clientId?.length > 15 ? clientId.substring(0, 8) + '...' : clientId }}
-            </span>
+        </div>
+
+        <button 
+          @click="toggleTranscription"
+          class="flex items-center gap-3 px-6 py-3 rounded-full border-2 transition-all font-black uppercase tracking-[0.1em] text-sm shrink-0"
+          :class="isTranscribing 
+            ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
+            : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600'"
+        >
+          <Icon :name="isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off'" class="size-5" />
+          {{ isTranscribing ? 'Detener' : 'Iniciar' }}
+        </button>
+      </header>
+
+      <!-- History & Live Text Area -->
+      <div 
+        class="flex-1 bg-neutral-50 rounded-[2rem] border border-neutral-200 p-8 flex flex-col overflow-hidden relative shadow-inner"
+      >
+        <div class="absolute top-6 left-8 flex items-center gap-2 pointer-events-none">
+           <Icon name="tabler:history" class="size-4 text-neutral-300" />
+           <span class="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Registro Completo</span>
+        </div>
+
+        <div 
+          ref="historyContainer"
+          class="flex-1 overflow-y-auto mt-6 pr-4 scroll-smooth"
+        >
+          <div v-if="!fullHistory && !interimTranscript" class="h-full flex flex-col items-center justify-center text-neutral-300">
+             <Icon name="tabler:ear" class="size-12 mb-4 opacity-50" />
+             <p class="text-xs font-bold uppercase tracking-widest">
+               {{ isTranscribing ? 'Esperando audio...' : 'Listo para iniciar' }}
+             </p>
           </div>
-          <div v-if="isTranscribing" class="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/10 rounded-full border border-red-500/20">
-            <div class="size-1.5 bg-red-500 rounded-full animate-pulse"></div>
-            <span class="text-[9px] font-bold uppercase tracking-widest text-red-500">Live</span>
-          </div>
+          
+          <p v-else class="text-2xl sm:text-3xl font-medium leading-relaxed text-neutral-700">
+            <span>{{ fullHistory }}</span>
+            <span v-if="interimTranscript" class="text-blue-600 ml-1 italic">{{ interimTranscript }}</span>
+          </p>
         </div>
       </div>
 
-      <div class="aspect-square w-full max-w-[280px] mx-auto relative group">
-        <div class="absolute inset-0 bg-primary/20 rounded-full blur-3xl opacity-20 group-hover:opacity-40 transition-opacity"></div>
-        <button 
-          @click="toggleTranscription"
-          class="relative w-full h-full rounded-full border-2 transition-all duration-500 flex flex-col items-center justify-center gap-4 group"
-          :class="isTranscribing ? 'border-primary bg-primary/5' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'"
-        >
-          <Icon :name="isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off'" class="size-16 transition-transform group-active:scale-90" :class="isTranscribing ? 'text-primary' : 'text-slate-600'" />
-          <span class="text-xs font-black uppercase tracking-[0.2em]">{{ isTranscribing ? 'DETENER' : 'INICIAR' }}</span>
-        </button>
-      </div>
-
-      <div class="p-6 bg-slate-900/30 rounded-3xl border border-slate-800/50 min-h-[120px] flex items-center justify-center italic text-slate-400">
-        <p v-if="interimTranscript || finalTranscript" class="text-lg leading-tight">
-          {{ finalTranscript }} <span class="text-primary">{{ interimTranscript }}</span>
-        </p>
-        <p v-else class="text-sm opacity-50 uppercase tracking-widest">{{ isTranscribing ? 'Escuchando...' : 'Listo para transcribir' }}</p>
-      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.font-outfit { font-family: 'Outfit', sans-serif; }
-</style>

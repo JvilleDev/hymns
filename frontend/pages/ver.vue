@@ -17,6 +17,7 @@ const queries = computed(() => ({
   bg: route.query.bg !== undefined,
   slide: route.query.slide !== undefined,
   no_bg: route.query.no_bg !== undefined,
+  live: route.query.live !== undefined,
 }));
 
 definePageMeta({
@@ -91,7 +92,7 @@ onUnmounted(() => {
     <!-- Transcription Layer -->
     <Transition name="slide-up">
       <LowerTranscription 
-        v-if="transcription.active && !queries.slide"
+        v-if="(transcription.active || queries.live) && !queries.slide"
         :final="transcription.final"
         :interim="transcription.interim"
       />
