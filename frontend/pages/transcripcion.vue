@@ -27,6 +27,21 @@ const resetInactivityTimer = () => {
   }
 }
 
+const currentRawInterim = ref('')
+const punctuatedInterim = ref('')
+const lastPunctuatedWordCount = ref(0)
+const isPunctuatingInterim = ref(false)
+
+const requestPunctuation = async (text: string) => {
+  if (!text.trim()) return ''
+  try {
+    const data = await useApi().post<{text: string}>('/api/punctuate', { text })
+    return data?.text || text
+  } catch (e) {
+    return text
+  }
+}
+
 const checkBrowser = () => {
   const ua = navigator.userAgent.toLowerCase()
   const isChrome = /chrome/.test(ua) && !/edge|opr/.test(ua)
@@ -46,7 +61,7 @@ const initRecognition = () => {
   recognition.value = new SpeechRecognition()
   recognition.value.continuous = true
   recognition.value.interimResults = true
-  recognition.value.lang = 'es-PR'
+  recognition.value.lang = 'es-ES'
 
   recognition.value.onstart = () => {
     isTranscribing.value = true
@@ -55,24 +70,74 @@ const initRecognition = () => {
     resetInactivityTimer()
   }
 
-  recognition.value.onresult = (event: any) => {
+  recognition.value.onresult = async (event: any) => {
     resetInactivityTimer()
-    let interimTxt = ''
-    let finalTxt = ''
+    let rawInterim = ''
+    let newFinal = ''
+    
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       if (event.results[i].isFinal) {
-        finalTxt += event.results[i][0].transcript
-        // Append to full history with proper spacing
-        const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
-        fullHistory.value += space + event.results[i][0].transcript
-      }
-      else {
-        interimTxt += event.results[i][0].transcript
+        newFinal += event.results[i][0].transcript
+      } else {
+        rawInterim += event.results[i][0].transcript
       }
     }
-    interimTranscript.value = interimTxt
-    if (finalTxt) finalTranscript.value = finalTxt
-    updateTranscription({ final: finalTxt || finalTranscript.value, interim: interimTxt })
+
+    // Process Final text
+    if (newFinal) {
+      const pFinal = await requestPunctuation(newFinal)
+      const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
+      fullHistory.value += space + pFinal
+      finalTranscript.value += space + pFinal
+      
+      // Reset interim tracking
+      punctuatedInterim.value = ''
+      lastPunctuatedWordCount.value = 0
+      currentRawInterim.value = ''
+      interimTranscript.value = ''
+      
+      updateTranscription({ final: finalTranscript.value, interim: '' })
+    }
+
+    // Process Interim text smoothly
+    if (rawInterim) {
+      currentRawInterim.value = rawInterim
+      const rawWords = rawInterim.trim().split(/\s+/).filter(Boolean)
+      const wordCount = rawWords.length
+      
+      // Construct the display string (Punctuated base + fresh raw words)
+      let displayInterim = rawInterim
+      if (punctuatedInterim.value) {
+        const pWords = punctuatedInterim.value.trim().split(/\s+/).filter(Boolean)
+        const newRawWords = rawWords.slice(lastPunctuatedWordCount.value)
+        displayInterim = [...pWords, ...newRawWords].join(' ')
+      }
+      
+      interimTranscript.value = displayInterim
+      updateTranscription({ final: finalTranscript.value, interim: displayInterim })
+      
+      // Trigger background punctuation every 3 words
+      if (!isPunctuatingInterim.value && (wordCount - lastPunctuatedWordCount.value >= 3)) {
+        isPunctuatingInterim.value = true
+        const textToPunctuate = rawInterim
+        const countAtRequest = wordCount
+        
+        requestPunctuation(textToPunctuate).then(punctuated => {
+          punctuatedInterim.value = punctuated
+          lastPunctuatedWordCount.value = countAtRequest
+          isPunctuatingInterim.value = false
+          
+          // Re-sync display instantly with any new words spoken during the network request
+          const latestRawWords = currentRawInterim.value.trim().split(/\s+/).filter(Boolean)
+          const latestPWords = punctuated.trim().split(/\s+/).filter(Boolean)
+          const trailingRaw = latestRawWords.slice(countAtRequest)
+          const newDisplay = [...latestPWords, ...trailingRaw].join(' ')
+          
+          interimTranscript.value = newDisplay
+          updateTranscription({ final: finalTranscript.value, interim: newDisplay })
+        })
+      }
+    }
   }
 
   recognition.value.onerror = (event: any) => {

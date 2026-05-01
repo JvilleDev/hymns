@@ -59,8 +59,10 @@ def punctuate_text(request: TextRequest):
     if not request.text.strip():
         return {"text": ""}
         
+    print(f"Received text: {request.text}")
     try:
         punctuated = restore_punctuation(request.text)
+        print(f"Punctuated text: {punctuated}")
         return {"text": punctuated}
     except Exception as e:
         print(f"Error restoring punctuation: {e}")
