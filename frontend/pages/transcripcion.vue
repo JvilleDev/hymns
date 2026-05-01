@@ -46,7 +46,7 @@ const initRecognition = () => {
   recognition.value = new SpeechRecognition()
   recognition.value.continuous = true
   recognition.value.interimResults = true
-  recognition.value.lang = 'es-ES'
+  recognition.value.lang = 'es-PR'
 
   recognition.value.onstart = () => {
     isTranscribing.value = true
