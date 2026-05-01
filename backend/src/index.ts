@@ -491,7 +491,8 @@ app.post("/api/punctuate", async (req, res) => {
     }
     
     // Call the local Python microservice
-    const response = await fetch("http://127.0.0.1:8000/punctuate", {
+    const rpunctUrl = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
+    const response = await fetch(`${rpunctUrl}/punctuate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
