@@ -2,4 +2,3 @@ fastapi
 uvicorn
 transformers==4.37.2
 simpletransformers
-torch

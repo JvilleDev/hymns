@@ -7,6 +7,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# Install CPU-only PyTorch first to avoid multi-gigabyte Nvidia CUDA downloads
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
 # Pre-download the model into the Docker image so it doesn't download on every startup
