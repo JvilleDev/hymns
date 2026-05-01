@@ -1,63 +1,70 @@
+<template>
+  <div 
+    class="fixed left-0 right-0 z-50 bg-white text-black overflow-hidden py-6 font-bold border-y border-black/10 shadow-[0_-8px_40px_rgba(0,0,0,0.25)]"
+    :class="[position === 'top' ? 'top-0 shadow-xl' : 'bottom-0']"
+  >
+    <!-- Transcription Container -->
+    <div class="relative max-w-[95vw] mx-auto">
+      <!-- Left Gradient Overlay -->
+      <div class="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
+      
+      <div 
+        ref="containerRef"
+        class="overflow-x-auto no-scrollbar flex items-center"
+      >
+        <div class="w-full text-center min-w-max">
+          <p class="text-[clamp(1.5rem,5vh,6vh)] font-black leading-tight uppercase tracking-tight font-outfit whitespace-nowrap inline-flex items-center">
+            <!-- Animated Interim Stream -->
+            <TransitionGroup name="word-stream" tag="span" class="inline-flex gap-x-2">
+              <span 
+                v-for="word in interimWords" 
+                :key="word.id"
+                class="inline-block text-black"
+              >
+                {{ word.text }}
+              </span>
+            </TransitionGroup>
+          
+          <!-- Caret -->
+          <span v-if="interim || final" class="inline-block w-[0.15em] h-[0.9em] bg-black/10 ml-2 translate-y-[0.1em] animate-pulse"></span>
+          
+          <!-- Idle State -->
+          <span v-if="!final && !interim" class="text-black/10 italic text-[3vh] font-medium tracking-normal lowercase">
+            esperando voz...
+          </span>
+        </p>
+      </div>
+    </div>
+  </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 const props = defineProps<{
   final: string
   interim: string
+  position?: 'top' | 'bottom'
 }>()
 
-// We keep a history of finalized segments to create the vertical scroll effect
 const containerRef = ref<HTMLElement | null>(null)
 
-// Auto-scroll to bottom of the text container
-const scrollToBottom = () => {
+const interimWords = computed(() => {
+  return props.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
+    id: `w-${i}-${w}`,
+    text: w
+  }))
+})
+
+const scrollToEnd = () => {
   if (containerRef.value) {
-    containerRef.value.scrollTop = containerRef.value.scrollHeight
+    containerRef.value.scrollLeft = containerRef.value.scrollWidth
   }
 }
 
 watch([() => props.final, () => props.interim], () => {
-  nextTick(scrollToBottom)
+  nextTick(scrollToEnd)
 })
 </script>
-
-<template>
-  <div class="fixed bottom-0 left-0 right-0 z-50 bg-white text-black shadow-[0_-10px_50px_rgba(0,0,0,0.3)] h-[140px] border-t-4 border-primary overflow-hidden flex flex-col">
-    <!-- Automatic Transcription Indicator -->
-    <div class="absolute top-3 right-6 z-10 flex items-center gap-2 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-full">
-      <div class="size-1.5 bg-red-500 rounded-full animate-pulse"></div>
-      <span class="text-[8px] font-black text-red-500 uppercase tracking-[0.2em]">Transcripción Automática</span>
-    </div>
-
-    <!-- Main Text Area -->
-    <div 
-      ref="containerRef"
-      class="flex-1 px-12 py-6 overflow-y-auto scroll-smooth no-scrollbar flex flex-col justify-end"
-    >
-      <div class="max-w-7xl mx-auto w-full">
-        <div class="text-[42px] font-bold leading-[1.1] tracking-tight uppercase">
-          <!-- Finalized Text (Stable) -->
-          <span v-if="final" class="text-black">
-            {{ final }}
-          </span>
-          
-          <!-- Interim Text (Instant) -->
-          <span v-if="interim" class="text-slate-400 italic">
-             {{ interim }}
-          </span>
-          
-          <!-- Caret / Pulse -->
-          <span v-if="interim || final" class="inline-block w-1.5 h-[1.1em] bg-primary/40 ml-1 translate-y-2 animate-pulse"></span>
-          
-          <span v-if="!final && !interim" class="text-slate-300 italic text-3xl font-medium tracking-normal lowercase">
-            esperando voz...
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Decorative Bottom Accent -->
-    <div class="h-1.5 w-full bg-gradient-to-r from-primary/20 via-primary to-primary/20"></div>
-  </div>
-</template>
 
 <style scoped>
 .no-scrollbar::-webkit-scrollbar {
@@ -68,10 +75,16 @@ watch([() => props.final, () => props.interim], () => {
   scrollbar-width: none;
 }
 
-/* Ensure text doesn't have jarring jumps when new words appear */
-span {
-  display: inline;
-  white-space: pre-wrap;
-  word-break: break-word;
+/* Word stream animation: subtle fade only */
+.word-stream-enter-active {
+  transition: opacity 0.15s ease-out;
+}
+
+.word-stream-enter-from {
+  opacity: 0;
+}
+
+.word-stream-move {
+  transition: transform 0.2s ease;
 }
 </style>

@@ -32,6 +32,10 @@ watch(viewerActive, (newValue) => {
   isActive.value = newValue;
 }, { immediate: true });
 
+watch(transcription, (newVal) => {
+  console.log('[Transcription Event]', newVal)
+}, { deep: true })
+
 onMounted(() => {
   connect();
 });
