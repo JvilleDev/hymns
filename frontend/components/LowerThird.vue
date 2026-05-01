@@ -12,7 +12,37 @@ const repeatCount = ref(20)
 const containerWidth = ref(1920) 
 const isScrollable = ref(true)
 
-const parsedContent = computed(() => parseHTML(props.text))
+const punctuatedText = ref(props.text)
+const isPunctuating = ref(false)
+
+const parsedContent = computed(() => parseHTML(punctuatedText.value))
+
+const fetchPunctuation = async (textToPunctuate: string) => {
+  if (!textToPunctuate) {
+    punctuatedText.value = textToPunctuate
+    return
+  }
+  
+  isPunctuating.value = true
+  try {
+    const data = await useApi().post<{text: string}>('/api/punctuate', { text: textToPunctuate })
+    if (data && data.text) {
+      punctuatedText.value = data.text
+    } else {
+      punctuatedText.value = textToPunctuate
+    }
+  } catch (e) {
+    // Fallback to raw text if service is unavailable
+    punctuatedText.value = textToPunctuate
+  } finally {
+    isPunctuating.value = false
+  }
+}
+
+watch(() => props.text, (newVal) => {
+  fetchPunctuation(newVal)
+}, { immediate: true })
+
 
 const measureRef = ref<HTMLElement | null>(null)
 

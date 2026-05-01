@@ -482,6 +482,34 @@ app.get("/search", async (req, res) => {
   }
 });
 
+app.post("/api/punctuate", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      res.json({ text: "" });
+      return;
+    }
+    
+    // Call the local Python microservice
+    const response = await fetch("http://127.0.0.1:8000/punctuate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      res.json(data);
+    } else {
+      console.warn("Python service returned error status", response.status);
+      res.json({ text }); // Fallback
+    }
+  } catch (error) {
+    console.error("Error connecting to rpunct service proxy:", error);
+    res.json({ text: req.body.text || "" }); // Fallback
+  }
+});
+
 // -- Helpers & DB --
 
 async function setupFuse() {
