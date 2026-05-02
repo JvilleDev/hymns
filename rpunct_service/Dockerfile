@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
 # Pre-download the model into the Docker image so it doesn't download on every startup
-RUN python -c "from simpletransformers.ner import NERModel; NERModel('bert', 'UMUTeam/spanish_capitalization_punctuation_restoration', use_cuda=False, args={'silent':True})"
+RUN python -c "from transformers import pipeline; pipeline('token-classification', model='oliverguhr/fullstop-punctuation-multilingual-sonar-base')"
 
 COPY . .
 

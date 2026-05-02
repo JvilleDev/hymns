@@ -42,23 +42,28 @@ const currentRawInterim = ref('')
 const punctuatedInterim = ref('')
 const lastPunctuatedWordCount = ref(0)
 const isPunctuatingInterim = ref(false)
+const isRestarting = ref(false)
 
-const commitInterim = async () => {
+const commitInterim = () => {
   const textToCommit = currentRawInterim.value.trim()
   if (!textToCommit) return
   
-  // Limpiar estados antes del await para evitar duplicados
+  console.log('[STT] Committing interim text:', textToCommit)
+  const textAtCommit = textToCommit
+  
+  // Limpiar estados INSTANTÁNEAMENTE de forma síncrona
   currentRawInterim.value = ''
   interimTranscript.value = ''
   punctuatedInterim.value = ''
   lastPunctuatedWordCount.value = 0
   
-  const pFinal = await requestPunctuation(textToCommit)
-  const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
-  fullHistory.value += space + pFinal
-  finalTranscript.value += space + pFinal
-  
-  updateTranscription({ final: finalTranscript.value, interim: '' })
+  // Procesar puntuación en segundo plano sin bloquear el hilo
+  requestPunctuation(textAtCommit).then(pFinal => {
+    const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
+    fullHistory.value += space + pFinal
+    finalTranscript.value += space + pFinal
+    updateTranscription({ final: finalTranscript.value, interim: '' })
+  })
 }
 
 const requestPunctuation = async (text: string) => {
@@ -119,6 +124,7 @@ const initRecognition = () => {
         const silenceMs = Date.now() - lastActiveTime.value
         if (silenceMs > SILENCE_DURATION && isTranscribing.value) {
           console.log(`[VAD] Silencio detectado (${silenceMs}ms). Forzando cierre...`)
+          isRestarting.value = true
           commitInterim()
           recognition.value?.stop()
           lastActiveTime.value = Date.now() 
@@ -141,6 +147,8 @@ const initRecognition = () => {
   }
 
   recognition.value.onresult = async (event: any) => {
+    if (isRestarting.value) return // Ignorar resultados mientras reiniciamos
+    
     resetInactivityTimer()
     let rawInterim = ''
     let newFinal = ''
@@ -231,6 +239,7 @@ const initRecognition = () => {
 
   recognition.value.onend = () => {
     isTranscribing.value = false
+    isRestarting.value = false // Permitir nuevos resultados al terminar la sesión
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
     
     if (isUserActive.value && errorCount.value < maxErrors) {
