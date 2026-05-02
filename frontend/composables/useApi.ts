@@ -2,7 +2,23 @@ import { v4 as uuid } from 'uuid';
 
 export const useApi = () => {
   const config = useRuntimeConfig().public
-  const backendUrl = (config.apiUrl as string) || 'https://hymns-back.jville.dev'
+  
+  // Dev mode persistence via cookie
+  const isDevCookie = useCookie('himnario_dev_mode', {
+    maxAge: 60 * 60 * 24 * 7, // 1 week
+    sameSite: 'lax'
+  });
+
+  const isDevMode = useState('api:isDevMode', () => isDevCookie.value === 'true');
+
+  const setDevMode = (val: boolean) => {
+    isDevCookie.value = val ? 'true' : undefined;
+    isDevMode.value = val;
+  }
+
+  const backendUrl = isDevMode.value 
+    ? 'http://localhost:3100' 
+    : ((config.apiUrl as string) || 'https://hymns-back.jville.dev')
   
   // Client ID management
   const clientIdCookie = useCookie('himnario_client_id', {
@@ -89,6 +105,8 @@ export const useApi = () => {
     isConnectionError,
     isManualConnectionTrigger,
     isClientIdSet,
+    isDevMode,
+    setDevMode,
     getFullUrl: (path: string) => {
       return `${backendUrl}${path.startsWith('/') ? path : `/${path}`}`
     },

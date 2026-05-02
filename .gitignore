@@ -24,4 +24,7 @@ backend/data/**
 
 database.db
 cantos.json
-*log
+*.log
+
+.venv/
+__pycache__/

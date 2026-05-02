@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
+import { watchDebounced } from '@vueuse/core'
 
 const { connect, updateTranscription, setTranscriptionProducing, isConnected } = useRealtime()
 const { clientId, isManualConnectionTrigger } = useApi()
@@ -14,6 +15,15 @@ const errorCount = ref(0)
 const maxErrors = 10
 
 const inactivityTimer = ref<NodeJS.Timeout | null>(null)
+const audioContext = ref<AudioContext | null>(null)
+const analyser = ref<AnalyserNode | null>(null)
+const microphone = ref<MediaStreamAudioSourceNode | null>(null)
+const currentVolume = ref(0)
+const lastActiveTime = ref(Date.now())
+
+// Configuración de VAD (Voice Activity Detection)
+const SILENCE_THRESHOLD = 0.15 // Ajusta esto si el micro tiene mucho ruido de fondo
+const SILENCE_DURATION = 250   // Milisegundos de silencio para forzar el cierre
 
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
@@ -21,7 +31,8 @@ const resetInactivityTimer = () => {
     inactivityTimer.value = setTimeout(() => {
       console.log('[STT] Inactividad detectada (3s). Reiniciando instancia...')
       if (recognition.value) {
-        recognition.value.stop() // Trigger onend -> restart
+        commitInterim()
+        recognition.value.stop() 
       }
     }, 3000)
   }
@@ -31,6 +42,24 @@ const currentRawInterim = ref('')
 const punctuatedInterim = ref('')
 const lastPunctuatedWordCount = ref(0)
 const isPunctuatingInterim = ref(false)
+
+const commitInterim = async () => {
+  const textToCommit = currentRawInterim.value.trim()
+  if (!textToCommit) return
+  
+  // Limpiar estados antes del await para evitar duplicados
+  currentRawInterim.value = ''
+  interimTranscript.value = ''
+  punctuatedInterim.value = ''
+  lastPunctuatedWordCount.value = 0
+  
+  const pFinal = await requestPunctuation(textToCommit)
+  const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
+  fullHistory.value += space + pFinal
+  finalTranscript.value += space + pFinal
+  
+  updateTranscription({ final: finalTranscript.value, interim: '' })
+}
 
 const requestPunctuation = async (text: string) => {
   if (!text.trim()) return ''
@@ -62,6 +91,47 @@ const initRecognition = () => {
   recognition.value.continuous = true
   recognition.value.interimResults = true
   recognition.value.lang = 'es-ES'
+
+  // Setup VAD Audio Analysis
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
+    analyser.value = audioContext.value.createAnalyser()
+    microphone.value = audioContext.value.createMediaStreamSource(stream)
+    
+    analyser.value.fftSize = 256
+    microphone.value.connect(analyser.value)
+    
+    const bufferLength = analyser.value.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+    
+    const checkVolume = () => {
+      if (!isTranscribing.value) return
+      
+      analyser.value?.getByteFrequencyData(dataArray)
+      let sum = 0
+      for (let i = 0; i < bufferLength; i++) sum += dataArray[i]
+      const avg = sum / bufferLength
+      currentVolume.value = avg / 255
+      
+      if (currentVolume.value > SILENCE_THRESHOLD) {
+        lastActiveTime.value = Date.now()
+      } else {
+        const silenceMs = Date.now() - lastActiveTime.value
+        if (silenceMs > SILENCE_DURATION && isTranscribing.value) {
+          console.log(`[VAD] Silencio detectado (${silenceMs}ms). Forzando cierre...`)
+          commitInterim()
+          recognition.value?.stop()
+          lastActiveTime.value = Date.now() 
+        }
+      }
+      
+      requestAnimationFrame(checkVolume)
+    }
+    
+    checkVolume()
+  }).catch(err => {
+    console.error('[VAD] Error accediendo al micro para análisis:', err)
+  })
 
   recognition.value.onstart = () => {
     isTranscribing.value = true
@@ -102,8 +172,8 @@ const initRecognition = () => {
     // Process Interim text smoothly
     if (rawInterim) {
       currentRawInterim.value = rawInterim
+      
       const rawWords = rawInterim.trim().split(/\s+/).filter(Boolean)
-      const wordCount = rawWords.length
       
       // Construct the display string (Punctuated base + fresh raw words)
       let displayInterim = rawInterim
@@ -115,30 +185,37 @@ const initRecognition = () => {
       
       interimTranscript.value = displayInterim
       updateTranscription({ final: finalTranscript.value, interim: displayInterim })
-      
-      // Trigger background punctuation every 3 words
-      if (!isPunctuatingInterim.value && (wordCount - lastPunctuatedWordCount.value >= 3)) {
-        isPunctuatingInterim.value = true
-        const textToPunctuate = rawInterim
-        const countAtRequest = wordCount
-        
-        requestPunctuation(textToPunctuate).then(punctuated => {
-          punctuatedInterim.value = punctuated
-          lastPunctuatedWordCount.value = countAtRequest
-          isPunctuatingInterim.value = false
-          
-          // Re-sync display instantly with any new words spoken during the network request
-          const latestRawWords = currentRawInterim.value.trim().split(/\s+/).filter(Boolean)
-          const latestPWords = punctuated.trim().split(/\s+/).filter(Boolean)
-          const trailingRaw = latestRawWords.slice(countAtRequest)
-          const newDisplay = [...latestPWords, ...trailingRaw].join(' ')
-          
-          interimTranscript.value = newDisplay
-          updateTranscription({ final: finalTranscript.value, interim: newDisplay })
-        })
-      }
     }
   }
+
+  // Debounced interim punctuation
+  watchDebounced(currentRawInterim, (newVal) => {
+    if (!newVal.trim() || isPunctuatingInterim.value) return
+    
+    const rawWords = newVal.trim().split(/\s+/).filter(Boolean)
+    const wordCount = rawWords.length
+    
+    // Trigger punctuation if word count has changed
+    if (wordCount > lastPunctuatedWordCount.value) {
+      isPunctuatingInterim.value = true
+      const countAtRequest = wordCount
+      
+      requestPunctuation(newVal).then(punctuated => {
+        punctuatedInterim.value = punctuated
+        lastPunctuatedWordCount.value = countAtRequest
+        isPunctuatingInterim.value = false
+        
+        // Re-sync display instantly with any new words spoken during the network request
+        const latestRawWords = currentRawInterim.value.trim().split(/\s+/).filter(Boolean)
+        const latestPWords = punctuated.trim().split(/\s+/).filter(Boolean)
+        const trailingRaw = latestRawWords.slice(countAtRequest)
+        const newDisplay = [...latestPWords, ...trailingRaw].join(' ')
+        
+        interimTranscript.value = newDisplay
+        updateTranscription({ final: finalTranscript.value, interim: newDisplay })
+      })
+    }
+  }, { debounce: 300 })
 
   recognition.value.onerror = (event: any) => {
     console.error('[STT] Error:', event.error)
@@ -243,6 +320,18 @@ definePageMeta({
               <div class="size-1.5 bg-blue-600 rounded-full animate-pulse"></div>
               <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">En vivo</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Volume Meter / VAD Indicator -->
+        <div v-if="isTranscribing" class="flex items-center gap-2 px-3 py-1 bg-neutral-100 rounded-full border border-neutral-200">
+          <Icon name="tabler:inner-shadow-top-left" class="size-3 text-neutral-400" />
+          <div class="w-16 h-1 bg-neutral-200 rounded-full overflow-hidden">
+            <div 
+              class="h-full transition-all duration-75" 
+              :class="currentVolume > SILENCE_THRESHOLD ? 'bg-green-500' : 'bg-neutral-400'"
+              :style="{ width: `${currentVolume * 100}%` }"
+            ></div>
           </div>
         </div>
 

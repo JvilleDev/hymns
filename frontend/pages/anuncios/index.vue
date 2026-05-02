@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
 import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
-import { onKeyStroke } from '@vueuse/core'
+import { onKeyStroke, watchDebounced } from '@vueuse/core'
 
 const { 
   announcement, 
@@ -291,11 +291,11 @@ const suggestedTopics = computed(() => {
     return topics
 })
 
-watch(currentTopic, (newVal) => {
+watchDebounced(currentTopic, (newVal) => {
   if (newVal !== announcement.value.topic) {
     setAnnouncement({ ...announcement.value, topic: newVal })
   }
-})
+}, { debounce: 500 })
 
 watch(() => announcement.value.topic, (newVal) => {
   if (newVal !== currentTopic.value) {
