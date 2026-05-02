@@ -22,7 +22,7 @@ try:
     print("Loading NER Model...")
     model = NERModel(
         "bert", 
-        "dccuchile/bert-base-spanish-wwm-uncased", 
+        "UMUTeam/spanish_capitalization_punctuation_restoration", 
         use_cuda=False,
         args={"silent": True}
     )
@@ -34,25 +34,51 @@ except Exception as e:
 class TextRequest(BaseModel):
     text: str
 
+def parse_umu_tag(word: str, tag: str) -> str:
+    if tag == 'O' or not tag:
+        return word
+
+    # Determine capitalization
+    if tag.endswith('u'):
+        word = word.capitalize()
+    elif tag.endswith('l'):
+        word = word.lower()
+    
+    prefix = ""
+    suffix = ""
+    
+    # Handle combined wrapper tags first
+    if tag == '¿?u':
+        prefix, suffix, word = "¿", "?", word.capitalize()
+    elif tag == '¡!u':
+        prefix, suffix, word = "¡", "!", word.capitalize()
+    else:
+        # Punctuation decoding based on the tag's prefix characters
+        if '¿' in tag: prefix = "¿"
+        if '¡' in tag: prefix = "¡"
+        if '?' in tag: suffix = "?"
+        if '!' in tag: suffix = "!"
+        if tag.startswith(','): suffix = ","
+        if tag.startswith('.'): suffix = "."
+        if tag.startswith(':'): suffix = ":"
+
+    return f"{prefix}{word}{suffix}"
+
 def restore_punctuation(text: str) -> str:
     if not model:
         return text
         
     predictions, _ = model.predict([text])
     
-    # predictions is a list of lists of dicts: [[{'word': 'O'}...]]
     if not predictions or not predictions[0]:
         return text
         
-    result = ""
+    result = []
     for token_dict in predictions[0]:
         for word, tag in token_dict.items():
-            result += word
-            if tag != 'O':
-                result += tag
-            result += " "
+            result.append(parse_umu_tag(word, tag))
             
-    return result.strip()
+    return " ".join(result).strip()
 
 @app.post("/punctuate")
 def punctuate_text(request: TextRequest):
