@@ -652,7 +652,7 @@ definePageMeta({
              autoplay 
              muted 
              playsinline 
-             class="w-full h-full object-cover scale-x-[-1]"
+             class="w-full h-full object-cover"
            ></video>
            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end p-6">
               <div class="flex items-center gap-2">
