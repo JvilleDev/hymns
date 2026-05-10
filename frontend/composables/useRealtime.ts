@@ -35,6 +35,11 @@ export const useRealtime = () => {
     interim: ''
   }))
 
+  const onWebRTCOffer = ref<((data: any) => void) | null>(null)
+  const onWebRTCAnswer = ref<((data: any) => void) | null>(null)
+  const onWebRTCCandidate = ref<((data: any) => void) | null>(null)
+  const onWebRTCRequest = ref<(() => void) | null>(null)
+
   const handleMessage = (payload: string) => {
     try {
       const { type, data } = JSON.parse(payload)
@@ -87,6 +92,22 @@ export const useRealtime = () => {
         case 'historyRefresh':
           // The backend sends this when it clears history due to inactivity
           // We don't need to do much here because announcement watchers will trigger fetchHistory
+          break
+
+        case 'webrtc-offer':
+          if (onWebRTCOffer.value) onWebRTCOffer.value(data)
+          break
+        
+        case 'webrtc-answer':
+          if (onWebRTCAnswer.value) onWebRTCAnswer.value(data)
+          break
+        
+        case 'webrtc-ice-candidate':
+          if (onWebRTCCandidate.value) onWebRTCCandidate.value(data)
+          break
+        
+        case 'webrtc-request':
+          if (onWebRTCRequest.value) onWebRTCRequest.value()
           break
       }
     } catch (e) {
@@ -216,6 +237,11 @@ export const useRealtime = () => {
     sendEvent('transcriptionUpdate', data)
   }
 
+  const sendWebRTCOffer = (offer: any) => sendEvent('webrtc-offer', offer)
+  const sendWebRTCAnswer = (answer: any) => sendEvent('webrtc-answer', answer)
+  const sendWebRTCCandidate = (candidate: any) => sendEvent('webrtc-ice-candidate', candidate)
+  const sendWebRTCRequest = () => sendEvent('webrtc-request', {})
+
   return {
     isConnected,
     connectionStatus,
@@ -226,6 +252,10 @@ export const useRealtime = () => {
     activeSong,
     announcement,
     transcription,
+    onWebRTCOffer,
+    onWebRTCAnswer,
+    onWebRTCCandidate,
+    onWebRTCRequest,
     connect,
     disconnect,
     sendLine,
@@ -235,6 +265,10 @@ export const useRealtime = () => {
     setAnnouncement,
     setTranscriptionActive,
     setTranscriptionProducing,
-    updateTranscription
+    updateTranscription,
+    sendWebRTCOffer,
+    sendWebRTCAnswer,
+    sendWebRTCCandidate,
+    sendWebRTCRequest
   }
 }

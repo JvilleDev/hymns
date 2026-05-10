@@ -33,4 +33,9 @@ export default defineNuxtConfig({
     }
   },
   ssr: true,
+  vite: {
+    server: {
+      allowedHosts: ["0cd1-161-18-14-115.ngrok-free.app"]
+    }
+  }
 })

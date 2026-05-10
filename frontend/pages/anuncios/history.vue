@@ -5,9 +5,25 @@ definePageMeta({
   layout: 'empty'
 })
 
-const { getAnnouncements } = useApi()
-const { announcement, transcription, connect, disconnect } = useRealtime()
+const { getAnnouncements, clientId } = useApi()
+const { announcement, transcription, connect, disconnect, sendWebRTCOffer, sendWebRTCAnswer, sendWebRTCCandidate, sendWebRTCRequest, onWebRTCOffer, onWebRTCAnswer, onWebRTCCandidate, onWebRTCRequest } = useRealtime()
 const { parseHTML } = useContentParser()
+
+const videoRTC = ref(false)
+const videoElement = ref<HTMLVideoElement | null>(null)
+const pc = ref<RTCPeerConnection | null>(null)
+const remoteStream = ref<MediaStream | null>(null)
+
+const rtcConfig = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+}
+
+const rtcLogs = ref<string[]>([])
+const addLog = (msg: string) => {
+  const time = new Date().toLocaleTimeString()
+  rtcLogs.value.unshift(`[${time}] ${msg}`)
+  if (rtcLogs.value.length > 10) rtcLogs.value.pop()
+}
 
 const history = ref<any[]>([])
 const isLoading = ref(true)
@@ -104,10 +120,69 @@ const copyToClipboard = async (text: string) => {
   }
 }
 
+const initReceiver = async (offer: any) => {
+  addLog('Oferta recibida, iniciando receptor...')
+  if (pc.value) {
+    pc.value.close()
+  }
+
+  pc.value = new RTCPeerConnection(rtcConfig)
+  addLog('RTCPeerConnection creada')
+
+  pc.value.onicecandidate = (event) => {
+    if (event.candidate) {
+      addLog('Candidato ICE generado')
+      sendWebRTCCandidate(event.candidate)
+    }
+  }
+
+  pc.value.ontrack = (event) => {
+    addLog('Track de video recibido')
+    remoteStream.value = event.streams[0]
+    if (videoElement.value) {
+      videoElement.value.srcObject = remoteStream.value
+      videoRTC.value = true
+      addLog('Stream asignado al video')
+    }
+  }
+
+  await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
+  addLog('Descripción remota establecida')
+  const answer = await pc.value.createAnswer()
+  addLog('Respuesta WebRTC creada')
+  await pc.value.setLocalDescription(answer)
+  sendWebRTCAnswer(answer)
+  addLog('Respuesta enviada vía Socket')
+}
+
 onMounted(() => {
   connect()
   fetchHistory()
   pollInterval.value = setInterval(fetchHistory, 1000)
+
+  onWebRTCOffer.value = (offer) => {
+    initReceiver(offer)
+  }
+
+  onWebRTCCandidate.value = (candidate) => {
+    if (pc.value && candidate) {
+      pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+        console.error('[WebRTC] Error adding ice candidate:', e)
+      })
+    }
+  }
+  
+  onWebRTCAnswer.value = (answer) => {
+     if (pc.value) {
+        pc.value.setRemoteDescription(new RTCSessionDescription(answer))
+     }
+  }
+
+  // Request stream if someone is already producing
+  setTimeout(() => {
+    addLog('Enviando petición de stream...')
+    sendWebRTCRequest()
+  }, 1000)
 })
 
 // Auto-scroll transcription monitor & auto-hide logic
@@ -523,6 +598,56 @@ const generatePdf = () => {
         </div>
       </Transition>
     </Teleport>
+
+    <div class="fixed bottom-6 right-6 z-[100] pointer-events-none">
+      <Transition
+        enter-active-class="transition duration-1000 cubic-bezier(0.16, 1, 0.3, 1)"
+        enter-from-class="translate-y-20 opacity-0 scale-90 blur-2xl rotate-3"
+        enter-to-class="translate-y-0 opacity-100 scale-100 blur-0 rotate-0"
+        leave-active-class="transition duration-700 cubic-bezier(0.7, 0, 0.84, 0)"
+        leave-from-class="translate-y-0 opacity-100 scale-100 blur-0 rotate-0"
+        leave-to-class="translate-y-20 opacity-0 scale-90 blur-2xl rotate-3"
+      >
+        <div 
+          v-show="videoRTC" 
+          class="pointer-events-auto relative group shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[2rem] overflow-hidden border border-white/10 bg-black/80 backdrop-blur-md aspect-video w-[280px] sm:w-[420px] ring-1 ring-white/20"
+        >
+           <video
+             ref="videoElement"
+             autoplay
+             playsinline
+             class="w-full h-full object-cover"
+           ></video>
+           
+           <!-- Premium Overlay -->
+           <div class="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-between p-6">
+              <div class="flex justify-end">
+                <div class="bg-black/40 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-2">
+                   <div class="size-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                   <span class="text-[9px] font-black text-white uppercase tracking-[0.2em]">P2P Live</span>
+                </div>
+              </div>
+              
+              <div class="space-y-1 translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                <p class="text-[10px] font-bold text-white/50 uppercase tracking-[0.3em]">Conexión Directa</p>
+                <p class="text-xs font-black text-white tracking-wider truncate">WebRTC Active</p>
+              </div>
+           </div>
+
+           <!-- Glass shine effect -->
+           <div class="absolute inset-0 pointer-events-none bg-gradient-to-tr from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000"></div>
+
+           <!-- Logs Overlay (Bottom) -->
+           <div class="absolute bottom-0 left-0 right-0 p-3 bg-black/60 backdrop-blur-md border-t border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div class="font-mono text-[8px] text-white/40 space-y-0.5 max-h-16 overflow-y-auto">
+                <div v-for="(log, i) in rtcLogs" :key="i" class="truncate border-b border-white/5 pb-0.5 mb-0.5 last:border-0">
+                  {{ log }}
+                </div>
+              </div>
+           </div>
+        </div>
+      </Transition>
+    </div>
   </div>
 </template>
 

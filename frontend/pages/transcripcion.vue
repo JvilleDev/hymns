@@ -2,7 +2,17 @@
 import { toast } from 'vue-sonner'
 import { watchDebounced } from '@vueuse/core'
 
-const { connect, updateTranscription, setTranscriptionProducing, isConnected } = useRealtime()
+const { 
+  connect, 
+  updateTranscription, 
+  setTranscriptionProducing, 
+  isConnected,
+  onWebRTCAnswer,
+  onWebRTCCandidate,
+  onWebRTCRequest,
+  sendWebRTCOffer,
+  sendWebRTCCandidate
+} = useRealtime()
 const { clientId, isManualConnectionTrigger } = useApi()
 
 const isSupportedBrowser = ref(false)
@@ -18,6 +28,136 @@ const errorCount = ref(0)
 const maxErrors = 10
 const isLocalProducer = ref(false)
 const lastFinalTimestamp = ref(Date.now())
+
+const availableCameras = ref<MediaDeviceInfo[]>([])
+const selectedCameraId = ref<string>('')
+const previewVideo = ref<HTMLVideoElement | null>(null)
+const showCamera = ref(false)
+
+const localStream = ref<MediaStream | null>(null)
+const pc = ref<RTCPeerConnection | null>(null)
+const rtcLogs = ref<string[]>([])
+
+const addLog = (msg: string) => {
+  const time = new Date().toLocaleTimeString()
+  rtcLogs.value.unshift(`[${time}] ${msg}`)
+  if (rtcLogs.value.length > 20) rtcLogs.value.pop()
+}
+
+const rtcConfig = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+}
+
+const initSender = async () => {
+  addLog('Iniciando emisor WebRTC...')
+  
+  if (!window.isSecureContext) {
+    addLog('ERROR: Requiere HTTPS (ngrok https)')
+    toast.error('WebRTC requiere una conexión segura (HTTPS)')
+    return
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    addLog('ERROR: MediaDevices no disponible')
+    return
+  }
+
+  try {
+    const constraints: MediaStreamConstraints = {
+      video: {
+        deviceId: selectedCameraId.value ? { exact: selectedCameraId.value } : undefined,
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 24 }
+      },
+      audio: false
+    }
+
+    if (localStream.value) {
+       localStream.value.getTracks().forEach(t => t.stop())
+    }
+
+    addLog('Solicitando acceso a cámara...')
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+    addLog('Cámara accedida con éxito')
+    
+    if (previewVideo.value) {
+      previewVideo.value.srcObject = localStream.value
+    }
+
+    if (pc.value) pc.value.close()
+    pc.value = new RTCPeerConnection(rtcConfig)
+    addLog('RTCPeerConnection creada')
+
+    localStream.value.getTracks().forEach(track => {
+      pc.value?.addTrack(track, localStream.value!)
+    })
+
+    pc.value.onicecandidate = (event) => {
+      if (event.candidate) {
+        addLog('Candidato ICE generado')
+        sendWebRTCCandidate(event.candidate)
+      }
+    }
+
+    const offer = await pc.value.createOffer()
+    addLog('Oferta WebRTC creada')
+    await pc.value.setLocalDescription(offer)
+    sendWebRTCOffer(offer)
+    addLog('Oferta enviada vía Socket')
+  } catch (e: any) {
+    addLog(`Error en emisor: ${e.message}`)
+    console.error('[WebRTC] Error starting sender:', e)
+    toast.error('Error al acceder a la cámara')
+  }
+}
+
+const getCameras = async () => {
+  try {
+    // Request permission first to get labels
+    await navigator.mediaDevices.getUserMedia({ video: true })
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    availableCameras.value = devices.filter(d => d.kind === 'videoinput')
+    if (availableCameras.value.length && !selectedCameraId.value) {
+      selectedCameraId.value = availableCameras.value[0].deviceId
+    }
+  } catch (e) {
+    console.error('[WebRTC] Error listing cameras:', e)
+  }
+}
+
+const switchCamera = async () => {
+  if (isTranscribing.value) {
+    await initSender()
+  } else if (showCamera.value) {
+    // Just update preview
+    const constraints = {
+      video: { deviceId: { exact: selectedCameraId.value } },
+      audio: false
+    }
+    if (localStream.value) localStream.value.getTracks().forEach(t => t.stop())
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+    if (previewVideo.value) previewVideo.value.srcObject = localStream.value
+  }
+}
+
+const toggleCamera = async () => {
+  showCamera.value = !showCamera.value
+  if (showCamera.value) {
+    await getCameras()
+    const constraints = {
+      video: selectedCameraId.value ? { deviceId: { exact: selectedCameraId.value } } : true,
+      audio: false
+    }
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+    nextTick(() => {
+      if (previewVideo.value) previewVideo.value.srcObject = localStream.value
+    })
+  } else if (!isTranscribing.value) {
+    if (localStream.value) localStream.value.getTracks().forEach(t => t.stop())
+    localStream.value = null
+  }
+}
 
 const TRANSITION_WORDS = [
   'Ahora', 'Miren', 'Escuchen', 'Pero', 'Entonces', 'Dice', 
@@ -121,6 +261,11 @@ const initRecognition = () => {
     errorCount.value = 0
     setTranscriptionProducing(true)
     resetInactivityTimer()
+    
+    // Iniciar video automáticamente
+    nextTick(() => {
+      initSender()
+    })
   }
 
   recognition.value.onresult = async (event: any) => {
@@ -376,18 +521,46 @@ onMounted(() => {
   if (isSupportedBrowser.value) {
     connect()
     initRecognition()
+    getCameras()
+  }
+
+  onWebRTCRequest.value = () => {
+    addLog('Petición de stream recibida')
+    if (isTranscribing.value) {
+      initSender()
+    }
+  }
+
+  onWebRTCAnswer.value = (answer) => {
+    addLog('Respuesta WebRTC recibida')
+    if (pc.value) {
+      pc.value.setRemoteDescription(new RTCSessionDescription(answer))
+      addLog('Descripción remota establecida')
+    }
+  }
+
+  onWebRTCCandidate.value = (candidate) => {
+    if (pc.value && candidate) {
+      pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+        addLog(`Error ICE: ${e.message}`)
+        console.error('[WebRTC] Error adding ice candidate:', e)
+      })
+    }
   }
 })
 
 // Log when transcription state changes for debugging
 watch(transcription, (newVal) => {
-  console.log('[STT] Socket transcription state changed:', newVal)
 }, { deep: true })
 
 onUnmounted(() => {
   recognition.value?.stop()
   setTranscriptionProducing(false)
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  if (pc.value) pc.value.close()
+  if (localStream.value) {
+    localStream.value.getTracks().forEach(t => t.stop())
+  }
 })
 
 definePageMeta({
@@ -457,6 +630,63 @@ definePageMeta({
         </button>
       </header>
 
+      <!-- Camera Preview & Selector -->
+      <Transition
+        enter-active-class="transition duration-500 ease-out"
+        enter-from-class="opacity-0 -translate-y-4 scale-95"
+        enter-to-class="opacity-100 translate-y-0 scale-100"
+        leave-active-class="transition duration-300 ease-in"
+        leave-from-class="opacity-100 translate-y-0 scale-100"
+        leave-to-class="opacity-0 -translate-y-4 scale-95"
+      >
+        <div v-if="isTranscribing || showCamera" class="mb-10 flex flex-col items-center gap-6 shrink-0">
+          <div class="relative group aspect-video w-72 bg-black rounded-3xl overflow-hidden shadow-2xl ring-1 ring-neutral-200">
+             <video 
+               ref="previewVideo" 
+               autoplay 
+               muted 
+               playsinline 
+               class="w-full h-full object-cover scale-x-[-1]"
+             ></video>
+             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end p-4">
+                <div class="flex items-center gap-2">
+                  <div class="size-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
+                  <span class="text-[10px] font-black text-white uppercase tracking-[0.2em]">Vista Previa Local</span>
+                </div>
+             </div>
+          </div>
+          
+          <div class="flex items-center gap-3 bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200 w-full max-w-xs shadow-sm">
+            <div class="size-8 bg-white rounded-xl flex items-center justify-center text-neutral-400 shadow-sm">
+              <Icon name="tabler:video" class="size-4" />
+            </div>
+            <div class="flex-1 min-w-0 relative">
+              <select 
+                v-model="selectedCameraId"
+                @change="switchCamera"
+                class="w-full bg-transparent border-none py-1 pr-8 text-[10px] font-black uppercase tracking-widest text-neutral-600 focus:ring-0 outline-none appearance-none cursor-pointer truncate"
+              >
+                <option v-for="cam in availableCameras" :key="cam.deviceId" :value="cam.deviceId">
+                  {{ cam.label || `Cámara ${availableCameras.indexOf(cam) + 1}` }}
+                </option>
+              </select>
+              <Icon name="tabler:chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 size-3 text-neutral-400 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <div v-if="!isTranscribing" class="mb-10 flex justify-center">
+         <button 
+           @click="toggleCamera"
+           class="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all"
+           :class="showCamera ? 'bg-blue-600 text-white shadow-lg' : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'"
+         >
+           <Icon :name="showCamera ? 'tabler:video-off' : 'tabler:video'" class="size-4" />
+           {{ showCamera ? 'Ocultar Cámara' : 'Configurar Cámara' }}
+         </button>
+      </div>
+
       <!-- History & Live Text Area -->
       <div 
         class="flex-1 bg-neutral-50 rounded-[2rem] border border-neutral-200 p-8 flex flex-col overflow-hidden relative shadow-inner"
@@ -484,6 +714,13 @@ definePageMeta({
             <span>{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
             <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-blue-600 ml-1 italic">{{ isSomeoneElseTranscribing ? transcription.interim : interimTranscript }}</span>
           </p>
+        </div>
+
+        <!-- WebRTC Logs -->
+        <div v-if="rtcLogs.length" class="mt-4 p-3 bg-neutral-100 rounded-xl border border-neutral-200 font-mono text-[9px] text-neutral-500 overflow-y-auto max-h-24">
+           <div v-for="(log, i) in rtcLogs" :key="i" class="mb-1 last:mb-0 border-b border-neutral-200/50 pb-1">
+             {{ log }}
+           </div>
         </div>
       </div>
 

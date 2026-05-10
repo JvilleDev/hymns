@@ -295,6 +295,11 @@ app.post("/api/ws-events/:type", async (req, res) => {
       state.lastTranscriptionUpdate = Date.now();
       broadcast(clientId, { type: "transcriptionUpdate", data });
       break;
+
+    default:
+      // Forward any other events (like WebRTC signaling)
+      broadcast(clientId, { type, data });
+      break;
   }
 
   saveClientState(clientId, state);
