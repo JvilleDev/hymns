@@ -306,56 +306,61 @@ const generatePdf = () => {
 
     <!-- Right Panel: Live Transcription (Desktop) -->
     <aside 
-      ref="desktopScrollContainer"
-      @scroll="handleScroll"
-      class="hidden lg:flex flex-col w-[450px] bg-black text-white h-full p-12 overflow-y-auto border-l border-white/10 relative"
+      class="hidden lg:flex flex-col w-2/4 bg-black text-white h-full border-l border-white/10 relative"
     >
-      <div class="flex items-center gap-4 mb-12">
-        <div class="relative flex size-3">
-          <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
-          <span class="relative inline-flex rounded-full size-3"
-                :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
+      <!-- Scrollable area -->
+      <div 
+        ref="desktopScrollContainer"
+        @scroll="handleScroll"
+        class="flex-1 overflow-y-auto p-12 space-y-8"
+      >
+        <div class="flex items-center gap-4 mb-12">
+          <div class="relative flex size-3">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                  :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
+            <span class="relative inline-flex rounded-full size-3"
+                  :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
+          </div>
+          <div class="flex flex-col">
+            <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+          </div>
         </div>
-        <div class="flex flex-col">
-          <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+
+        <div class="space-y-4">
+          <div v-if="transcriptionHistory" class="space-y-2">
+             <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/20">
+                Registro Anterior
+             </h3>
+             <div class="text-2xl sm:text-4xl font-normal text-white/70 leading-snug whitespace-pre-wrap">
+                {{ transcriptionHistory }}
+             </div>
+          </div>
+
+          <!-- Live Partial Stream -->
+          <div class="prose prose-invert max-w-none">
+             <TransitionGroup 
+               name="word-stream" 
+               tag="p" 
+               class="text-2xl sm:text-4xl leading-snug tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
+             >
+                <span 
+                   v-for="word in interimWords" 
+                   :key="word.id"
+                   class="transition-colors"
+                >
+                   {{ word.text }}
+                </span>
+             </TransitionGroup>
+          </div>
+          
+          <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center border border-dashed border-white/10 rounded-3xl">
+            <Icon name="tabler:ear" class="size-12 text-white/5 mx-auto mb-4" />
+            <p class="text-xs font-bold text-white/20 uppercase tracking-widest italic">Silencio detectado</p>
+          </div>
         </div>
       </div>
 
-      <div class="space-y-8">
-        <div v-if="transcriptionHistory" class="space-y-4">
-           <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/40">
-              Registro Anterior
-           </h3>
-           <div class="text-xl font-normal text-white/70 leading-relaxed whitespace-pre-wrap">
-              {{ transcriptionHistory }}
-           </div>
-        </div>
-
-        <!-- Live Partial Stream -->
-        <div class="prose prose-invert max-w-none">
-           <TransitionGroup 
-             name="word-stream" 
-             tag="p" 
-             class="text-3xl sm:text-4xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
-           >
-              <span 
-                 v-for="word in interimWords" 
-                 :key="word.id"
-                 class="transition-colors"
-              >
-                 {{ word.text }}
-              </span>
-           </TransitionGroup>
-        </div>
-        
-        <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center border border-dashed border-white/10 rounded-3xl">
-          <Icon name="tabler:ear" class="size-12 text-white/5 mx-auto mb-4" />
-          <p class="text-xs font-bold text-white/20 uppercase tracking-widest italic">Silencio detectado</p>
-        </div>
-      </div>
-
-      <!-- Back to bottom button -->
+      <!-- Floating Back to bottom button -->
       <Transition
         enter-active-class="transition duration-300 ease-out"
         enter-from-class="translate-y-4 opacity-0 scale-90"
@@ -367,7 +372,7 @@ const generatePdf = () => {
         <button
           v-if="!autoScrollEnabled"
           @click="scrollToBottom"
-          class="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest shadow-2xl hover:scale-110 active:scale-95 transition-all z-20 border border-blue-400/30"
+          class="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest shadow-2xl hover:scale-110 active:scale-95 transition-all z-20 border border-blue-400/30"
         >
           <Icon name="tabler:arrow-down" class="size-4" />
           <span>Volver abajo</span>
@@ -465,19 +470,19 @@ const generatePdf = () => {
              @scroll="handleMobileScroll"
              class="flex-1 overflow-y-auto space-y-8 pr-2"
            >
-              <div v-if="transcriptionHistory" class="space-y-4">
-                 <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/20">Registro Anterior</h3>
-                 <div class="text-xl font-normal text-white/70 leading-relaxed whitespace-pre-wrap">
-                    {{ transcriptionHistory }}
-                 </div>
-              </div>
+               <div v-if="transcriptionHistory" class="space-y-2">
+                  <h3 class="text-[10px] font-black uppercase tracking-[0.3em] text-white/20">Registro Anterior</h3>
+                  <div class="text-2xl sm:text-4xl font-normal text-white/70 leading-snug whitespace-pre-wrap">
+                     {{ transcriptionHistory }}
+                  </div>
+               </div>
 
-              <div class="prose prose-invert max-w-none">
-                 <TransitionGroup 
-                   name="word-stream" 
-                   tag="p" 
-                   class="text-3xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
-                 >
+               <div class="prose prose-invert max-w-none">
+                  <TransitionGroup 
+                    name="word-stream" 
+                    tag="p" 
+                    class="text-2xl sm:text-4xl leading-snug tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
+                  >
                     <span 
                        v-for="word in interimWords" 
                        :key="word.id"
@@ -501,7 +506,7 @@ const generatePdf = () => {
               <button
                 v-if="!mobileAutoScrollEnabled"
                 @click="scrollMobileToBottom"
-                class="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest shadow-2xl z-20 border border-blue-400/30"
+                class="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest shadow-2xl z-20 border border-blue-400/30"
               >
                 <Icon name="tabler:arrow-down" class="size-4" />
                 <span>Volver abajo</span>

@@ -27,6 +27,7 @@ const lastActiveTime = ref(Date.now())
 
 // Puntos para saltos de línea
 const PUNCTUATION_PAUSE = 2000 // Milisegundos de silencio para forzar el cierre y puntuación
+const SILENCE_THRESHOLD = 0.05 // Umbral para considerar que hay voz (0-1)
 
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
@@ -60,17 +61,19 @@ const commitInterim = () => {
   punctuatedInterim.value = ''
   lastPunctuatedWordCount.value = 0
   
-  // Procesar puntuación en segundo plano
-  requestPunctuation(textAtCommit).then(pFinal => {
-    // Si el texto termina en punto, aseguramos un salto de línea para el siguiente párrafo
-    const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
-    const hasFinalPeriod = formatted.endsWith('.')
-    const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? (hasFinalPeriod ? '\n\n' : ' ') : ''
-    
-    fullHistory.value += space + formatted
-    finalTranscript.value = fullHistory.value
-    updateTranscription({ final: finalTranscript.value, interim: '' })
-  })
+    // Procesar puntuación y capitalizar párrafos
+    requestPunctuation(textAtCommit).then(pFinal => {
+      const formatted = pFinal.trim().replace(/\. /g, '.\n')
+      const capitalized = formatted.split('\n')
+        .map(p => p.trim() ? p.charAt(0).toUpperCase() + p.slice(1) : p)
+        .join('\n')
+      
+      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n' : ''
+      
+      fullHistory.value += space + capitalized
+      finalTranscript.value = fullHistory.value
+      updateTranscription({ final: finalTranscript.value, interim: '' })
+    })
 }
 
 const requestPunctuation = async (text: string) => {
@@ -134,11 +137,14 @@ const initRecognition = () => {
     // Process Final text
     if (newFinal) {
       const pFinal = await requestPunctuation(newFinal)
-      const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
-      const hasFinalPeriod = formatted.endsWith('.')
-      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? (hasFinalPeriod ? '\n\n' : ' ') : ''
+      const formatted = pFinal.trim().replace(/\. /g, '.\n')
+      const capitalized = formatted.split('\n')
+        .map(p => p.trim() ? p.charAt(0).toUpperCase() + p.slice(1) : p)
+        .join('\n')
+
+      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n' : ''
       
-      fullHistory.value += space + formatted
+      fullHistory.value += space + capitalized
       finalTranscript.value = fullHistory.value
       
       // Reset interim tracking
@@ -232,6 +238,50 @@ const startRecognition = () => {
   try { recognition.value.start() } catch (e) {}
 }
 
+const startAudioAnalysis = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
+    analyser.value = audioContext.value.createAnalyser()
+    microphone.value = audioContext.value.createMediaStreamSource(stream)
+    microphone.value.connect(analyser.value)
+    
+    analyser.value.fftSize = 256
+    const bufferLength = analyser.value.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+
+    const analyze = () => {
+      if (!analyser.value || !isTranscribing.value) return
+      analyser.value.getByteFrequencyData(dataArray)
+      
+      let sum = 0
+      for (let i = 0; i < bufferLength; i++) {
+        sum += dataArray[i]
+      }
+      const average = sum / bufferLength
+      currentVolume.value = average / 128 // Normalize to 0-1 approx
+      
+      requestAnimationFrame(analyze)
+    }
+    analyze()
+  } catch (e) {
+    console.error('[Audio] Error starting analysis:', e)
+  }
+}
+
+const stopAudioAnalysis = () => {
+  if (microphone.value) {
+    microphone.value.disconnect()
+    microphone.value = null
+  }
+  if (audioContext.value) {
+    audioContext.value.close()
+    audioContext.value = null
+  }
+  analyser.value = null
+  currentVolume.value = 0
+}
+
 const toggleTranscription = () => {
   if (isSomeoneElseTranscribing.value) return
 
@@ -240,9 +290,11 @@ const toggleTranscription = () => {
     recognition.value?.stop()
     isLocalProducer.value = false
     setTranscriptionProducing(false)
+    stopAudioAnalysis()
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   } else {
     startRecognition()
+    startAudioAnalysis()
   }
 }
 
