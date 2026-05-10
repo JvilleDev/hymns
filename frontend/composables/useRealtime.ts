@@ -18,6 +18,7 @@ export const useRealtime = () => {
   // Compartir el estado entre todas las instancias del composable usando useState
   const isConnected = useState('realtime:isConnected', () => false)
   const connectionStatus = useState<'disconnected' | 'connecting' | 'connected'>('realtime:status', () => 'disconnected')
+  const connectionId = useState('realtime:connectionId', () => '')
   const viewerActive = useState('realtime:viewerActive', () => false)
   const activeLine = useState('realtime:activeLine', () => '')
   const activeCantoId = useState('realtime:activeCantoId', () => '')
@@ -38,14 +39,20 @@ export const useRealtime = () => {
   const onWebRTCOffer = ref<((data: any) => void) | null>(null)
   const onWebRTCAnswer = ref<((data: any) => void) | null>(null)
   const onWebRTCCandidate = ref<((data: any) => void) | null>(null)
-  const onWebRTCRequest = ref<(() => void) | null>(null)
+  const onWebRTCRequest = ref<((data: any) => void) | null>(null)
 
   const handleMessage = (payload: string) => {
     try {
-      const { type, data } = JSON.parse(payload)
+      const { type, data, from, to } = JSON.parse(payload)
+      
+      // If the message is targeted to someone else, ignore it
+      if (to && to !== connectionId.value) {
+        return
+      }
       
       switch (type) {
         case 'initial':
+          connectionId.value = data.connectionId || ''
           viewerActive.value = data.viewerActive
           activeLine.value = data.activeLine
           activeCantoId.value = data.activeCantoId
@@ -95,19 +102,19 @@ export const useRealtime = () => {
           break
 
         case 'webrtc-offer':
-          if (onWebRTCOffer.value) onWebRTCOffer.value(data)
+          if (onWebRTCOffer.value) onWebRTCOffer.value({ data, from })
           break
         
         case 'webrtc-answer':
-          if (onWebRTCAnswer.value) onWebRTCAnswer.value(data)
+          if (onWebRTCAnswer.value) onWebRTCAnswer.value({ data, from })
           break
         
         case 'webrtc-ice-candidate':
-          if (onWebRTCCandidate.value) onWebRTCCandidate.value(data)
+          if (onWebRTCCandidate.value) onWebRTCCandidate.value({ data, from })
           break
         
         case 'webrtc-request':
-          if (onWebRTCRequest.value) onWebRTCRequest.value()
+          if (onWebRTCRequest.value) onWebRTCRequest.value({ data, from })
           break
       }
     } catch (e) {
@@ -183,9 +190,9 @@ export const useRealtime = () => {
     connectionStatus.value = 'disconnected'
   }
 
-  const sendEvent = async (type: string, data: any) => {
+  const sendEvent = async (type: string, data: any, to?: string) => {
     try {
-        await api.post(`/api/ws-events/${type}`, { data })
+        await api.post(`/api/ws-events/${type}`, { data, from: connectionId.value, to })
     } catch (e) {
         console.error(`[Realtime] Error sending event ${type}:`, e)
     }
@@ -237,14 +244,15 @@ export const useRealtime = () => {
     sendEvent('transcriptionUpdate', data)
   }
 
-  const sendWebRTCOffer = (offer: any) => sendEvent('webrtc-offer', offer)
-  const sendWebRTCAnswer = (answer: any) => sendEvent('webrtc-answer', answer)
-  const sendWebRTCCandidate = (candidate: any) => sendEvent('webrtc-ice-candidate', candidate)
+  const sendWebRTCOffer = (offer: any, to: string) => sendEvent('webrtc-offer', offer, to)
+  const sendWebRTCAnswer = (answer: any, to: string) => sendEvent('webrtc-answer', answer, to)
+  const sendWebRTCCandidate = (candidate: any, to?: string) => sendEvent('webrtc-ice-candidate', candidate, to)
   const sendWebRTCRequest = () => sendEvent('webrtc-request', {})
 
   return {
     isConnected,
     connectionStatus,
+    connectionId,
     viewerActive,
     activeLine,
     activeCantoId,

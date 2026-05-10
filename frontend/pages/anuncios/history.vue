@@ -6,7 +6,21 @@ definePageMeta({
 })
 
 const { getAnnouncements, clientId } = useApi()
-const { announcement, transcription, connect, disconnect, sendWebRTCOffer, sendWebRTCAnswer, sendWebRTCCandidate, sendWebRTCRequest, onWebRTCOffer, onWebRTCAnswer, onWebRTCCandidate, onWebRTCRequest } = useRealtime()
+const { 
+  announcement, 
+  transcription, 
+  connect, 
+  disconnect, 
+  sendWebRTCOffer, 
+  sendWebRTCAnswer, 
+  sendWebRTCCandidate, 
+  sendWebRTCRequest, 
+  onWebRTCOffer, 
+  onWebRTCAnswer, 
+  onWebRTCCandidate, 
+  onWebRTCRequest,
+  connectionId
+} = useRealtime()
 const { parseHTML } = useContentParser()
 
 const videoRTC = ref(false)
@@ -131,14 +145,14 @@ const processIceQueue = () => {
   }
 }
 
-const initReceiver = async (offer: any) => {
+const initReceiver = async (offer: any, broadcasterId: string) => {
   // If we are already negotiating or connected, and the state is not stable, ignore new offers
   // to avoid the "Called in wrong state" error.
   if (pc.value && pc.value.signalingState !== 'stable') {
     return
   }
 
-  addLog('Oferta recibida, iniciando receptor...')
+  addLog(`Oferta recibida de ${broadcasterId}, iniciando receptor...`)
   if (pc.value) {
     pc.value.close()
   }
@@ -149,7 +163,7 @@ const initReceiver = async (offer: any) => {
   pc.value.onicecandidate = (event) => {
     if (event.candidate) {
       addLog('Candidato ICE generado')
-      sendWebRTCCandidate(event.candidate)
+      sendWebRTCCandidate(event.candidate, broadcasterId)
     }
   }
 
@@ -179,7 +193,7 @@ const initReceiver = async (offer: any) => {
     const answer = await pc.value.createAnswer()
     addLog('Respuesta WebRTC creada')
     await pc.value.setLocalDescription(answer)
-    sendWebRTCAnswer(answer)
+    sendWebRTCAnswer(answer, broadcasterId)
     addLog('Respuesta enviada vía Socket')
   } catch (e: any) {
     addLog(`Error en receiver: ${e.message}`)
@@ -192,11 +206,11 @@ onMounted(() => {
   fetchHistory()
   pollInterval.value = setInterval(fetchHistory, 1000)
 
-  onWebRTCOffer.value = (offer) => {
-    initReceiver(offer)
+  onWebRTCOffer.value = ({ data: offer, from }) => {
+    initReceiver(offer, from)
   }
 
-  onWebRTCCandidate.value = (candidate) => {
+  onWebRTCCandidate.value = ({ data: candidate, from }) => {
     if (pc.value && pc.value.remoteDescription && candidate) {
       pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
         console.error('[WebRTC] Error adding ice candidate:', e)

@@ -11,12 +11,16 @@ const {
   onWebRTCCandidate,
   onWebRTCRequest,
   sendWebRTCOffer,
-  sendWebRTCCandidate
+  sendWebRTCCandidate,
+  sendWebRTCRequest,
+  transcription,
+  connectionId
 } = useRealtime()
 const { clientId, isManualConnectionTrigger } = useApi()
 
 const isSupportedBrowser = ref(false)
 const isTranscribing = ref(false)
+const isStreamingVideo = ref(false)
 const recognition = ref<any>(null)
 const interimTranscript = ref('')
 const finalTranscript = ref('')
@@ -32,22 +36,24 @@ const lastFinalTimestamp = ref(Date.now())
 const availableCameras = ref<MediaDeviceInfo[]>([])
 const selectedCameraId = ref<string>('')
 const previewVideo = ref<HTMLVideoElement | null>(null)
-const showCamera = ref(false)
 
 const localStream = ref<MediaStream | null>(null)
-const pc = ref<RTCPeerConnection | null>(null)
-const iceQueue = ref<any[]>([])
+const peerConnections = ref(new Map<string, RTCPeerConnection>())
+const iceQueues = ref(new Map<string, any[]>())
 
 const addLog = (msg: string) => {
   console.log(`[WebRTC] ${msg}`)
 }
 
-const processIceQueue = () => {
-  if (!pc.value || !pc.value.remoteDescription) return
-  while (iceQueue.value.length > 0) {
-    const candidate = iceQueue.value.shift()
-    pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
-      console.warn('[WebRTC] Error processing queued candidate', e)
+const processIceQueue = (viewerId: string) => {
+  const pc = peerConnections.value.get(viewerId)
+  const queue = iceQueues.value.get(viewerId)
+  if (!pc || !pc.remoteDescription || !queue) return
+  
+  while (queue.length > 0) {
+    const candidate = queue.shift()
+    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+      console.warn(`[WebRTC] Error processing queued candidate for ${viewerId}`, e)
     })
   }
 }
@@ -56,8 +62,49 @@ const rtcConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 }
 
-const initSender = async () => {
-  addLog('Iniciando emisor WebRTC...')
+const initCamera = async () => {
+  try {
+    const constraints: MediaStreamConstraints = {
+      video: selectedCameraId.value ? { deviceId: { exact: selectedCameraId.value } } : true,
+      audio: false
+    }
+
+    if (localStream.value) {
+      localStream.value.getTracks().forEach(t => t.stop())
+    }
+
+    addLog('Solicitando acceso a cámara para preview...')
+    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+    
+    if (previewVideo.value) {
+      previewVideo.value.srcObject = localStream.value
+    }
+    
+    // Replace tracks for ALL active peer connections
+    const videoTrack = localStream.value.getVideoTracks()[0]
+    if (videoTrack) {
+      peerConnections.value.forEach((pc) => {
+        const sender = pc.getSenders().find(s => s.track?.kind === 'video')
+        if (sender) sender.replaceTrack(videoTrack)
+      })
+    }
+  } catch (e) {
+    console.error('[Camera] Error initializing camera:', e)
+    toast.error('Error al acceder a la cámara')
+  }
+}
+
+const stopVideoStreaming = () => {
+  addLog('Deteniendo todas las transmisiones WebRTC...')
+  peerConnections.value.forEach(pc => pc.close())
+  peerConnections.value.clear()
+  iceQueues.value.clear()
+  isStreamingVideo.value = false
+}
+
+const initSender = async (viewerId: string) => {
+  if (!viewerId) return
+  addLog(`Iniciando emisor WebRTC para viewer: ${viewerId}`)
   
   if (!window.isSecureContext) {
     addLog('ERROR: Requiere HTTPS (ngrok https)')
@@ -65,68 +112,57 @@ const initSender = async () => {
     return
   }
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    addLog('ERROR: MediaDevices no disponible')
+  if (!localStream.value) {
+    await initCamera()
+  }
+
+  if (!localStream.value) {
+    addLog('ERROR: No hay stream de video disponible')
     return
   }
 
   try {
-    const constraints: MediaStreamConstraints = {
-      video: {
-        deviceId: selectedCameraId.value ? { exact: selectedCameraId.value } : undefined,
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 24 }
-      },
-      audio: false
+    // Close existing connection if any for THIS viewer
+    if (peerConnections.value.has(viewerId)) {
+      peerConnections.value.get(viewerId)?.close()
     }
 
-    if (localStream.value) {
-       localStream.value.getTracks().forEach(t => t.stop())
-    }
-
-    addLog('Solicitando acceso a cámara...')
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-    addLog('Cámara accedida con éxito')
+    const pc = new RTCPeerConnection(rtcConfig)
+    peerConnections.value.set(viewerId, pc)
+    iceQueues.value.set(viewerId, [])
     
-    if (previewVideo.value) {
-      previewVideo.value.srcObject = localStream.value
-    }
-
-    if (pc.value) pc.value.close()
-    pc.value = new RTCPeerConnection(rtcConfig)
-    addLog('RTCPeerConnection creada')
+    addLog(`RTCPeerConnection creada para ${viewerId}`)
 
     localStream.value.getTracks().forEach(track => {
-      pc.value?.addTrack(track, localStream.value!)
+      pc.addTrack(track, localStream.value!)
     })
 
-    pc.value.onicecandidate = (event) => {
+    pc.onicecandidate = (event) => {
       if (event.candidate) {
-        addLog('Candidato ICE generado')
-        sendWebRTCCandidate(event.candidate)
+        sendWebRTCCandidate(event.candidate, viewerId)
       }
     }
     
-    // Clear queue on new connection
-    iceQueue.value = []
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        peerConnections.value.delete(viewerId)
+        iceQueues.value.delete(viewerId)
+      }
+    }
 
-    const offer = await pc.value.createOffer()
-    addLog('Oferta WebRTC creada')
-    await pc.value.setLocalDescription(offer)
-    sendWebRTCOffer(offer)
-    addLog('Oferta enviada vía Socket')
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    sendWebRTCOffer(offer, viewerId)
+    addLog(`Oferta enviada a ${viewerId}`)
+    isStreamingVideo.value = true
   } catch (e: any) {
-    addLog(`Error en emisor: ${e.message}`)
-    console.error('[WebRTC] Error starting sender:', e)
-    toast.error('Error al acceder a la cámara')
+    addLog(`Error en emisor para ${viewerId}: ${e.message}`)
+    console.error(`[WebRTC] Error starting sender for ${viewerId}:`, e)
   }
 }
 
 const getCameras = async () => {
   try {
-    // Request permission first to get labels
-    await navigator.mediaDevices.getUserMedia({ video: true })
     const devices = await navigator.mediaDevices.enumerateDevices()
     availableCameras.value = devices.filter(d => d.kind === 'videoinput')
     if (availableCameras.value.length && !selectedCameraId.value) {
@@ -138,36 +174,7 @@ const getCameras = async () => {
 }
 
 const switchCamera = async () => {
-  if (isTranscribing.value) {
-    await initSender()
-  } else if (showCamera.value) {
-    // Just update preview
-    const constraints = {
-      video: { deviceId: { exact: selectedCameraId.value } },
-      audio: false
-    }
-    if (localStream.value) localStream.value.getTracks().forEach(t => t.stop())
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-    if (previewVideo.value) previewVideo.value.srcObject = localStream.value
-  }
-}
-
-const toggleCamera = async () => {
-  showCamera.value = !showCamera.value
-  if (showCamera.value) {
-    await getCameras()
-    const constraints = {
-      video: selectedCameraId.value ? { deviceId: { exact: selectedCameraId.value } } : true,
-      audio: false
-    }
-    localStream.value = await navigator.mediaDevices.getUserMedia(constraints)
-    nextTick(() => {
-      if (previewVideo.value) previewVideo.value.srcObject = localStream.value
-    })
-  } else if (!isTranscribing.value) {
-    if (localStream.value) localStream.value.getTracks().forEach(t => t.stop())
-    localStream.value = null
-  }
+  await initCamera()
 }
 
 const TRANSITION_WORDS = [
@@ -175,7 +182,6 @@ const TRANSITION_WORDS = [
   'Finalmente', 'Así que', 'O sea', 'Por ejemplo', 'En fin'
 ]
 
-const { transcription } = useRealtime()
 const isSomeoneElseTranscribing = computed(() => transcription.value.producing && !isLocalProducer.value)
 
 const inactivityTimer = ref<NodeJS.Timeout | null>(null)
@@ -272,11 +278,6 @@ const initRecognition = () => {
     errorCount.value = 0
     setTranscriptionProducing(true)
     resetInactivityTimer()
-    
-    // Iniciar video automáticamente
-    nextTick(() => {
-      initSender()
-    })
   }
 
   recognition.value.onresult = async (event: any) => {
@@ -512,6 +513,19 @@ const toggleTranscription = () => {
   }
 }
 
+const toggleVideoStreaming = async () => {
+  if (isStreamingVideo.value) {
+    stopVideoStreaming()
+  } else {
+    // If not streaming, we don't have a target yet, 
+    // but we can set the flag so new requests are accepted
+    isStreamingVideo.value = true
+    addLog('Modo transmisión activado, esperando peticiones...')
+    // We also broadcast a request to see if anyone wants to connect
+    sendWebRTCRequest()
+  }
+}
+
 // Auto-scroll the history container
 const historyContainer = ref<HTMLElement | null>(null)
 watch([
@@ -533,35 +547,42 @@ onMounted(() => {
     connect()
     initRecognition()
     getCameras()
+    initCamera()
   }
 
-  onWebRTCRequest.value = () => {
-    addLog('Petición de stream recibida')
-    if (isTranscribing.value) {
-      initSender()
+  onWebRTCRequest.value = ({ from }) => {
+    addLog(`Petición de stream recibida de ${from}`)
+    if (isStreamingVideo.value) {
+      initSender(from)
     }
   }
 
-  onWebRTCAnswer.value = (answer) => {
-    if (pc.value && pc.value.signalingState === 'have-local-offer') {
-      addLog('Respuesta WebRTC recibida')
-      pc.value.setRemoteDescription(new RTCSessionDescription(answer)).then(() => {
-        addLog('Descripción remota establecida')
-        processIceQueue()
+  onWebRTCAnswer.value = ({ data: answer, from }) => {
+    const pc = peerConnections.value.get(from)
+    if (pc && pc.signalingState === 'have-local-offer') {
+      addLog(`Respuesta WebRTC recibida de ${from}`)
+      pc.setRemoteDescription(new RTCSessionDescription(answer)).then(() => {
+        addLog(`Descripción remota establecida para ${from}`)
+        processIceQueue(from)
       }).catch(e => {
-        addLog(`Error setRemote: ${e.message}`)
+        addLog(`Error setRemote para ${from}: ${e.message}`)
       })
     }
   }
 
-  onWebRTCCandidate.value = (candidate) => {
-    if (pc.value && pc.value.remoteDescription && candidate) {
-      pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
-        addLog(`Error ICE: ${e.message}`)
-        console.error('[WebRTC] Error adding ice candidate:', e)
+  onWebRTCCandidate.value = ({ data: candidate, from }) => {
+    const pc = peerConnections.value.get(from)
+    if (pc && pc.remoteDescription && candidate) {
+      pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+        addLog(`Error ICE para ${from}: ${e.message}`)
       })
     } else if (candidate) {
-      iceQueue.value.push(candidate)
+      let queue = iceQueues.value.get(from)
+      if (!queue) {
+        queue = []
+        iceQueues.value.set(from, queue)
+      }
+      queue.push(candidate)
     }
   }
 })
@@ -574,7 +595,7 @@ onUnmounted(() => {
   recognition.value?.stop()
   setTranscriptionProducing(false)
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
-  if (pc.value) pc.value.close()
+  peerConnections.value.forEach(pc => pc.close())
   if (localStream.value) {
     localStream.value.getTracks().forEach(t => t.stop())
   }
@@ -586,153 +607,171 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="min-h-screen bg-white text-neutral-900 font-sans flex flex-col items-center justify-center p-6">
-    <div v-if="!isSupportedBrowser" class="p-8 border border-red-200 bg-red-50 rounded-3xl max-w-sm text-center">
-      <Icon name="tabler:browser-off" class="size-12 text-red-500 mb-4 mx-auto" />
-      <h1 class="text-xl font-bold mb-2">Usar Chrome o Safari</h1>
-      <p class="text-sm text-neutral-500">Este sistema solo funciona en navegadores con soporte oficial de Web Speech API.</p>
+  <div class="min-h-screen bg-neutral-50 text-neutral-900 font-sans p-4 sm:p-8 flex flex-col items-center justify-center">
+    <div v-if="!isSupportedBrowser" class="h-full flex items-center justify-center">
+      <div class="p-8 border border-red-200 bg-red-50 rounded-3xl max-w-sm text-center">
+        <Icon name="tabler:browser-off" class="size-12 text-red-500 mb-4 mx-auto" />
+        <h1 class="text-xl font-bold mb-2">Usar Chrome o Safari</h1>
+        <p class="text-sm text-neutral-500">Este sistema solo funciona en navegadores con soporte oficial de Web Speech API.</p>
+      </div>
     </div>
 
-    <div v-else class="w-full max-w-3xl flex flex-col h-[85vh]">
+    <div v-else class="h-[90vh] w-full max-w-[1600px] mx-auto flex flex-col lg:flex-row gap-8">
       
-      <!-- Header Area -->
-      <header class="mb-10 flex flex-col sm:flex-row items-center justify-between gap-6 shrink-0">
-        <div class="space-y-2 text-center sm:text-left">
-          <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-neutral-900 uppercase leading-none">
-            Generador STT
-          </h1>
-          <div class="flex flex-wrap items-center justify-center sm:justify-start gap-3">
+      <!-- Sidebar: Controls & Preview -->
+      <aside class="w-full lg:w-[400px] flex flex-col gap-6 shrink-0 h-full overflow-y-auto pr-2">
+        
+        <!-- Header -->
+        <header class="space-y-4">
+          <div class="flex items-center justify-between">
+            <h1 class="text-3xl font-black tracking-tighter text-neutral-900 uppercase">STT LIVE</h1>
             <div class="flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 rounded-full border border-neutral-200">
               <div class="size-1.5 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
-              <span class="text-[9px] font-bold uppercase tracking-widest text-neutral-500">{{ isConnected ? 'Socket Activo' : 'Offline' }}</span>
+              <span class="text-[9px] font-bold uppercase tracking-widest text-neutral-500">{{ isConnected ? 'Online' : 'Offline' }}</span>
             </div>
-            <div class="flex items-center gap-1.5 px-3 py-1 bg-neutral-100 rounded-full border border-neutral-200 cursor-pointer hover:bg-neutral-200 transition-colors" @click="isManualConnectionTrigger = true" title="Cambiar ID de Cliente">
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <div class="flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-neutral-200 cursor-pointer hover:bg-neutral-50 transition-colors" @click="isManualConnectionTrigger = true">
               <Icon name="tabler:id" class="size-3.5 text-blue-600" />
               <span class="text-[10px] font-bold uppercase tracking-widest text-neutral-600">
                 {{ clientId?.length > 15 ? clientId.substring(0, 8) + '...' : clientId }}
               </span>
             </div>
-            <div v-if="isTranscribing" class="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 rounded-full border border-blue-100">
+            <div v-if="isTranscribing || isStreamingVideo" class="flex items-center gap-1.5 px-2 py-1 bg-blue-50 rounded-full border border-blue-100">
               <div class="size-1.5 bg-blue-600 rounded-full animate-pulse"></div>
-              <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">En vivo</span>
+              <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">Transmitiendo</span>
             </div>
           </div>
+        </header>
+
+        <!-- Video Preview Area -->
+        <div class="relative group aspect-video w-full bg-black rounded-[2rem] overflow-hidden shadow-2xl ring-1 ring-neutral-200">
+           <video 
+             ref="previewVideo" 
+             autoplay 
+             muted 
+             playsinline 
+             class="w-full h-full object-cover scale-x-[-1]"
+           ></video>
+           <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end p-6">
+              <div class="flex items-center gap-2">
+                <div class="size-2 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" :class="isStreamingVideo ? 'bg-red-500' : 'bg-blue-500'"></div>
+                <span class="text-[10px] font-black text-white uppercase tracking-[0.2em]">{{ isStreamingVideo ? 'En Vivo (WebRTC)' : 'Vista Previa Local' }}</span>
+              </div>
+           </div>
         </div>
 
-        <!-- Volume Meter / VAD Indicator -->
-        <div v-if="isTranscribing" class="flex items-center gap-2 px-3 py-1 bg-neutral-100 rounded-full border border-neutral-200">
-          <Icon name="tabler:inner-shadow-top-left" class="size-3 text-neutral-400" />
-          <div class="w-16 h-1 bg-neutral-200 rounded-full overflow-hidden">
-            <div 
-              class="h-full transition-all duration-75" 
-              :class="currentVolume > SILENCE_THRESHOLD ? 'bg-green-500' : 'bg-neutral-400'"
-              :style="{ width: `${currentVolume * 100}%` }"
-            ></div>
+        <!-- Camera Selector -->
+        <div class="flex items-center gap-3 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
+          <div class="size-10 bg-neutral-50 rounded-xl flex items-center justify-center text-neutral-400">
+            <Icon name="tabler:video" class="size-5" />
+          </div>
+          <div class="flex-1 min-w-0 relative">
+            <select 
+              v-model="selectedCameraId"
+              @change="switchCamera"
+              class="w-full bg-transparent border-none py-1 pr-8 text-[11px] font-bold uppercase tracking-widest text-neutral-600 focus:ring-0 outline-none appearance-none cursor-pointer truncate"
+            >
+              <option v-for="cam in availableCameras" :key="cam.deviceId" :value="cam.deviceId">
+                {{ cam.label || `Cámara ${availableCameras.indexOf(cam) + 1}` }}
+              </option>
+            </select>
+            <Icon name="tabler:chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
           </div>
         </div>
 
-        <button 
-          @click="toggleTranscription"
-          :disabled="isSomeoneElseTranscribing"
-          class="flex items-center gap-3 px-6 py-3 rounded-full border-2 transition-all font-black uppercase tracking-[0.1em] text-sm shrink-0"
-          :class="[
-            isTranscribing 
-              ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
-              : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600',
-            isSomeoneElseTranscribing ? 'opacity-50 cursor-not-allowed bg-neutral-100 grayscale' : ''
-          ]"
-        >
-          <Icon :name="isSomeoneElseTranscribing ? 'tabler:eye' : (isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off')" class="size-5" />
-          {{ isSomeoneElseTranscribing ? 'Modo Espectador' : (isTranscribing ? 'Detener' : 'Iniciar') }}
-        </button>
-      </header>
-
-      <!-- Camera Preview & Selector -->
-      <Transition
-        enter-active-class="transition duration-500 ease-out"
-        enter-from-class="opacity-0 -translate-y-4 scale-95"
-        enter-to-class="opacity-100 translate-y-0 scale-100"
-        leave-active-class="transition duration-300 ease-in"
-        leave-from-class="opacity-100 translate-y-0 scale-100"
-        leave-to-class="opacity-0 -translate-y-4 scale-95"
-      >
-        <div v-if="isTranscribing || showCamera" class="mb-10 flex flex-col items-center gap-6 shrink-0">
-          <div class="relative group aspect-video w-72 bg-black rounded-3xl overflow-hidden shadow-2xl ring-1 ring-neutral-200">
-             <video 
-               ref="previewVideo" 
-               autoplay 
-               muted 
-               playsinline 
-               class="w-full h-full object-cover scale-x-[-1]"
-             ></video>
-             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end p-4">
-                <div class="flex items-center gap-2">
-                  <div class="size-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
-                  <span class="text-[10px] font-black text-white uppercase tracking-[0.2em]">Vista Previa Local</span>
-                </div>
-             </div>
-          </div>
-          
-          <div class="flex items-center gap-3 bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200 w-full max-w-xs shadow-sm">
-            <div class="size-8 bg-white rounded-xl flex items-center justify-center text-neutral-400 shadow-sm">
-              <Icon name="tabler:video" class="size-4" />
+        <!-- Actions -->
+        <div class="grid grid-cols-1 gap-3">
+          <!-- Video Toggle -->
+          <button 
+            @click="toggleVideoStreaming"
+            class="group flex items-center justify-between px-6 py-5 rounded-[1.5rem] border-2 transition-all font-black uppercase tracking-widest text-xs"
+            :class="isStreamingVideo ? 'border-red-500 bg-red-50 text-red-600 shadow-lg shadow-red-100' : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600'"
+          >
+            <div class="flex items-center gap-4">
+              <Icon :name="isStreamingVideo ? 'tabler:video-off' : 'tabler:video'" class="size-6" />
+              <div class="text-left">
+                <div class="leading-none">Transmisión Video</div>
+                <div class="text-[9px] font-bold opacity-60 mt-1">{{ isStreamingVideo ? 'Transmitiendo cámara' : 'WebRTC desactivado' }}</div>
+              </div>
             </div>
-            <div class="flex-1 min-w-0 relative">
-              <select 
-                v-model="selectedCameraId"
-                @change="switchCamera"
-                class="w-full bg-transparent border-none py-1 pr-8 text-[10px] font-black uppercase tracking-widest text-neutral-600 focus:ring-0 outline-none appearance-none cursor-pointer truncate"
-              >
-                <option v-for="cam in availableCameras" :key="cam.deviceId" :value="cam.deviceId">
-                  {{ cam.label || `Cámara ${availableCameras.indexOf(cam) + 1}` }}
-                </option>
-              </select>
-              <Icon name="tabler:chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 size-3 text-neutral-400 pointer-events-none" />
+            <Icon name="tabler:arrow-right" class="size-4 opacity-0 group-hover:opacity-100 transition-all" />
+          </button>
+
+          <!-- Audio/Transcription Toggle -->
+          <button 
+            @click="toggleTranscription"
+            :disabled="isSomeoneElseTranscribing"
+            class="group flex items-center justify-between px-6 py-5 rounded-[1.5rem] border-2 transition-all font-black uppercase tracking-widest text-xs"
+            :class="[
+              isTranscribing 
+                ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200' 
+                : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600',
+              isSomeoneElseTranscribing ? 'opacity-50 cursor-not-allowed bg-neutral-100 grayscale' : ''
+            ]"
+          >
+            <div class="flex items-center gap-4">
+              <Icon :name="isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off'" class="size-6" />
+              <div class="text-left">
+                <div class="leading-none">Transcripción Voz</div>
+                <div class="text-[9px] font-bold opacity-60 mt-1">{{ isTranscribing ? 'Escuchando ahora' : 'Micrófono apagado' }}</div>
+              </div>
             </div>
-          </div>
-        </div>
-      </Transition>
-
-      <div v-if="!isTranscribing" class="mb-10 flex justify-center">
-         <button 
-           @click="toggleCamera"
-           class="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all"
-           :class="showCamera ? 'bg-blue-600 text-white shadow-lg' : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'"
-         >
-           <Icon :name="showCamera ? 'tabler:video-off' : 'tabler:video'" class="size-4" />
-           {{ showCamera ? 'Ocultar Cámara' : 'Configurar Cámara' }}
-         </button>
-      </div>
-
-      <!-- History & Live Text Area -->
-      <div 
-        class="flex-1 bg-neutral-50 rounded-[2rem] border border-neutral-200 p-8 flex flex-col overflow-hidden relative shadow-inner"
-      >
-        <div class="absolute top-6 left-8 flex items-center gap-2 pointer-events-none">
-           <Icon name="tabler:history" class="size-4 text-neutral-300" />
-           <span class="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Registro Completo</span>
+            
+            <!-- Volume Meter -->
+            <div v-if="isTranscribing" class="w-12 h-1.5 bg-white/20 rounded-full overflow-hidden">
+              <div 
+                class="h-full bg-white transition-all duration-75" 
+                :style="{ width: `${currentVolume * 100}%` }"
+              ></div>
+            </div>
+            <Icon v-else name="tabler:arrow-right" class="size-4 opacity-0 group-hover:opacity-100 transition-all" />
+          </button>
         </div>
 
+        <div v-if="isSomeoneElseTranscribing" class="p-4 bg-orange-50 border border-orange-100 rounded-2xl text-center">
+          <p class="text-[10px] font-black uppercase tracking-widest text-orange-600">Alguien más está transcribiendo</p>
+        </div>
+
+      </aside>
+
+      <!-- Main Content: Transcription History -->
+      <main class="flex-1 flex flex-col min-h-0 bg-white rounded-[3rem] border border-neutral-200 shadow-xl overflow-hidden relative">
+        
+        <!-- Decoration -->
+        <div class="absolute top-8 left-10 flex items-center gap-3 pointer-events-none z-10">
+           <div class="size-8 bg-neutral-50 rounded-xl flex items-center justify-center">
+             <Icon name="tabler:history" class="size-4 text-neutral-400" />
+           </div>
+           <div>
+             <span class="block text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Registro en Tiempo Real</span>
+             <span class="block text-[9px] font-bold text-neutral-300">Puntuación automática activa</span>
+           </div>
+        </div>
+
+        <!-- History Container -->
         <div 
           ref="historyContainer"
-          class="flex-1 overflow-y-auto mt-6 pr-4 scroll-smooth"
+          class="flex-1 overflow-y-auto px-10 pt-28 pb-10 scroll-smooth"
         >
           <div 
             v-if="!(isSomeoneElseTranscribing ? (transcription.final || transcription.interim) : (fullHistory || interimTranscript))" 
-            class="h-full flex flex-col items-center justify-center text-neutral-300"
+            class="h-full flex flex-col items-center justify-center text-neutral-200"
           >
-             <Icon name="tabler:ear" class="size-12 mb-4 opacity-50" />
-             <p class="text-xs font-bold uppercase tracking-widest text-center px-4">
-               {{ isSomeoneElseTranscribing ? 'El orador está en silencio o esperando audio...' : (isTranscribing ? 'Esperando audio...' : 'Listo para iniciar') }}
+             <Icon name="tabler:ear" class="size-20 mb-6 opacity-30" />
+             <p class="text-sm font-black uppercase tracking-[0.3em] text-center max-w-xs">
+               {{ isSomeoneElseTranscribing ? 'Esperando señal del orador...' : 'Inicia la transcripción para capturar voz' }}
              </p>
           </div>
           
-          <p v-else class="text-2xl sm:text-3xl font-medium leading-relaxed text-neutral-700 whitespace-pre-wrap">
-            <span>{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
-            <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-blue-600 ml-1 italic">{{ isSomeoneElseTranscribing ? transcription.interim : interimTranscript }}</span>
-          </p>
-        </div>
-      </div>
+          <div v-else class="max-w-4xl">
+            <p class="text-3xl sm:text-4xl font-medium leading-relaxed text-neutral-700 whitespace-pre-wrap">
+              <span>{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
+              <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-blue-600 ml-2 italic underline decoration-blue-200 decoration-4 underline-offset-8">{{ isSomeoneElseTranscribing ? transcription.interim : interimTranscript }}</span>
+            </p>
+          </div>
+        </div>      </main>
 
     </div>
   </div>

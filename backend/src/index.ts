@@ -69,9 +69,11 @@ let fuse: Fuse<Canto>;
 wss.on("connection", async (ws, request) => {
   const url = new URL(request.url || "", `http://${request.headers.host}`);
   const clientId = url.searchParams.get("clientId") || "default";
-
+  const connectionId = uuid();
   // @ts-ignore
   ws.clientId = clientId;
+  // @ts-ignore
+  ws.connectionId = connectionId;
   // @ts-ignore
   ws.isAlive = true;
 
@@ -80,11 +82,11 @@ wss.on("connection", async (ws, request) => {
     ws.isAlive = true;
   });
 
-  colorprint.NOTICE(`[WS Connected] Client: ${clientId}`);
+  colorprint.NOTICE(`[WS Connected] Client: ${clientId}, Conn: ${connectionId}`);
 
   // Send initial state immediately
   const state = await getClientState(clientId);
-  ws.send(JSON.stringify({ type: "initial", data: state }));
+  ws.send(JSON.stringify({ type: "initial", data: { ...state, connectionId } }));
 
   ws.on("close", () => {
     colorprint.DEBUG(`[WS Disconnected] Client: ${clientId}`);
@@ -196,17 +198,17 @@ function broadcast(clientId: string, data: any) {
 
 app.post("/api/ws-events/:type", async (req, res) => {
   const { type } = req.params;
-  const { data } = req.body;
+  const { data, from, to } = req.body;
   const clientId = (req.headers["x-client-id"] as string) || "default";
   
-  colorprint.DEBUG(`[Event] Client: ${clientId}, Type: ${type}`);
+  colorprint.DEBUG(`[Event] Client: ${clientId}, Type: ${type}, From: ${from}, To: ${to}`);
 
   const state = await getClientState(clientId);
 
   switch (type) {
     case "newLine":
       state.activeLine = data;
-      broadcast(clientId, { type: "line", data });
+      broadcast(clientId, { type: "line", data, from, to });
       break;
 
     case "changeCanto":
@@ -218,11 +220,11 @@ app.post("/api/ws-events/:type", async (req, res) => {
         if (rawSong) {
           const parsed = parseSong(rawSong);
           state.activeSong = parsed;
-          broadcast(clientId, { type: "activeSong", data: parsed });
+          broadcast(clientId, { type: "activeSong", data: parsed, from, to });
           if (parsed.lines.length > 0) {
             state.activeLine = parsed.lines[0];
-            broadcast(clientId, { type: "line", data: state.activeLine });
-            broadcast(clientId, { type: "index", data: 0 });
+            broadcast(clientId, { type: "line", data: state.activeLine, from, to });
+            broadcast(clientId, { type: "index", data: 0, from, to });
           }
         }
       } catch (e) {
@@ -238,14 +240,14 @@ app.post("/api/ws-events/:type", async (req, res) => {
         state.activeSong.lines[data] !== undefined
       ) {
         state.activeLine = state.activeSong.lines[data];
-        broadcast(clientId, { type: "line", data: state.activeLine });
+        broadcast(clientId, { type: "line", data: state.activeLine, from, to });
       }
-      broadcast(clientId, { type: "index", data });
+      broadcast(clientId, { type: "index", data, from, to });
       break;
 
     case "view":
       state.viewerActive = data;
-      broadcast(clientId, { type: "viewerActive", data });
+      broadcast(clientId, { type: "viewerActive", data, from, to });
       break;
     case "setAnnouncement":
       state.announcement = {
@@ -255,12 +257,13 @@ app.post("/api/ws-events/:type", async (req, res) => {
         topic: data.topic ?? state.announcement.topic ?? getColombianDate(),
       };
       state.lastAnnouncementUpdate = Date.now();
-      broadcast(clientId, { type: "announcement", data: state.announcement });
+      broadcast(clientId, { type: "announcement", data: state.announcement, from, to });
       if (data.active && state.transcription.active) {
         state.transcription.active = false;
         broadcast(clientId, {
           type: "transcriptionState",
           data: state.transcription,
+          from, to
         });
       }
       break;
@@ -271,12 +274,13 @@ app.post("/api/ws-events/:type", async (req, res) => {
       if (data) {
         state.announcement.active = false;
         state.viewerActive = false;
-        broadcast(clientId, { type: "announcement", data: state.announcement });
-        broadcast(clientId, { type: "viewerActive", data: false });
+        broadcast(clientId, { type: "announcement", data: state.announcement, from, to });
+        broadcast(clientId, { type: "viewerActive", data: false, from, to });
       }
       broadcast(clientId, {
         type: "transcriptionState",
         data: state.transcription,
+        from, to
       });
       break;
 
@@ -286,6 +290,7 @@ app.post("/api/ws-events/:type", async (req, res) => {
       broadcast(clientId, {
         type: "transcriptionState",
         data: state.transcription,
+        from, to
       });
       break;
 
@@ -293,12 +298,12 @@ app.post("/api/ws-events/:type", async (req, res) => {
       state.transcription.final = data.final;
       state.transcription.interim = data.interim;
       state.lastTranscriptionUpdate = Date.now();
-      broadcast(clientId, { type: "transcriptionUpdate", data });
+      broadcast(clientId, { type: "transcriptionUpdate", data, from, to });
       break;
 
     default:
       // Forward any other events (like WebRTC signaling)
-      broadcast(clientId, { type, data });
+      broadcast(clientId, { type, data, from, to });
       break;
   }
 
