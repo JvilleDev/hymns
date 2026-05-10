@@ -36,12 +36,20 @@ const showCamera = ref(false)
 
 const localStream = ref<MediaStream | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
-const rtcLogs = ref<string[]>([])
+const iceQueue = ref<any[]>([])
 
 const addLog = (msg: string) => {
-  const time = new Date().toLocaleTimeString()
-  rtcLogs.value.unshift(`[${time}] ${msg}`)
-  if (rtcLogs.value.length > 20) rtcLogs.value.pop()
+  console.log(`[WebRTC] ${msg}`)
+}
+
+const processIceQueue = () => {
+  if (!pc.value || !pc.value.remoteDescription) return
+  while (iceQueue.value.length > 0) {
+    const candidate = iceQueue.value.shift()
+    pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+      console.warn('[WebRTC] Error processing queued candidate', e)
+    })
+  }
 }
 
 const rtcConfig = {
@@ -99,6 +107,9 @@ const initSender = async () => {
         sendWebRTCCandidate(event.candidate)
       }
     }
+    
+    // Clear queue on new connection
+    iceQueue.value = []
 
     const offer = await pc.value.createOffer()
     addLog('Oferta WebRTC creada')
@@ -532,19 +543,25 @@ onMounted(() => {
   }
 
   onWebRTCAnswer.value = (answer) => {
-    addLog('Respuesta WebRTC recibida')
-    if (pc.value) {
-      pc.value.setRemoteDescription(new RTCSessionDescription(answer))
-      addLog('Descripción remota establecida')
+    if (pc.value && pc.value.signalingState === 'have-local-offer') {
+      addLog('Respuesta WebRTC recibida')
+      pc.value.setRemoteDescription(new RTCSessionDescription(answer)).then(() => {
+        addLog('Descripción remota establecida')
+        processIceQueue()
+      }).catch(e => {
+        addLog(`Error setRemote: ${e.message}`)
+      })
     }
   }
 
   onWebRTCCandidate.value = (candidate) => {
-    if (pc.value && candidate) {
+    if (pc.value && pc.value.remoteDescription && candidate) {
       pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
         addLog(`Error ICE: ${e.message}`)
         console.error('[WebRTC] Error adding ice candidate:', e)
       })
+    } else if (candidate) {
+      iceQueue.value.push(candidate)
     }
   }
 })
@@ -714,13 +731,6 @@ definePageMeta({
             <span>{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
             <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-blue-600 ml-1 italic">{{ isSomeoneElseTranscribing ? transcription.interim : interimTranscript }}</span>
           </p>
-        </div>
-
-        <!-- WebRTC Logs -->
-        <div v-if="rtcLogs.length" class="mt-4 p-3 bg-neutral-100 rounded-xl border border-neutral-200 font-mono text-[9px] text-neutral-500 overflow-y-auto max-h-24">
-           <div v-for="(log, i) in rtcLogs" :key="i" class="mb-1 last:mb-0 border-b border-neutral-200/50 pb-1">
-             {{ log }}
-           </div>
         </div>
       </div>
 

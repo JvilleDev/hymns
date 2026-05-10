@@ -444,7 +444,7 @@ onMounted(() => {
                           class="flex items-center justify-center gap-3 w-full py-3 bg-background border border-border rounded-xl text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-primary hover:border-primary transition-all hover:shadow-md"
                        >
                           <Icon name="tabler:terminal" class="size-3.5" />
-                          Abrir Terminal
+                          Iniciar Transcripción
                        </NuxtLink>
                     </div>
                  </div>

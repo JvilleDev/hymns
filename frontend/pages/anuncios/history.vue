@@ -11,18 +11,17 @@ const { parseHTML } = useContentParser()
 
 const videoRTC = ref(false)
 const videoElement = ref<HTMLVideoElement | null>(null)
+const videoElementBg = ref<HTMLVideoElement | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
 const remoteStream = ref<MediaStream | null>(null)
+const iceQueue = ref<any[]>([])
 
 const rtcConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 }
 
-const rtcLogs = ref<string[]>([])
 const addLog = (msg: string) => {
-  const time = new Date().toLocaleTimeString()
-  rtcLogs.value.unshift(`[${time}] ${msg}`)
-  if (rtcLogs.value.length > 10) rtcLogs.value.pop()
+  console.log(`[WebRTC] ${msg}`)
 }
 
 const history = ref<any[]>([])
@@ -110,9 +109,11 @@ const fetchHistory = async () => {
 
 const copyToClipboard = async (text: string) => {
   try {
-    await navigator.clipboard.writeText(text)
+    // Strip HTML tags for clean text copying
+    const plainText = text.replace(/<[^>]*>/g, '')
+    await navigator.clipboard.writeText(plainText)
     toast.success('Copiado al portapapeles', {
-        description: 'El contenido se ha copiado correctamente.'
+        description: 'El texto se ha copiado sin formato.'
     })
   } catch (err) {
     console.error('Error copying to clipboard', err)
@@ -120,7 +121,23 @@ const copyToClipboard = async (text: string) => {
   }
 }
 
+const processIceQueue = () => {
+  if (!pc.value || !pc.value.remoteDescription) return
+  while (iceQueue.value.length > 0) {
+    const candidate = iceQueue.value.shift()
+    pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
+      console.warn('[WebRTC] Error processing queued candidate', e)
+    })
+  }
+}
+
 const initReceiver = async (offer: any) => {
+  // If we are already negotiating or connected, and the state is not stable, ignore new offers
+  // to avoid the "Called in wrong state" error.
+  if (pc.value && pc.value.signalingState !== 'stable') {
+    return
+  }
+
   addLog('Oferta recibida, iniciando receptor...')
   if (pc.value) {
     pc.value.close()
@@ -139,20 +156,35 @@ const initReceiver = async (offer: any) => {
   pc.value.ontrack = (event) => {
     addLog('Track de video recibido')
     remoteStream.value = event.streams[0]
-    if (videoElement.value) {
-      videoElement.value.srcObject = remoteStream.value
-      videoRTC.value = true
-      addLog('Stream asignado al video')
-    }
+    videoRTC.value = true
+    
+    nextTick(() => {
+      if (videoElement.value) {
+        videoElement.value.srcObject = remoteStream.value
+      }
+      if (videoElementBg.value) {
+        videoElementBg.value.srcObject = remoteStream.value
+      }
+      addLog('Stream asignado a reproductores')
+    })
   }
 
-  await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
-  addLog('Descripción remota establecida')
-  const answer = await pc.value.createAnswer()
-  addLog('Respuesta WebRTC creada')
-  await pc.value.setLocalDescription(answer)
-  sendWebRTCAnswer(answer)
-  addLog('Respuesta enviada vía Socket')
+  try {
+    await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
+    addLog('Descripción remota establecida')
+    
+    // Procesar candidatos en cola
+    processIceQueue()
+
+    const answer = await pc.value.createAnswer()
+    addLog('Respuesta WebRTC creada')
+    await pc.value.setLocalDescription(answer)
+    sendWebRTCAnswer(answer)
+    addLog('Respuesta enviada vía Socket')
+  } catch (e: any) {
+    addLog(`Error en receiver: ${e.message}`)
+    console.error('[WebRTC] Receiver error:', e)
+  }
 }
 
 onMounted(() => {
@@ -165,24 +197,30 @@ onMounted(() => {
   }
 
   onWebRTCCandidate.value = (candidate) => {
-    if (pc.value && candidate) {
+    if (pc.value && pc.value.remoteDescription && candidate) {
       pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
         console.error('[WebRTC] Error adding ice candidate:', e)
       })
+    } else if (candidate) {
+      iceQueue.value.push(candidate)
     }
   }
   
-  onWebRTCAnswer.value = (answer) => {
-     if (pc.value) {
-        pc.value.setRemoteDescription(new RTCSessionDescription(answer))
-     }
-  }
+  // history.vue doesn't need onWebRTCAnswer, as it is the one sending the answers
 
   // Request stream if someone is already producing
   setTimeout(() => {
     addLog('Enviando petición de stream...')
     sendWebRTCRequest()
-  }, 1000)
+  }, 1500)
+  
+  // Retry once more just in case
+  setTimeout(() => {
+    if (!videoRTC.value) {
+       addLog('Re-intentando petición de stream...')
+       sendWebRTCRequest()
+    }
+  }, 4000)
 })
 
 // Auto-scroll transcription monitor & auto-hide logic
@@ -268,32 +306,39 @@ const generatePdf = () => {
 </script>
 
 <template>
-  <div class="min-h-screen lg:h-screen lg:flex lg:overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
-    
-    <!-- Left Panel: Announcements History -->
-    <div class="flex-1 h-full overflow-y-auto scroll-smooth group/container">
-      <div class="max-w-2xl mx-auto px-6 py-12 sm:py-20">
-        
-        <header class="mb-16 space-y-4 print:mb-12">
-          <div class="flex items-center gap-3">
-            <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-neutral-900 uppercase leading-none">
+  <div class="min-h-screen lg:h-screen lg:grid lg:grid-cols-2 lg:overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
+    <!-- Left Column: Announcements + Video -->
+    <div class="flex flex-col h-full bg-white overflow-hidden">
+      <!-- Fixed Header -->
+      <div class="bg-white px-6 pt-12 sm:pt-20 pb-8 border-b border-neutral-50 z-10">
+        <div class="max-w-2xl mx-auto">
+          <header class="space-y-6">
+            <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-neutral-900 uppercase leading-tight">
                 {{ displayTopic }}
             </h1>
-            <div v-if="announcement.active" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse print:hidden">
-              <div class="size-1.5 bg-blue-600 rounded-full"></div>
-              <span class="text-[9px] font-black uppercase tracking-wider">En vivo</span>
+            
+            <div class="flex items-center gap-3 print:hidden">
+              <button 
+                @click="generatePdf"
+                class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 shadow-sm hover:shadow-md active:scale-95 transition-all w-fit"
+              >
+                <Icon name="tabler:file-type-pdf" class="size-4" />
+                <span>Exportar PDF</span>
+              </button>
+
+              <div v-if="announcement.active" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse">
+                <div class="size-1.5 bg-blue-600 rounded-full"></div>
+                <span class="text-[9px] font-black uppercase tracking-wider">En vivo</span>
+              </div>
             </div>
-          </div>
+          </header>
+        </div>
+      </div>
 
-          <button 
-            @click="generatePdf"
-            class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest print:hidden border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 shadow-sm hover:shadow-md active:scale-95 transition-all w-fit"
-          >
-            <Icon name="tabler:file-type-pdf" class="size-4" />
-            <span>Exportar PDF</span>
-          </button>
-        </header>
-
+      <!-- Announcements History (Scrollable) -->
+      <div class="flex-1 overflow-y-auto scroll-smooth group/container">
+        <div class="max-w-2xl mx-auto px-6 py-12">
+        
         <div class="relative">
           <!-- Vertical Timeline Line -->
           <div class="absolute left-0 top-0 bottom-0 w-px bg-neutral-100 ml-4 sm:ml-0 overflow-hidden print:hidden"></div>
@@ -379,17 +424,46 @@ const generatePdf = () => {
       </div>
     </div>
 
-    <!-- Right Panel: Live Transcription (Desktop) -->
-    <aside 
-      class="hidden lg:flex flex-col w-2/4 bg-black text-white h-full border-l border-white/10 relative"
-    >
-      <!-- Scrollable area -->
-      <div 
-        ref="desktopScrollContainer"
-        @scroll="handleScroll"
-        class="flex-1 overflow-y-auto p-12 space-y-8"
+    <!-- Bottom Video Player -->
+      <Transition
+        enter-active-class="transition duration-700 ease-out"
+        enter-from-class="opacity-0 translate-y-10 scale-95"
+        enter-to-class="opacity-100 translate-y-0 scale-100"
+        leave-active-class="transition duration-500 ease-in"
+        leave-from-class="opacity-100 translate-y-0 scale-100"
+        leave-to-class="opacity-0 translate-y-10 scale-95"
       >
-        <div class="flex items-center gap-4 mb-12">
+        <div 
+          v-if="videoRTC" 
+          class="h-[35vh] bg-black border-t border-white/10 relative overflow-hidden shrink-0"
+        >
+           <!-- Background Blur Video -->
+           <video
+             ref="videoElementBg"
+             autoplay
+             playsinline
+             muted
+             class="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-30"
+           ></video>
+
+           <!-- Main Video -->
+           <video
+             ref="videoElement"
+             autoplay
+             playsinline
+             class="relative w-full h-full object-contain z-10"
+           ></video>
+        </div>
+      </Transition>
+    </div>
+
+    <!-- Right Panel: Live Transcription (Full Height) -->
+    <aside 
+      class="hidden lg:flex flex-col h-full bg-black text-white relative overflow-hidden"
+    >
+      <!-- Static Header Area -->
+      <div class="p-12 pb-0">
+        <div class="flex items-center gap-4 mb-8">
           <div class="relative flex size-3">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
                   :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
@@ -400,7 +474,14 @@ const generatePdf = () => {
             <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
           </div>
         </div>
+      </div>
 
+      <!-- Scrollable area -->
+      <div 
+        ref="desktopScrollContainer"
+        @scroll="handleScroll"
+        class="flex-1 overflow-y-auto px-12 pb-12 space-y-8"
+      >
         <div class="space-y-4">
           <div v-if="transcriptionHistory" class="flex flex-col gap-y-6">
              <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/20">
@@ -598,56 +679,6 @@ const generatePdf = () => {
         </div>
       </Transition>
     </Teleport>
-
-    <div class="fixed bottom-6 right-6 z-[100] pointer-events-none">
-      <Transition
-        enter-active-class="transition duration-1000 cubic-bezier(0.16, 1, 0.3, 1)"
-        enter-from-class="translate-y-20 opacity-0 scale-90 blur-2xl rotate-3"
-        enter-to-class="translate-y-0 opacity-100 scale-100 blur-0 rotate-0"
-        leave-active-class="transition duration-700 cubic-bezier(0.7, 0, 0.84, 0)"
-        leave-from-class="translate-y-0 opacity-100 scale-100 blur-0 rotate-0"
-        leave-to-class="translate-y-20 opacity-0 scale-90 blur-2xl rotate-3"
-      >
-        <div 
-          v-show="videoRTC" 
-          class="pointer-events-auto relative group shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[2rem] overflow-hidden border border-white/10 bg-black/80 backdrop-blur-md aspect-video w-[280px] sm:w-[420px] ring-1 ring-white/20"
-        >
-           <video
-             ref="videoElement"
-             autoplay
-             playsinline
-             class="w-full h-full object-cover"
-           ></video>
-           
-           <!-- Premium Overlay -->
-           <div class="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-between p-6">
-              <div class="flex justify-end">
-                <div class="bg-black/40 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-2">
-                   <div class="size-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                   <span class="text-[9px] font-black text-white uppercase tracking-[0.2em]">P2P Live</span>
-                </div>
-              </div>
-              
-              <div class="space-y-1 translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                <p class="text-[10px] font-bold text-white/50 uppercase tracking-[0.3em]">Conexión Directa</p>
-                <p class="text-xs font-black text-white tracking-wider truncate">WebRTC Active</p>
-              </div>
-           </div>
-
-           <!-- Glass shine effect -->
-           <div class="absolute inset-0 pointer-events-none bg-gradient-to-tr from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000"></div>
-
-           <!-- Logs Overlay (Bottom) -->
-           <div class="absolute bottom-0 left-0 right-0 p-3 bg-black/60 backdrop-blur-md border-t border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div class="font-mono text-[8px] text-white/40 space-y-0.5 max-h-16 overflow-y-auto">
-                <div v-for="(log, i) in rtcLogs" :key="i" class="truncate border-b border-white/5 pb-0.5 mb-0.5 last:border-0">
-                  {{ log }}
-                </div>
-              </div>
-           </div>
-        </div>
-      </Transition>
-    </div>
   </div>
 </template>
 
