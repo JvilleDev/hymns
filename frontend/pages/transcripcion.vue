@@ -63,12 +63,12 @@ const commitInterim = () => {
   
     // Procesar puntuación y capitalizar párrafos
     requestPunctuation(textAtCommit).then(pFinal => {
-      const formatted = pFinal.trim().replace(/\. /g, '.\n')
-      const capitalized = formatted.split('\n')
+      const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
+      const capitalized = formatted.split('\n\n')
         .map(p => p.trim() ? p.charAt(0).toUpperCase() + p.slice(1) : p)
-        .join('\n')
+        .join('\n\n')
       
-      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n' : ''
+      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n\n' : ''
       
       fullHistory.value += space + capitalized
       finalTranscript.value = fullHistory.value
@@ -137,12 +137,12 @@ const initRecognition = () => {
     // Process Final text
     if (newFinal) {
       const pFinal = await requestPunctuation(newFinal)
-      const formatted = pFinal.trim().replace(/\. /g, '.\n')
-      const capitalized = formatted.split('\n')
+      const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
+      const capitalized = formatted.split('\n\n')
         .map(p => p.trim() ? p.charAt(0).toUpperCase() + p.slice(1) : p)
-        .join('\n')
+        .join('\n\n')
 
-      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n' : ''
+      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n\n' : ''
       
       fullHistory.value += space + capitalized
       finalTranscript.value = fullHistory.value

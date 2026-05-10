@@ -327,13 +327,17 @@ const generatePdf = () => {
         </div>
 
         <div class="space-y-4">
-          <div v-if="transcriptionHistory" class="space-y-2">
+          <div v-if="transcriptionHistory" class="flex flex-col gap-y-6">
              <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/20">
                 Registro Anterior
              </h3>
-             <div class="text-2xl sm:text-4xl font-normal text-white/70 leading-snug whitespace-pre-wrap">
-                {{ transcriptionHistory }}
-             </div>
+             <p 
+               v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())" 
+               :key="i"
+               class="text-2xl sm:text-4xl font-normal text-white/70 leading-relaxed"
+             >
+                {{ p }}
+             </p>
           </div>
 
           <!-- Live Partial Stream -->
@@ -341,7 +345,7 @@ const generatePdf = () => {
              <TransitionGroup 
                name="word-stream" 
                tag="p" 
-               class="text-2xl sm:text-4xl leading-snug tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
+               class="text-2xl sm:text-4xl leading-relaxed tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
              >
                 <span 
                    v-for="word in interimWords" 
@@ -470,18 +474,22 @@ const generatePdf = () => {
              @scroll="handleMobileScroll"
              class="flex-1 overflow-y-auto space-y-8 pr-2"
            >
-               <div v-if="transcriptionHistory" class="space-y-2">
+               <div v-if="transcriptionHistory" class="flex flex-col gap-y-6">
                   <h3 class="text-[10px] font-black uppercase tracking-[0.3em] text-white/20">Registro Anterior</h3>
-                  <div class="text-2xl sm:text-4xl font-normal text-white/70 leading-snug whitespace-pre-wrap">
-                     {{ transcriptionHistory }}
-                  </div>
+                  <p 
+                    v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())" 
+                    :key="i"
+                    class="text-2xl sm:text-4xl font-normal text-white/70 leading-relaxed"
+                  >
+                     {{ p }}
+                  </p>
                </div>
 
                <div class="prose prose-invert max-w-none">
                   <TransitionGroup 
                     name="word-stream" 
                     tag="p" 
-                    class="text-2xl sm:text-4xl leading-snug tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
+                    class="text-2xl sm:text-4xl leading-relaxed tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
                   >
                     <span 
                        v-for="word in interimWords" 
