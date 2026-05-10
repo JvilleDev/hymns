@@ -95,7 +95,7 @@ export const useApi = () => {
 
     // Anuncios
     getAnnouncements: () => request<any[]>('/api/anuncios'),
-    createAnnouncement: (text: string, position: 'top' | 'bottom' = 'bottom', topic?: string) => request<any>('/api/anuncios', { method: 'POST', body: { text, position, topic } }),
+    createAnnouncement: (text: string, topic?: string) => request<any>('/api/anuncios', { method: 'POST', body: { text, topic } }),
     deleteAnnouncement: (id: string) => request<any>(`/api/anuncios/${id}`, { method: 'DELETE' }),
     clearAnnouncements: () => request<any>('/api/anuncios', { method: 'DELETE' }),
     deleteSelectedAnnouncements: (ids: string[]) => request<any>('/api/anuncios/delete-selected', { method: 'POST', body: { ids } }),

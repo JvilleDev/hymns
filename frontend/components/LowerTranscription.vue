@@ -2,7 +2,6 @@
 const props = defineProps<{
   final: string
   interim: string
-  position?: 'top' | 'bottom'
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -29,8 +28,7 @@ watch(words, () => {
 
 <template>
   <div 
-    class="fixed left-0 right-0 z-50 flex justify-center pointer-events-none px-6"
-    :class="[position === 'top' ? 'top-10' : 'bottom-10']"
+    class="fixed left-0 right-0 z-50 flex justify-center pointer-events-none px-6 bottom-10"
   >
     <Transition name="pill">
       <div 

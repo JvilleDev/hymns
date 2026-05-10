@@ -164,33 +164,26 @@ const sendAnnouncement = async () => {
       .replace(/WSS:/g, '<span class="text-red-600 font-black">WSS:</span>')
       .replace(/WMB/g, '<span class="text-purple-600 font-black">WMB</span>')
 
-    await createAnnouncement(processedText, 'bottom', currentTopic.value)
+    // Background DB creation
+    createAnnouncement(processedText, currentTopic.value)
+      .then(() => fetchHistory())
+      .catch(() => toast.error('Error al guardar historial'))
     
     if (autoSendToAir.value) {
+        console.log('[Index] Auto-sending announcement to air:', processedText)
         setAnnouncement({
           text: processedText,
           active: true,
-          position: 'bottom'
         })
     }
 
     toast.success(autoSendToAir.value ? 'Anuncio enviado' : 'Anuncio guardado')
     textInput.value = ''
-    fetchHistory()
   } catch (e) {
     toast.error('Error al enviar anuncio')
   } finally {
     isLoading.value = false
   }
-}
-
-const copyToInput = (item: any) => {
-  textInput.value = item.text
-  // position.value = item.position || 'bottom' // Respect global position
-  if (item.topic) {
-    currentTopic.value = item.topic
-  }
-  toast.info('Copiado al editor')
 }
 
 const isActive = (item: any) => {
@@ -201,7 +194,6 @@ const toggleVisibility = () => {
   setAnnouncement({
     text: announcement.value.text,
     active: !announcement.value.active,
-    position: 'bottom'
   })
 }
 
@@ -210,7 +202,6 @@ const resendFromHistory = (item: any) => {
   setAnnouncement({
     text: item.text,
     active: true,
-    position: 'bottom'
   })
   toast.success('Anuncio al aire')
 }
@@ -316,9 +307,10 @@ watch(() => announcement.value.topic, (newVal) => {
   }
 })
 
-watch(() => announcement.value.text, () => {
+watch(announcement, (newVal) => {
+  console.log('[Index] Announcement state changed:', newVal)
   fetchHistory()
-})
+}, { deep: true })
 
 watch(() => announcement.value.active, () => {
   fetchHistory()

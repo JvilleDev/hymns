@@ -26,7 +26,6 @@ export const useRealtime = () => {
   const announcement = useState('realtime:announcement', () => ({
     text: '',
     active: false,
-    position: 'bottom' as 'top' | 'bottom',
     topic: 'ANUNCIO'
   }))
   const transcription = useState('realtime:transcription', () => ({
@@ -47,7 +46,7 @@ export const useRealtime = () => {
           activeCantoId.value = data.activeCantoId
           activeIndex.value = data.activeIndex
           activeSong.value = data.activeSong || null
-          announcement.value = data.announcement || { text: '', active: false, position: 'bottom' }
+          announcement.value = data.announcement || { text: '', active: false }
           transcription.value = data.transcription || { active: false, producing: false, final: '', interim: '' }
           break
 
@@ -72,6 +71,7 @@ export const useRealtime = () => {
           break
 
         case 'announcement':
+          console.log('[Realtime] Received Announcement:', data)
           announcement.value = data
           break
 
@@ -189,11 +189,22 @@ export const useRealtime = () => {
     viewerActive.value = state
   }
 
-  const setAnnouncement = (data: { text: string, active: boolean, position?: 'top' | 'bottom', topic?: string }) => {
+  const setAnnouncement = (data: { text: string, active: boolean, topic?: string }) => {
+    // Optimistic Update
+    announcement.value = {
+      ...announcement.value,
+      ...data
+    }
     sendEvent('setAnnouncement', data)
   }
 
   const setTranscriptionActive = (active: boolean) => {
+    // Optimistic Update
+    transcription.value.active = active
+    if (active) {
+      announcement.value.active = false
+      viewerActive.value = false
+    }
     sendEvent('setTranscriptionActive', active)
   }
 

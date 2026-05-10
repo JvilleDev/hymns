@@ -136,7 +136,6 @@ const inactivityInterval = setInterval(async () => {
         state.announcement = {
           text: "",
           active: false,
-          position: "bottom",
           topic: defaultTopic,
         };
         state.lastAnnouncementUpdate = now;
@@ -227,13 +226,12 @@ app.post("/api/ws-events/:type", async (req, res) => {
       state.viewerActive = data;
       broadcast(clientId, { type: "viewerActive", data });
       break;
-
+    case "setAnnouncement":
       state.announcement = {
         ...state.announcement,
         text: data.text,
         active: data.active,
         topic: data.topic ?? state.announcement.topic ?? getColombianDate(),
-        position: data.position || state.announcement.position || "bottom",
       };
       state.lastAnnouncementUpdate = Date.now();
       broadcast(clientId, { type: "announcement", data: state.announcement });
@@ -465,7 +463,7 @@ app.get("/api/anuncios", (req, res) => {
 
 app.post("/api/anuncios", (req, res) => {
   try {
-    const { text, position, topic } = req.body;
+    const { text, topic } = req.body;
     const clientId = (req.headers["x-client-id"] as string) || "default";
     if (!text) {
       res.status(400).json({ error: "Text is required" });
@@ -473,12 +471,11 @@ app.post("/api/anuncios", (req, res) => {
     }
     const id = uuid();
     const createdAt = Date.now();
-    const pos = position || "bottom";
     const insert = db.query(
-      "INSERT INTO anuncios (id, text, position, topic, createdAt, clientId) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO anuncios (id, text, topic, createdAt, clientId) VALUES (?, ?, ?, ?, ?)",
     );
-    insert.run(id, text, pos, topic || null, createdAt, clientId);
-    res.json({ id, text, position: pos, topic: topic || null, createdAt, clientId });
+    insert.run(id, text, topic || null, createdAt, clientId);
+    res.json({ id, text, topic: topic || null, createdAt, clientId });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -661,7 +658,6 @@ interface InitialInfo {
   announcement: {
     text: string;
     active: boolean;
-    position: "top" | "bottom";
     topic: string;
   };
   transcription: { active: boolean; producing: boolean; final: string; interim: string };
@@ -678,7 +674,6 @@ const defaultInitialInfo = (): InitialInfo => ({
   announcement: {
     text: "",
     active: false,
-    position: "bottom",
     topic: getColombianDate(),
   },
   transcription: { active: false, producing: false, final: "", interim: "" },
@@ -704,7 +699,6 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.activeIndex = row.activeIndex || 0;
       state.announcement.text = row.announcementText || "";
       state.announcement.active = !!row.announcementActive;
-      state.announcement.position = (row.announcementPosition as "top" | "bottom") || "bottom";
       state.announcement.topic = row.announcementTopic || "ANUNCIO";
       state.transcription.active = !!row.transcriptionActive;
       state.transcription.producing = !!row.transcriptionProducing;
@@ -737,10 +731,10 @@ function saveClientState(clientId: string, state: InitialInfo) {
     const query = db.query(`
       INSERT OR REPLACE INTO client_states (
         clientId, viewerActive, activeLine, activeCantoId, activeIndex, 
-        announcementText, announcementActive, announcementPosition, 
+        announcementText, announcementActive, 
         announcementTopic, transcriptionActive, transcriptionProducing,
         lastTranscriptionUpdate, lastAnnouncementUpdate
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     query.run(
       clientId,
@@ -750,7 +744,6 @@ function saveClientState(clientId: string, state: InitialInfo) {
       state.activeIndex,
       state.announcement.text,
       state.announcement.active ? 1 : 0,
-      state.announcement.position,
       state.announcement.topic,
       state.transcription.active ? 1 : 0,
       state.transcription.producing ? 1 : 0,
@@ -768,7 +761,7 @@ async function prepareDb() {
       "CREATE TABLE IF NOT EXISTS cantos (title TEXT NOT NULL, id TEXT PRIMARY KEY, nh INTEGER, content TEXT, type TEXT)",
     );
     db.run(
-      "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, position TEXT DEFAULT 'bottom', topic TEXT, createdAt INTEGER, clientId TEXT)",
+      "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, topic TEXT, createdAt INTEGER, clientId TEXT)",
     );
     db.run(
       `CREATE TABLE IF NOT EXISTS client_states (
@@ -779,7 +772,6 @@ async function prepareDb() {
         activeIndex INTEGER,
         announcementText TEXT,
         announcementActive INTEGER,
-        announcementPosition TEXT,
         announcementTopic TEXT,
         transcriptionActive INTEGER,
         transcriptionProducing INTEGER,
