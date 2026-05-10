@@ -17,6 +17,12 @@ const activeParagraphPunctuated = ref('') // Texto puntuado del párrafo actual
 const errorCount = ref(0)
 const maxErrors = 10
 const isLocalProducer = ref(false)
+const lastFinalTimestamp = ref(Date.now())
+
+const TRANSITION_WORDS = [
+  'Ahora', 'Miren', 'Escuchen', 'Pero', 'Así', 'Entonces', 'Dice', 
+  'Finalmente', 'Por', 'Nosotros', 'Cuando', 'Y', 'Esta'
+]
 
 const { transcription } = useRealtime()
 const isSomeoneElseTranscribing = computed(() => transcription.value.producing && !isLocalProducer.value)
@@ -134,40 +140,57 @@ const initRecognition = () => {
 
     // Process Final text (Continuous refinement)
     if (newFinal) {
+      const now = Date.now()
+      const silenceGap = now - lastFinalTimestamp.value
+      lastFinalTimestamp.value = now
+
       // 1. Acumulamos en el párrafo activo
-      activeParagraphRaw.value += (activeParagraphRaw.value ? ' ' : '') + newFinal.trim()
+      const trimmedNew = newFinal.trim()
+      activeParagraphRaw.value += (activeParagraphRaw.value ? ' ' : '') + trimmedNew
       
-      // 2. Pedimos puntuación de TODO el párrafo actual para tener contexto
+      // 2. Pedimos puntuación
       const currentRaw = activeParagraphRaw.value
       requestPunctuation(currentRaw).then(pFinal => {
         if (currentRaw !== activeParagraphRaw.value) return 
 
-        // 2.1 Limpieza y Capitalización de frases
         let processed = pFinal.trim()
-        // Asegurar Mayúscula después de punto, signo de interrogación o exclamación
         processed = processed.replace(/([.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase())
-        // Asegurar Mayúscula al inicio del párrafo
         processed = processed.charAt(0).toUpperCase() + processed.slice(1)
 
         activeParagraphPunctuated.value = processed
         
-        // 3. ¿Debemos cerrar el párrafo? (Más sensible ahora)
+        // 3. Lógica de Salto de Párrafo Híbrida
         const isLongEnough = activeParagraphPunctuated.value.length > MAX_PARAGRAPH_LENGTH
         const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
+        
+        // Detección de palabras de transición al inicio del NUEVO fragmento
+        const startOfNew = trimmedNew.charAt(0).toUpperCase() + trimmedNew.slice(1)
+        const startsWithTransition = TRANSITION_WORDS.some(word => startOfNew.startsWith(word))
+        
+        // Un silencio de > 2s es una señal fuerte de cambio de idea
+        const isNaturalPause = silenceGap > 2000 
 
-        if (isLongEnough && endsInDot) {
+        // CRITERIOS PARA CERRAR PÁRRAFO:
+        // a) Es muy largo y termina en punto.
+        // b) Hubo una pausa natural y la frase anterior ya tiene puntuación.
+        // c) Empezó una palabra de transición (ej: "Ahora") y lo anterior terminó en punto.
+        const sentences = activeParagraphPunctuated.value.split(/[.!?]\s+/)
+        const previousEndsInDot = sentences.length > 1
+
+        const shouldFlush = (isLongEnough && endsInDot) || 
+                            (isNaturalPause && endsInDot) ||
+                            (startsWithTransition && previousEndsInDot)
+
+        if (shouldFlush) {
           consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
-          
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
         }
 
         // 4. Actualizar el estado global
         const currentActive = activeParagraphPunctuated.value
-        
         fullHistory.value = consolidatedText.value + (consolidatedText.value && currentActive ? '\n\n' : '') + currentActive
         finalTranscript.value = fullHistory.value
-        
         updateTranscription({ final: finalTranscript.value, interim: interimTranscript.value })
       })
 
