@@ -20,8 +20,8 @@ const isLocalProducer = ref(false)
 const lastFinalTimestamp = ref(Date.now())
 
 const TRANSITION_WORDS = [
-  'Ahora', 'Miren', 'Escuchen', 'Pero', 'Así', 'Entonces', 'Dice', 
-  'Finalmente', 'Por', 'Nosotros', 'Cuando', 'Y', 'Esta'
+  'Ahora', 'Miren', 'Escuchen', 'Pero', 'Entonces', 'Dice', 
+  'Finalmente', 'Así que', 'O sea', 'Por ejemplo', 'En fin'
 ]
 
 const { transcription } = useRealtime()
@@ -36,9 +36,9 @@ const lastActiveTime = ref(Date.now())
 
 // Puntos para saltos de línea
 const PUNCTUATION_PAUSE = 5000 
-const SILENCE_THRESHOLD = 0.05 // Umbral para considerar que hay voz (0-1)
-const MAX_PARAGRAPH_LENGTH = 280 // Umbral más bajo para párrafos más legibles
-const INACTIVITY_FLUSH = 10000 // 10 segundos de silencio total para cerrar párrafo
+const SILENCE_THRESHOLD = 0.05 
+const MAX_PARAGRAPH_LENGTH = 160 // Mucho más corto para legibilidad en móviles
+const INACTIVITY_FLUSH = 10000 
 
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
@@ -167,19 +167,16 @@ const initRecognition = () => {
         const startOfNew = trimmedNew.charAt(0).toUpperCase() + trimmedNew.slice(1)
         const startsWithTransition = TRANSITION_WORDS.some(word => startOfNew.startsWith(word))
         
-        // Un silencio de > 2s es una señal fuerte de cambio de idea
-        const isNaturalPause = silenceGap > 2000 
+        // Un silencio de > 1.5s es señal de cambio de idea
+        const isNaturalPause = silenceGap > 1500 
 
         // CRITERIOS PARA CERRAR PÁRRAFO:
-        // a) Es muy largo y termina en punto.
-        // b) Hubo una pausa natural y la frase anterior ya tiene puntuación.
-        // c) Empezó una palabra de transición (ej: "Ahora") y lo anterior terminó en punto.
         const sentences = activeParagraphPunctuated.value.split(/[.!?]\s+/)
-        const previousEndsInDot = sentences.length > 1
+        const hasMultipleSentences = sentences.length > 1
 
         const shouldFlush = (isLongEnough && endsInDot) || 
                             (isNaturalPause && endsInDot) ||
-                            (startsWithTransition && previousEndsInDot)
+                            (startsWithTransition && hasMultipleSentences)
 
         if (shouldFlush) {
           consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
