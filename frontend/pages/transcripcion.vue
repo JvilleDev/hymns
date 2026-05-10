@@ -159,32 +159,48 @@ const initRecognition = () => {
 
         activeParagraphPunctuated.value = processed
         
-        // 3. Lógica de Salto de Párrafo Híbrida
+        // 3. Lógica de Salto de Párrafo Híbrida y PROACTIVA
+        // Dividimos el buffer en oraciones para ver si podemos "soltar" párrafos ya terminados
+        const sentences = activeParagraphPunctuated.value.match(/[^.!?]+[.!?](\s+|$)/g) || []
+        
+        if (sentences.length > 1) {
+          let currentParagraphSize = 0
+          let splitIndex = -1
+
+          for (let i = 0; i < sentences.length; i++) {
+            currentParagraphSize += sentences[i].length
+            // Si este conjunto de oraciones ya es suficientemente largo, o hay una pausa natural
+            if (currentParagraphSize > MAX_PARAGRAPH_LENGTH || silenceGap > 1500) {
+              splitIndex = i
+              break
+            }
+          }
+
+          // Si encontramos un punto de corte (no al final del todo)
+          if (splitIndex !== -1 && splitIndex < sentences.length - 1) {
+            const head = sentences.slice(0, splitIndex + 1).join('').trim()
+            const tail = sentences.slice(splitIndex + 1).join('').trim()
+            
+            consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + head
+            activeParagraphRaw.value = tail // El resto vuelve a ser el buffer crudo
+            activeParagraphPunctuated.value = tail
+          }
+        }
+
+        // 4. Verificación final (por si el orador se calla o el buffer es corto pero termina)
         const isLongEnough = activeParagraphPunctuated.value.length > MAX_PARAGRAPH_LENGTH
         const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
-        
-        // Detección de palabras de transición al inicio del NUEVO fragmento
         const startOfNew = trimmedNew.charAt(0).toUpperCase() + trimmedNew.slice(1)
         const startsWithTransition = TRANSITION_WORDS.some(word => startOfNew.startsWith(word))
-        
-        // Un silencio de > 1.5s es señal de cambio de idea
         const isNaturalPause = silenceGap > 1500 
 
-        // CRITERIOS PARA CERRAR PÁRRAFO:
-        const sentences = activeParagraphPunctuated.value.split(/[.!?]\s+/)
-        const hasMultipleSentences = sentences.length > 1
-
-        const shouldFlush = (isLongEnough && endsInDot) || 
-                            (isNaturalPause && endsInDot) ||
-                            (startsWithTransition && hasMultipleSentences)
-
-        if (shouldFlush) {
+        if ((isLongEnough && endsInDot) || (isNaturalPause && endsInDot) || (startsWithTransition && sentences.length > 1)) {
           consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
         }
 
-        // 4. Actualizar el estado global
+        // 5. Actualizar el estado global
         const currentActive = activeParagraphPunctuated.value
         fullHistory.value = consolidatedText.value + (consolidatedText.value && currentActive ? '\n\n' : '') + currentActive
         finalTranscript.value = fullHistory.value
