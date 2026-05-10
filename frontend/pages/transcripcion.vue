@@ -31,7 +31,7 @@ const lastActiveTime = ref(Date.now())
 // Puntos para saltos de línea
 const PUNCTUATION_PAUSE = 5000 
 const SILENCE_THRESHOLD = 0.05 // Umbral para considerar que hay voz (0-1)
-const MAX_PARAGRAPH_LENGTH = 500 // Caracteres para sugerir un salto de párrafo
+const MAX_PARAGRAPH_LENGTH = 280 // Umbral más bajo para párrafos más legibles
 const INACTIVITY_FLUSH = 10000 // 10 segundos de silencio total para cerrar párrafo
 
 const resetInactivityTimer = () => {
@@ -140,19 +140,23 @@ const initRecognition = () => {
       // 2. Pedimos puntuación de TODO el párrafo actual para tener contexto
       const currentRaw = activeParagraphRaw.value
       requestPunctuation(currentRaw).then(pFinal => {
-        // Evitar race conditions si el buffer cambió mientras llegaba la respuesta
         if (currentRaw !== activeParagraphRaw.value) return 
 
-        activeParagraphPunctuated.value = pFinal.trim()
+        // 2.1 Limpieza y Capitalización de frases
+        let processed = pFinal.trim()
+        // Asegurar Mayúscula después de punto, signo de interrogación o exclamación
+        processed = processed.replace(/([.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase())
+        // Asegurar Mayúscula al inicio del párrafo
+        processed = processed.charAt(0).toUpperCase() + processed.slice(1)
+
+        activeParagraphPunctuated.value = processed
         
-        // 3. ¿Debemos cerrar el párrafo? (Solo si es largo y termina en punto)
+        // 3. ¿Debemos cerrar el párrafo? (Más sensible ahora)
         const isLongEnough = activeParagraphPunctuated.value.length > MAX_PARAGRAPH_LENGTH
         const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
 
         if (isLongEnough && endsInDot) {
-          const p = activeParagraphPunctuated.value
-          const capitalized = p.charAt(0).toUpperCase() + p.slice(1)
-          consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + capitalized
+          consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
           
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
@@ -160,9 +164,8 @@ const initRecognition = () => {
 
         // 4. Actualizar el estado global
         const currentActive = activeParagraphPunctuated.value
-        const capitalizedActive = currentActive ? (currentActive.charAt(0).toUpperCase() + currentActive.slice(1)) : ''
         
-        fullHistory.value = consolidatedText.value + (consolidatedText.value && capitalizedActive ? '\n\n' : '') + capitalizedActive
+        fullHistory.value = consolidatedText.value + (consolidatedText.value && currentActive ? '\n\n' : '') + currentActive
         finalTranscript.value = fullHistory.value
         
         updateTranscription({ final: finalTranscript.value, interim: interimTranscript.value })
