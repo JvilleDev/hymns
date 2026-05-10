@@ -68,8 +68,10 @@ onUnmounted(() => {
     </div>
 
     <!-- Lower Third Announcement (Independent Layer) -->
-    <LowerThird v-if="announcement.active && !queries.slide && !transcription.active" :key="announcement.text"
-      :text="announcement.text" />
+    <Transition name="slide-up">
+      <LowerThird v-if="announcement.active && !queries.slide && !transcription.active"
+        :text="announcement.text" />
+    </Transition>
 
     <!-- Transcription Layer -->
     <Transition name="slide-up">

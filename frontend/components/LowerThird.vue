@@ -58,31 +58,33 @@ onUnmounted(() => {
   <div 
     class="fixed left-0 right-0 z-50 bg-white text-black overflow-hidden py-4 font-bold tracking-widest border-y border-black/10 bottom-0 shadow-[0_-8px_40px_rgba(0,0,0,0.25)"
   >
-    <div class="marquee-container w-full whitespace-nowrap text-center">
-      <div 
-        class="inline-block text-6xl font-bold tracking-wide uppercase"
-        :class="{ 'animate-scroll': isScrollable }"
-        :style="isScrollable ? { 
-          animationDuration: `${duration}s`,
-          animationDelay: '-10s'
-        } : {}"
-      >
-        <span class="mx-48 inline-flex items-center gap-2" v-for="i in repeatCount" :key="i">
-            <template v-for="(segment, idx) in parsedContent" :key="idx">
-                <Icon 
-                    v-if="segment.type === 'icon'" 
-                    :name="segment.value" 
-                    :class="segment.class"
-                />
-                <span 
-                    v-else 
-                    v-html="segment.value" 
-                    :class="segment.class"
-                ></span>
-            </template>
-        </span>
+    <Transition name="announcement-fade" mode="out-in">
+      <div :key="text" class="marquee-container w-full whitespace-nowrap text-center">
+        <div 
+          class="inline-block text-6xl font-bold tracking-wide uppercase"
+          :class="{ 'animate-scroll': isScrollable }"
+          :style="isScrollable ? { 
+            animationDuration: `${duration}s`,
+            animationDelay: '-10s'
+          } : {}"
+        >
+          <span class="mx-48 inline-flex items-center gap-2" v-for="i in repeatCount" :key="i">
+              <template v-for="(segment, idx) in parsedContent" :key="idx">
+                  <Icon 
+                      v-if="segment.type === 'icon'" 
+                      :name="segment.value" 
+                      :class="segment.class"
+                  />
+                  <span 
+                      v-else 
+                      v-html="segment.value" 
+                      :class="segment.class"
+                  ></span>
+              </template>
+          </span>
+        </div>
       </div>
-    </div>
+    </Transition>
     
     <!-- Hidden Measure Element -->
     <div class="fixed top-0 left-0 -z-50 opacity-0 pointer-events-none invisible whitespace-nowrap">
@@ -122,5 +124,19 @@ onUnmounted(() => {
   100% {
     transform: translateX(-100%);
   }
+}
+.announcement-fade-enter-active,
+.announcement-fade-leave-active {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.announcement-fade-enter-from {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+.announcement-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-100%);
 }
 </style>
