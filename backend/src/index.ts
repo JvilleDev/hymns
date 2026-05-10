@@ -160,6 +160,27 @@ const inactivityInterval = setInterval(async () => {
   }
 }, 60000);
 
+// Transcription Ownership timeout check (every 5 seconds)
+setInterval(async () => {
+  const now = Date.now();
+  const tenSeconds = 10 * 1000;
+
+  for (const [clientId, state] of clientStates.entries()) {
+    if (state.transcription.producing && state.lastTranscriptionUpdate && (now - state.lastTranscriptionUpdate > tenSeconds)) {
+      state.transcription.producing = false;
+      state.lastTranscriptionUpdate = now;
+      
+      broadcast(clientId, { 
+        type: "transcriptionState", 
+        data: state.transcription 
+      });
+      
+      saveClientState(clientId, state);
+      colorprint.NOTICE(`[Timeout] Revoked transcription ownership for ${clientId} due to 10s silence`);
+    }
+  }
+}, 5000);
+
 function broadcast(clientId: string, data: any) {
   const wsMsg = JSON.stringify(data);
   wss.clients.forEach((ws: any) => {
@@ -246,6 +267,7 @@ app.post("/api/ws-events/:type", async (req, res) => {
 
     case "setTranscriptionActive":
       state.transcription.active = data;
+      state.lastTranscriptionUpdate = Date.now();
       if (data) {
         state.announcement.active = false;
         state.viewerActive = false;
@@ -260,6 +282,7 @@ app.post("/api/ws-events/:type", async (req, res) => {
 
     case "setTranscriptionProducing":
       state.transcription.producing = !!data;
+      state.lastTranscriptionUpdate = Date.now();
       broadcast(clientId, {
         type: "transcriptionState",
         data: state.transcription,
