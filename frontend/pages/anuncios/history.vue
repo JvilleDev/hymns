@@ -14,18 +14,64 @@ const isLoading = ref(true)
 const pollInterval = ref<NodeJS.Timeout | null>(null)
 const scrollContainer = ref<HTMLElement | null>(null)
 const desktopScrollContainer = ref<HTMLElement | null>(null)
+const mobileScrollContainer = ref<HTMLElement | null>(null)
 const showMonitor = ref(false)
+const isMobileExpanded = ref(false)
 const hideTimeout = ref<NodeJS.Timeout|null>(null)
-const transcriptionHistory = ref('')
-const showFullHistory = ref(false)
+const transcriptionHistory = computed(() => transcription.value.final)
+const autoScrollEnabled = ref(true)
+const isAutoScrolling = ref(false)
 
-// Accumulate transcription history
-watch(() => transcription.value.final, (newFinal) => {
-  if (newFinal) {
-    const space = transcriptionHistory.value && !transcriptionHistory.value.endsWith(' ') ? ' ' : ''
-    transcriptionHistory.value += space + newFinal
-  }
-})
+const handleScroll = () => {
+    if (!desktopScrollContainer.value || isAutoScrolling.value) return
+    const { scrollTop, scrollHeight, clientHeight } = desktopScrollContainer.value
+    // If we are within 100px of bottom, consider it "at bottom"
+    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 100
+    autoScrollEnabled.value = isAtBottom
+}
+
+const scrollToBottom = () => {
+    autoScrollEnabled.value = true
+    isAutoScrolling.value = true
+    nextTick(() => {
+        if (desktopScrollContainer.value) {
+            desktopScrollContainer.value.scrollTo({
+                top: desktopScrollContainer.value.scrollHeight,
+                behavior: 'smooth'
+            })
+            // Reset the flag after animation would roughly finish
+            setTimeout(() => {
+                isAutoScrolling.value = false
+            }, 600)
+        }
+    })
+}
+
+const mobileAutoScrollEnabled = ref(true)
+const isMobileAutoScrolling = ref(false)
+
+const handleMobileScroll = () => {
+    if (!mobileScrollContainer.value || isMobileAutoScrolling.value) return
+    const { scrollTop, scrollHeight, clientHeight } = mobileScrollContainer.value
+    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 100
+    mobileAutoScrollEnabled.value = isAtBottom
+}
+
+const scrollMobileToBottom = () => {
+    mobileAutoScrollEnabled.value = true
+    isMobileAutoScrolling.value = true
+    nextTick(() => {
+        if (mobileScrollContainer.value) {
+            mobileScrollContainer.value.scrollTo({
+                top: mobileScrollContainer.value.scrollHeight,
+                behavior: 'smooth'
+            })
+            setTimeout(() => {
+                isMobileAutoScrolling.value = false
+            }, 600)
+        }
+    })
+}
 
 // Words only for the interim stream
 const interimWords = computed(() => {
@@ -72,19 +118,38 @@ watch([() => transcription.value.final, () => transcription.value.interim], ([ne
         
         // Reset hide timeout
         if (hideTimeout.value) clearTimeout(hideTimeout.value)
-        hideTimeout.value = setTimeout(() => {
-            showMonitor.value = false
-        }, 5000)
+        if (!isMobileExpanded.value) {
+            hideTimeout.value = setTimeout(() => {
+                showMonitor.value = false
+            }, 5000)
+        }
     }
 
     nextTick(() => {
         if (scrollContainer.value) {
             scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
         }
-        if (desktopScrollContainer.value) {
+        if (desktopScrollContainer.value && autoScrollEnabled.value) {
             desktopScrollContainer.value.scrollTop = desktopScrollContainer.value.scrollHeight
         }
+        if (mobileScrollContainer.value && mobileAutoScrollEnabled.value) {
+            mobileScrollContainer.value.scrollTop = mobileScrollContainer.value.scrollHeight
+        }
     })
+})
+
+watch(isMobileExpanded, (expanded) => {
+    if (!expanded) {
+        // Resume hide timeout when closing
+        if (hideTimeout.value) clearTimeout(hideTimeout.value)
+        hideTimeout.value = setTimeout(() => {
+            showMonitor.value = false
+        }, 5000)
+    } else {
+        // Ensure monitor stays visible while expanded
+        if (hideTimeout.value) clearTimeout(hideTimeout.value)
+        showMonitor.value = true
+    }
 })
 
 onUnmounted(() => {
@@ -242,7 +307,8 @@ const generatePdf = () => {
     <!-- Right Panel: Live Transcription (Desktop) -->
     <aside 
       ref="desktopScrollContainer"
-      class="hidden lg:flex flex-col w-[450px] bg-black text-white h-full p-12 overflow-y-auto border-l border-white/10 scroll-smooth"
+      @scroll="handleScroll"
+      class="hidden lg:flex flex-col w-[450px] bg-black text-white h-full p-12 overflow-y-auto border-l border-white/10 relative"
     >
       <div class="flex items-center gap-4 mb-12">
         <div class="relative flex size-3">
@@ -253,24 +319,15 @@ const generatePdf = () => {
         </div>
         <div class="flex flex-col">
           <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
-          <span class="text-[10px] font-bold text-white/20 uppercase tracking-widest">
-            {{ transcription.active ? 'Audio capturado' : 'Esperando señal' }}
-          </span>
         </div>
       </div>
 
       <div class="space-y-8">
-        <!-- Collapsible History -->
         <div v-if="transcriptionHistory" class="space-y-4">
-           <button 
-             @click="showFullHistory = !showFullHistory"
-             class="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-white/40 hover:text-white transition-colors"
-           >
-              <Icon :name="showFullHistory ? 'tabler:chevron-down' : 'tabler:chevron-right'" class="size-4" />
-              {{ showFullHistory ? 'Minimizar Registro' : 'Ver Registro Completo' }}
-           </button>
-           
-           <div v-if="showFullHistory" class="text-xl font-normal text-white/50 leading-relaxed max-h-[300px] overflow-y-auto pr-4 scroll-smooth">
+           <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/40">
+              Registro Anterior
+           </h3>
+           <div class="text-xl font-normal text-white/70 leading-relaxed whitespace-pre-wrap">
               {{ transcriptionHistory }}
            </div>
         </div>
@@ -298,12 +355,24 @@ const generatePdf = () => {
         </div>
       </div>
 
-      <div class="mt-auto pt-12 border-t border-white/5">
-        <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-white/30">
-          <span>{{ new Date().toLocaleDateString() }}</span>
-          <span>Sincronizado</span>
-        </div>
-      </div>
+      <!-- Back to bottom button -->
+      <Transition
+        enter-active-class="transition duration-300 ease-out"
+        enter-from-class="translate-y-4 opacity-0 scale-90"
+        enter-to-class="translate-y-0 opacity-100 scale-100"
+        leave-active-class="transition duration-200 ease-in"
+        leave-from-class="translate-y-0 opacity-100 scale-100"
+        leave-to-class="translate-y-4 opacity-0 scale-90"
+      >
+        <button
+          v-if="!autoScrollEnabled"
+          @click="scrollToBottom"
+          class="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest shadow-2xl hover:scale-110 active:scale-95 transition-all z-20 border border-blue-400/30"
+        >
+          <Icon name="tabler:arrow-down" class="size-4" />
+          <span>Volver abajo</span>
+        </button>
+      </Transition>
     </aside>
 
     <!-- Mobile Floating Monitor (Hidden on Desktop) -->
@@ -317,8 +386,9 @@ const generatePdf = () => {
         leave-to-class="translate-y-24 opacity-0 scale-90"
       >
         <div 
-          v-if="showMonitor"
-          class="fixed bottom-10 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 px-6 lg:hidden print:hidden"
+          v-if="showMonitor && !isMobileExpanded"
+          @click="isMobileExpanded = true"
+          class="fixed bottom-10 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 px-6 lg:hidden print:hidden active:scale-95 transition-transform cursor-pointer"
         >
           <div class="bg-black/90 rounded-3xl p-6 shadow-2xl">
             <div class="min-w-0">
@@ -336,7 +406,7 @@ const generatePdf = () => {
                </div>
                  <div 
                    ref="scrollContainer"
-                   class="max-h-24 overflow-y-auto pr-2 scroll-smooth"
+                   class="max-h-24 overflow-y-auto pr-2"
                    style="scrollbar-width: none; -ms-overflow-style: none;"
                  >
                    <!-- Live Partial Stream (Mini) -->
@@ -356,6 +426,87 @@ const generatePdf = () => {
                  </div>
             </div>
           </div>
+        </div>
+      </Transition>
+      <!-- Mobile Expanded View -->
+      <Transition
+        enter-active-class="transition duration-500 ease-out"
+        enter-from-class="translate-y-full"
+        enter-to-class="translate-y-0"
+        leave-active-class="transition duration-400 ease-in"
+        leave-from-class="translate-y-0"
+        leave-to-class="translate-y-full"
+      >
+        <div 
+          v-if="isMobileExpanded"
+          class="fixed inset-0 z-[60] bg-black lg:hidden flex flex-col p-8 pb-12"
+        >
+           <header class="flex items-center justify-between mb-8">
+              <div class="flex items-center gap-3">
+                <div class="relative flex size-2">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
+                  <span class="relative inline-flex rounded-full size-2"
+                        :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
+                </div>
+                <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+              </div>
+              
+              <button 
+                @click="isMobileExpanded = false"
+                class="p-2 -mr-2 text-white/40 hover:text-white"
+              >
+                <Icon name="tabler:x" class="size-6" />
+              </button>
+           </header>
+
+           <div 
+             ref="mobileScrollContainer"
+             @scroll="handleMobileScroll"
+             class="flex-1 overflow-y-auto space-y-8 pr-2"
+           >
+              <div v-if="transcriptionHistory" class="space-y-4">
+                 <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/20">Registro Anterior</h3>
+                 <div class="text-xl font-normal text-white/70 leading-relaxed whitespace-pre-wrap">
+                    {{ transcriptionHistory }}
+                 </div>
+              </div>
+
+              <div class="prose prose-invert max-w-none">
+                 <TransitionGroup 
+                   name="word-stream" 
+                   tag="p" 
+                   class="text-3xl leading-tight tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
+                 >
+                    <span 
+                       v-for="word in interimWords" 
+                       :key="word.id"
+                       class="transition-colors"
+                    >
+                       {{ word.text }}
+                    </span>
+                 </TransitionGroup>
+              </div>
+           </div>
+
+           <!-- Back to bottom mobile -->
+           <Transition
+              enter-active-class="transition duration-300 ease-out"
+              enter-from-class="translate-y-4 opacity-0 scale-90"
+              enter-to-class="translate-y-0 opacity-100 scale-100"
+              leave-active-class="transition duration-200 ease-in"
+              leave-from-class="translate-y-0 opacity-100 scale-100"
+              leave-to-class="translate-y-4 opacity-0 scale-90"
+            >
+              <button
+                v-if="!mobileAutoScrollEnabled"
+                @click="scrollMobileToBottom"
+                class="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest shadow-2xl z-20 border border-blue-400/30"
+              >
+                <Icon name="tabler:arrow-down" class="size-4" />
+                <span>Volver abajo</span>
+              </button>
+            </Transition>
         </div>
       </Transition>
     </Teleport>

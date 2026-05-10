@@ -13,6 +13,10 @@ const finalTranscript = ref('')
 const fullHistory = ref('')
 const errorCount = ref(0)
 const maxErrors = 10
+const isLocalProducer = ref(false)
+
+const { transcription } = useRealtime()
+const isSomeoneElseTranscribing = computed(() => transcription.value.producing && !isLocalProducer.value)
 
 const inactivityTimer = ref<NodeJS.Timeout | null>(null)
 const audioContext = ref<AudioContext | null>(null)
@@ -21,9 +25,8 @@ const microphone = ref<MediaStreamAudioSourceNode | null>(null)
 const currentVolume = ref(0)
 const lastActiveTime = ref(Date.now())
 
-// Configuración de VAD (Voice Activity Detection)
-const SILENCE_THRESHOLD = 0.15 // Ajusta esto si el micro tiene mucho ruido de fondo
-const SILENCE_DURATION = 250   // Milisegundos de silencio para forzar el cierre
+// Puntos para saltos de línea
+const PUNCTUATION_PAUSE = 2000 // Milisegundos de silencio para forzar el cierre y puntuación
 
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
@@ -50,18 +53,22 @@ const commitInterim = () => {
   
   console.log('[STT] Committing interim text:', textToCommit)
   const textAtCommit = textToCommit
-  
+
   // Limpiar estados INSTANTÁNEAMENTE de forma síncrona
   currentRawInterim.value = ''
   interimTranscript.value = ''
   punctuatedInterim.value = ''
   lastPunctuatedWordCount.value = 0
   
-  // Procesar puntuación en segundo plano sin bloquear el hilo
+  // Procesar puntuación en segundo plano
   requestPunctuation(textAtCommit).then(pFinal => {
-    const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
-    fullHistory.value += space + pFinal
-    finalTranscript.value += space + pFinal
+    // Si el texto termina en punto, aseguramos un salto de línea para el siguiente párrafo
+    const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
+    const hasFinalPeriod = formatted.endsWith('.')
+    const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? (hasFinalPeriod ? '\n\n' : ' ') : ''
+    
+    fullHistory.value += space + formatted
+    finalTranscript.value = fullHistory.value
     updateTranscription({ final: finalTranscript.value, interim: '' })
   })
 }
@@ -97,50 +104,13 @@ const initRecognition = () => {
   recognition.value.interimResults = true
   recognition.value.lang = 'es-ES'
 
-  // Setup VAD Audio Analysis
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-    audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
-    analyser.value = audioContext.value.createAnalyser()
-    microphone.value = audioContext.value.createMediaStreamSource(stream)
-    
-    analyser.value.fftSize = 256
-    microphone.value.connect(analyser.value)
-    
-    const bufferLength = analyser.value.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    
-    const checkVolume = () => {
-      if (!isTranscribing.value) return
-      
-      analyser.value?.getByteFrequencyData(dataArray)
-      let sum = 0
-      for (let i = 0; i < bufferLength; i++) sum += dataArray[i]
-      const avg = sum / bufferLength
-      currentVolume.value = avg / 255
-      
-      if (currentVolume.value > SILENCE_THRESHOLD) {
-        lastActiveTime.value = Date.now()
-      } else {
-        const silenceMs = Date.now() - lastActiveTime.value
-        if (silenceMs > SILENCE_DURATION && isTranscribing.value) {
-          console.log(`[VAD] Silencio detectado (${silenceMs}ms). Forzando cierre...`)
-          isRestarting.value = true
-          commitInterim()
-          recognition.value?.stop()
-          lastActiveTime.value = Date.now() 
-        }
-      }
-      
-      requestAnimationFrame(checkVolume)
-    }
-    
-    checkVolume()
-  }).catch(err => {
-    console.error('[VAD] Error accediendo al micro para análisis:', err)
-  })
+  // VAD analysis removed to avoid aggressive cut-offs
+  // Using native SpeechRecognition continuous mode and a more relaxed inactivity timer instead
+
 
   recognition.value.onstart = () => {
     isTranscribing.value = true
+    isLocalProducer.value = true
     errorCount.value = 0
     setTranscriptionProducing(true)
     resetInactivityTimer()
@@ -164,9 +134,12 @@ const initRecognition = () => {
     // Process Final text
     if (newFinal) {
       const pFinal = await requestPunctuation(newFinal)
-      const space = fullHistory.value && !fullHistory.value.endsWith(' ') ? ' ' : ''
-      fullHistory.value += space + pFinal
-      finalTranscript.value += space + pFinal
+      const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
+      const hasFinalPeriod = formatted.endsWith('.')
+      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? (hasFinalPeriod ? '\n\n' : ' ') : ''
+      
+      fullHistory.value += space + formatted
+      finalTranscript.value = fullHistory.value
       
       // Reset interim tracking
       punctuatedInterim.value = ''
@@ -239,6 +212,7 @@ const initRecognition = () => {
 
   recognition.value.onend = () => {
     isTranscribing.value = false
+    isLocalProducer.value = false
     isRestarting.value = false // Permitir nuevos resultados al terminar la sesión
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
     
@@ -259,9 +233,12 @@ const startRecognition = () => {
 }
 
 const toggleTranscription = () => {
+  if (isSomeoneElseTranscribing.value) return
+
   if (isTranscribing.value) {
     isUserActive.value = false
     recognition.value?.stop()
+    isLocalProducer.value = false
     setTranscriptionProducing(false)
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   } else {
@@ -271,7 +248,12 @@ const toggleTranscription = () => {
 
 // Auto-scroll the history container
 const historyContainer = ref<HTMLElement | null>(null)
-watch([() => fullHistory.value, () => interimTranscript.value], () => {
+watch([
+  () => fullHistory.value, 
+  () => interimTranscript.value,
+  () => transcription.value.final,
+  () => transcription.value.interim
+], () => {
   nextTick(() => {
     if (historyContainer.value) {
       historyContainer.value.scrollTop = historyContainer.value.scrollHeight
@@ -286,6 +268,11 @@ onMounted(() => {
     initRecognition()
   }
 })
+
+// Log when transcription state changes for debugging
+watch(transcription, (newVal) => {
+  console.log('[STT] Socket transcription state changed:', newVal)
+}, { deep: true })
 
 onUnmounted(() => {
   recognition.value?.stop()
@@ -346,13 +333,17 @@ definePageMeta({
 
         <button 
           @click="toggleTranscription"
+          :disabled="isSomeoneElseTranscribing"
           class="flex items-center gap-3 px-6 py-3 rounded-full border-2 transition-all font-black uppercase tracking-[0.1em] text-sm shrink-0"
-          :class="isTranscribing 
-            ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
-            : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600'"
+          :class="[
+            isTranscribing 
+              ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-[0_0_20px_rgba(37,99,235,0.2)]' 
+              : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600',
+            isSomeoneElseTranscribing ? 'opacity-50 cursor-not-allowed bg-neutral-100 grayscale' : ''
+          ]"
         >
-          <Icon :name="isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off'" class="size-5" />
-          {{ isTranscribing ? 'Detener' : 'Iniciar' }}
+          <Icon :name="isSomeoneElseTranscribing ? 'tabler:eye' : (isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off')" class="size-5" />
+          {{ isSomeoneElseTranscribing ? 'Modo Espectador' : (isTranscribing ? 'Detener' : 'Iniciar') }}
         </button>
       </header>
 
@@ -369,16 +360,19 @@ definePageMeta({
           ref="historyContainer"
           class="flex-1 overflow-y-auto mt-6 pr-4 scroll-smooth"
         >
-          <div v-if="!fullHistory && !interimTranscript" class="h-full flex flex-col items-center justify-center text-neutral-300">
+          <div 
+            v-if="!(isSomeoneElseTranscribing ? (transcription.final || transcription.interim) : (fullHistory || interimTranscript))" 
+            class="h-full flex flex-col items-center justify-center text-neutral-300"
+          >
              <Icon name="tabler:ear" class="size-12 mb-4 opacity-50" />
-             <p class="text-xs font-bold uppercase tracking-widest">
-               {{ isTranscribing ? 'Esperando audio...' : 'Listo para iniciar' }}
+             <p class="text-xs font-bold uppercase tracking-widest text-center px-4">
+               {{ isSomeoneElseTranscribing ? 'El orador está en silencio o esperando audio...' : (isTranscribing ? 'Esperando audio...' : 'Listo para iniciar') }}
              </p>
           </div>
           
-          <p v-else class="text-2xl sm:text-3xl font-medium leading-relaxed text-neutral-700">
-            <span>{{ fullHistory }}</span>
-            <span v-if="interimTranscript" class="text-blue-600 ml-1 italic">{{ interimTranscript }}</span>
+          <p v-else class="text-2xl sm:text-3xl font-medium leading-relaxed text-neutral-700 whitespace-pre-wrap">
+            <span>{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
+            <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-blue-600 ml-1 italic">{{ isSomeoneElseTranscribing ? transcription.interim : interimTranscript }}</span>
           </p>
         </div>
       </div>

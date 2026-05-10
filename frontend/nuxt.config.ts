@@ -12,8 +12,8 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     public: {
-      apiUrl: "https://hymns-back.jville.dev",
-      backendUrl: "https://hymns-back.jville.dev",
+      apiUrl: process.env.BACKEND_URL || "https://hymns-back.jville.dev",
+      backendUrl: process.env.BACKEND_URL || "https://hymns-back.jville.dev",
       authPassword: process.env.NUXT_AUTH_PASSWORD || "Jville24861937",
     }
   },

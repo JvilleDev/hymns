@@ -15,6 +15,24 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
+function getColombianDate() {
+  const d = new Date();
+  const formatter = new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'America/Bogota'
+  });
+  const parts = formatter.formatToParts(d);
+  const weekday = parts.find(p => p.type === 'weekday')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const year = parts.find(p => p.type === 'year')?.value;
+  
+  return `${weekday}, ${day} de ${month} de ${year}`.replace(/^\w/, (c) => c.toUpperCase());
+}
+
 // Explicitly handle WebSocket upgrades for /ws path
 server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url || "", `http://${request.headers.host}`);
@@ -88,7 +106,60 @@ const wsInterval = setInterval(() => {
 
 process.on("close", () => {
   clearInterval(wsInterval);
+  clearInterval(inactivityInterval);
 });
+
+// Inactivity check (every minute)
+const inactivityInterval = setInterval(async () => {
+  const now = Date.now();
+  const twoHours = 2 * 60 * 60 * 1000;
+
+  for (const [clientId, state] of clientStates.entries()) {
+    let changed = false;
+
+    // Check transcription inactivity
+    if (state.lastTranscriptionUpdate && (now - state.lastTranscriptionUpdate > twoHours)) {
+      if (state.transcription.final || state.transcription.interim || state.transcription.active) {
+        state.transcription = { active: false, producing: false, final: "", interim: "" };
+        state.lastTranscriptionUpdate = now;
+        broadcast(clientId, { type: "transcriptionState", data: state.transcription });
+        broadcast(clientId, { type: "transcriptionUpdate", data: { final: "", interim: "" } });
+        changed = true;
+        colorprint.NOTICE(`[Cleanup] Cleared transcription for ${clientId} due to inactivity`);
+      }
+    }
+
+    // Check announcement inactivity
+    if (state.lastAnnouncementUpdate && (now - state.lastAnnouncementUpdate > twoHours)) {
+      const defaultTopic = getColombianDate();
+      if (state.announcement.text || state.announcement.active || state.announcement.topic !== defaultTopic) {
+        state.announcement = {
+          text: "",
+          active: false,
+          position: "bottom",
+          topic: defaultTopic,
+        };
+        state.lastAnnouncementUpdate = now;
+        
+        // Delete all announcements from DB for this client
+        try {
+          db.query("DELETE FROM anuncios WHERE clientId = ?").run(clientId);
+        } catch (e) {
+          console.error(`Error clearing announcements for ${clientId}:`, e);
+        }
+
+        broadcast(clientId, { type: "announcement", data: state.announcement });
+        broadcast(clientId, { type: "historyRefresh", data: true }); // Signal frontend to refresh history
+        changed = true;
+        colorprint.NOTICE(`[Cleanup] Cleared announcements for ${clientId} due to inactivity`);
+      }
+    }
+
+    if (changed) {
+      saveClientState(clientId, state);
+    }
+  }
+}, 60000);
 
 function broadcast(clientId: string, data: any) {
   const wsMsg = JSON.stringify(data);
@@ -157,14 +228,14 @@ app.post("/api/ws-events/:type", async (req, res) => {
       broadcast(clientId, { type: "viewerActive", data });
       break;
 
-    case "setAnnouncement":
       state.announcement = {
         ...state.announcement,
         text: data.text,
         active: data.active,
-        topic: data.topic ?? state.announcement.topic ?? "ANUNCIO",
+        topic: data.topic ?? state.announcement.topic ?? getColombianDate(),
         position: data.position || state.announcement.position || "bottom",
       };
+      state.lastAnnouncementUpdate = Date.now();
       broadcast(clientId, { type: "announcement", data: state.announcement });
       if (data.active && state.transcription.active) {
         state.transcription.active = false;
@@ -200,6 +271,7 @@ app.post("/api/ws-events/:type", async (req, res) => {
     case "transcriptionUpdate":
       state.transcription.final = data.final;
       state.transcription.interim = data.interim;
+      state.lastTranscriptionUpdate = Date.now();
       broadcast(clientId, { type: "transcriptionUpdate", data });
       break;
   }
@@ -593,6 +665,8 @@ interface InitialInfo {
     topic: string;
   };
   transcription: { active: boolean; producing: boolean; final: string; interim: string };
+  lastTranscriptionUpdate: number;
+  lastAnnouncementUpdate: number;
 }
 
 const defaultInitialInfo = (): InitialInfo => ({
@@ -605,9 +679,11 @@ const defaultInitialInfo = (): InitialInfo => ({
     text: "",
     active: false,
     position: "bottom",
-    topic: "ANUNCIO",
+    topic: getColombianDate(),
   },
   transcription: { active: false, producing: false, final: "", interim: "" },
+  lastTranscriptionUpdate: Date.now(),
+  lastAnnouncementUpdate: Date.now(),
 });
 
 const clientStates = new Map<string, InitialInfo>();
@@ -632,6 +708,8 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.announcement.topic = row.announcementTopic || "ANUNCIO";
       state.transcription.active = !!row.transcriptionActive;
       state.transcription.producing = !!row.transcriptionProducing;
+      state.lastTranscriptionUpdate = row.lastTranscriptionUpdate || Date.now();
+      state.lastAnnouncementUpdate = row.lastAnnouncementUpdate || Date.now();
 
       // Load song if activeCantoId exists
       if (state.activeCantoId) {
@@ -660,8 +738,9 @@ function saveClientState(clientId: string, state: InitialInfo) {
       INSERT OR REPLACE INTO client_states (
         clientId, viewerActive, activeLine, activeCantoId, activeIndex, 
         announcementText, announcementActive, announcementPosition, 
-        announcementTopic, transcriptionActive, transcriptionProducing
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        announcementTopic, transcriptionActive, transcriptionProducing,
+        lastTranscriptionUpdate, lastAnnouncementUpdate
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     query.run(
       clientId,
@@ -674,7 +753,9 @@ function saveClientState(clientId: string, state: InitialInfo) {
       state.announcement.position,
       state.announcement.topic,
       state.transcription.active ? 1 : 0,
-      state.transcription.producing ? 1 : 0
+      state.transcription.producing ? 1 : 0,
+      state.lastTranscriptionUpdate,
+      state.lastAnnouncementUpdate
     );
   } catch (e) {
     console.error(`Error saving state for ${clientId}:`, e);
@@ -701,13 +782,21 @@ async function prepareDb() {
         announcementPosition TEXT,
         announcementTopic TEXT,
         transcriptionActive INTEGER,
-        transcriptionProducing INTEGER
+        transcriptionProducing INTEGER,
+        lastTranscriptionUpdate INTEGER,
+        lastAnnouncementUpdate INTEGER
       )`,
     );
 
     // Migrations
     try {
       db.run("ALTER TABLE client_states ADD COLUMN transcriptionProducing INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN lastTranscriptionUpdate INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN lastAnnouncementUpdate INTEGER");
     } catch (e) {}
   } catch (error) {
     console.error("Error preparing database:", error);

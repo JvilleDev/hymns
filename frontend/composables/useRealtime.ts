@@ -83,6 +83,11 @@ export const useRealtime = () => {
           transcription.value.final = data.final
           transcription.value.interim = data.interim
           break
+
+        case 'historyRefresh':
+          // The backend sends this when it clears history due to inactivity
+          // We don't need to do much here because announcement watchers will trigger fetchHistory
+          break
       }
     } catch (e) {
       console.error('[Realtime] Error parsing message:', e)

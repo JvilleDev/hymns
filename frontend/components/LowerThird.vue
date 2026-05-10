@@ -1,10 +1,7 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   text: string,
-  position?: 'top' | 'bottom'
-}>(), {
-  position: 'bottom'
-})
+}>()
 
 const { parseHTML } = useContentParser()
 
@@ -59,10 +56,7 @@ onUnmounted(() => {
 
 <template>
   <div 
-    class="fixed left-0 right-0 z-50 bg-white text-black overflow-hidden py-4 font-bold tracking-widest border-y border-black/10"
-    :class="[
-      position === 'top' ? 'top-0 shadow-xl' : 'bottom-0 shadow-[0_-8px_40px_rgba(0,0,0,0.25)]'
-    ]"
+    class="fixed left-0 right-0 z-50 bg-white text-black overflow-hidden py-4 font-bold tracking-widest border-y border-black/10 bottom-0 shadow-[0_-8px_40px_rgba(0,0,0,0.25)"
   >
     <div class="marquee-container w-full whitespace-nowrap text-center">
       <div 
