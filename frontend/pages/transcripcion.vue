@@ -10,7 +10,10 @@ const isTranscribing = ref(false)
 const recognition = ref<any>(null)
 const interimTranscript = ref('')
 const finalTranscript = ref('')
-const fullHistory = ref('')
+const fullHistory = ref('') // Lo que se envía al socket (Consolidado + Párrafo Activo)
+const consolidatedText = ref('') // Párrafos ya cerrados
+const activeParagraphRaw = ref('') // Texto crudo del párrafo actual
+const activeParagraphPunctuated = ref('') // Texto puntuado del párrafo actual
 const errorCount = ref(0)
 const maxErrors = 10
 const isLocalProducer = ref(false)
@@ -26,19 +29,21 @@ const currentVolume = ref(0)
 const lastActiveTime = ref(Date.now())
 
 // Puntos para saltos de línea
-const PUNCTUATION_PAUSE = 2000 // Milisegundos de silencio para forzar el cierre y puntuación
+const PUNCTUATION_PAUSE = 5000 
 const SILENCE_THRESHOLD = 0.05 // Umbral para considerar que hay voz (0-1)
+const MAX_PARAGRAPH_LENGTH = 500 // Caracteres para sugerir un salto de párrafo
+const INACTIVITY_FLUSH = 10000 // 10 segundos de silencio total para cerrar párrafo
 
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   if (isTranscribing.value) {
     inactivityTimer.value = setTimeout(() => {
-      console.log('[STT] Inactividad detectada (3s). Reiniciando instancia...')
+      console.log('[STT] Inactividad prolongada detectada. Cerrando párrafo...')
+      commitInterim()
       if (recognition.value) {
-        commitInterim()
         recognition.value.stop() 
       }
-    }, 3000)
+    }, INACTIVITY_FLUSH)
   }
 }
 
@@ -49,31 +54,24 @@ const isPunctuatingInterim = ref(false)
 const isRestarting = ref(false)
 
 const commitInterim = () => {
-  const textToCommit = currentRawInterim.value.trim()
-  if (!textToCommit) return
-  
-  console.log('[STT] Committing interim text:', textToCommit)
-  const textAtCommit = textToCommit
+  // Al cerrar sesión o inactividad larga, horneamos lo que quede en el buffer
+  if (activeParagraphPunctuated.value.trim()) {
+    const p = activeParagraphPunctuated.value.trim()
+    const capitalized = p.charAt(0).toUpperCase() + p.slice(1)
+    consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + capitalized
+    
+    activeParagraphRaw.value = ''
+    activeParagraphPunctuated.value = ''
+  }
 
-  // Limpiar estados INSTANTÁNEAMENTE de forma síncrona
   currentRawInterim.value = ''
   interimTranscript.value = ''
   punctuatedInterim.value = ''
   lastPunctuatedWordCount.value = 0
   
-    // Procesar puntuación y capitalizar párrafos
-    requestPunctuation(textAtCommit).then(pFinal => {
-      const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
-      const capitalized = formatted.split('\n\n')
-        .map(p => p.trim() ? p.charAt(0).toUpperCase() + p.slice(1) : p)
-        .join('\n\n')
-      
-      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n\n' : ''
-      
-      fullHistory.value += space + capitalized
-      finalTranscript.value = fullHistory.value
-      updateTranscription({ final: finalTranscript.value, interim: '' })
-    })
+  fullHistory.value = consolidatedText.value
+  finalTranscript.value = fullHistory.value
+  updateTranscription({ final: finalTranscript.value, interim: '' })
 }
 
 const requestPunctuation = async (text: string) => {
@@ -134,26 +132,47 @@ const initRecognition = () => {
       }
     }
 
-    // Process Final text
+    // Process Final text (Continuous refinement)
     if (newFinal) {
-      const pFinal = await requestPunctuation(newFinal)
-      const formatted = pFinal.trim().replace(/\. /g, '.\n\n')
-      const capitalized = formatted.split('\n\n')
-        .map(p => p.trim() ? p.charAt(0).toUpperCase() + p.slice(1) : p)
-        .join('\n\n')
+      // 1. Acumulamos en el párrafo activo
+      activeParagraphRaw.value += (activeParagraphRaw.value ? ' ' : '') + newFinal.trim()
+      
+      // 2. Pedimos puntuación de TODO el párrafo actual para tener contexto
+      const currentRaw = activeParagraphRaw.value
+      requestPunctuation(currentRaw).then(pFinal => {
+        // Evitar race conditions si el buffer cambió mientras llegaba la respuesta
+        if (currentRaw !== activeParagraphRaw.value) return 
 
-      const space = fullHistory.value && !fullHistory.value.endsWith('\n') ? '\n\n' : ''
-      
-      fullHistory.value += space + capitalized
-      finalTranscript.value = fullHistory.value
-      
+        activeParagraphPunctuated.value = pFinal.trim()
+        
+        // 3. ¿Debemos cerrar el párrafo? (Solo si es largo y termina en punto)
+        const isLongEnough = activeParagraphPunctuated.value.length > MAX_PARAGRAPH_LENGTH
+        const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
+
+        if (isLongEnough && endsInDot) {
+          const p = activeParagraphPunctuated.value
+          const capitalized = p.charAt(0).toUpperCase() + p.slice(1)
+          consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + capitalized
+          
+          activeParagraphRaw.value = ''
+          activeParagraphPunctuated.value = ''
+        }
+
+        // 4. Actualizar el estado global
+        const currentActive = activeParagraphPunctuated.value
+        const capitalizedActive = currentActive ? (currentActive.charAt(0).toUpperCase() + currentActive.slice(1)) : ''
+        
+        fullHistory.value = consolidatedText.value + (consolidatedText.value && capitalizedActive ? '\n\n' : '') + capitalizedActive
+        finalTranscript.value = fullHistory.value
+        
+        updateTranscription({ final: finalTranscript.value, interim: interimTranscript.value })
+      })
+
       // Reset interim tracking
       punctuatedInterim.value = ''
       lastPunctuatedWordCount.value = 0
       currentRawInterim.value = ''
       interimTranscript.value = ''
-      
-      updateTranscription({ final: finalTranscript.value, interim: '' })
     }
 
     // Process Interim text smoothly

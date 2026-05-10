@@ -212,7 +212,7 @@ const generatePdf = () => {
 
           <button 
             @click="generatePdf"
-            class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 transition-colors text-[10px] font-bold uppercase tracking-widest print:hidden border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 shadow-sm hover:shadow-md active:scale-95 transition-all w-fit"
+            class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest print:hidden border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 shadow-sm hover:shadow-md active:scale-95 transition-all w-fit"
           >
             <Icon name="tabler:file-type-pdf" class="size-4" />
             <span>Exportar PDF</span>
