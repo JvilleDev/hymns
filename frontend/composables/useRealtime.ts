@@ -35,6 +35,8 @@ export const useRealtime = () => {
     final: '',
     interim: ''
   }))
+  /** Marca de tiempo del servidor para el último cambio en anuncio (ms). */
+  const lastAnnouncementUpdate = useState('realtime:lastAnnouncementUpdate', () => 0)
 
   const onWebRTCOffer = ref<((data: any) => void) | null>(null)
   const onWebRTCAnswer = ref<((data: any) => void) | null>(null)
@@ -43,7 +45,8 @@ export const useRealtime = () => {
 
   const handleMessage = (payload: string) => {
     try {
-      const { type, data, from, to } = JSON.parse(payload)
+      const msg = JSON.parse(payload)
+      const { type, data, from, to } = msg
       
       // If the message is targeted to someone else, ignore it
       if (to && to !== connectionId.value) {
@@ -60,6 +63,10 @@ export const useRealtime = () => {
           activeSong.value = data.activeSong || null
           announcement.value = data.announcement || { text: '', active: false }
           transcription.value = data.transcription || { active: false, producing: false, final: '', interim: '' }
+          lastAnnouncementUpdate.value =
+            typeof data.lastAnnouncementUpdate === 'number' && !Number.isNaN(data.lastAnnouncementUpdate)
+              ? data.lastAnnouncementUpdate
+              : Date.now()
           break
 
         case 'viewerActive':
@@ -85,6 +92,9 @@ export const useRealtime = () => {
         case 'announcement':
           console.log('[Realtime] Received Announcement:', data)
           announcement.value = data
+          if (typeof msg.lastAnnouncementUpdate === 'number' && !Number.isNaN(msg.lastAnnouncementUpdate)) {
+            lastAnnouncementUpdate.value = msg.lastAnnouncementUpdate
+          }
           break
 
         case 'transcriptionState':
@@ -223,6 +233,7 @@ export const useRealtime = () => {
       ...announcement.value,
       ...data
     }
+    lastAnnouncementUpdate.value = Date.now()
     sendEvent('setAnnouncement', data)
   }
 
@@ -260,6 +271,7 @@ export const useRealtime = () => {
     activeSong,
     announcement,
     transcription,
+    lastAnnouncementUpdate,
     onWebRTCOffer,
     onWebRTCAnswer,
     onWebRTCCandidate,

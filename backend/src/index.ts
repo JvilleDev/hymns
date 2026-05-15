@@ -149,7 +149,11 @@ const inactivityInterval = setInterval(async () => {
           console.error(`Error clearing announcements for ${clientId}:`, e);
         }
 
-        broadcast(clientId, { type: "announcement", data: state.announcement });
+        broadcast(clientId, {
+          type: "announcement",
+          data: state.announcement,
+          lastAnnouncementUpdate: state.lastAnnouncementUpdate,
+        });
         broadcast(clientId, { type: "historyRefresh", data: true }); // Signal frontend to refresh history
         changed = true;
         colorprint.NOTICE(`[Cleanup] Cleared announcements for ${clientId} due to inactivity`);
@@ -257,7 +261,13 @@ app.post("/api/ws-events/:type", async (req, res) => {
         topic: data.topic ?? state.announcement.topic ?? getColombianDate(),
       };
       state.lastAnnouncementUpdate = Date.now();
-      broadcast(clientId, { type: "announcement", data: state.announcement, from, to });
+      broadcast(clientId, {
+        type: "announcement",
+        data: state.announcement,
+        lastAnnouncementUpdate: state.lastAnnouncementUpdate,
+        from,
+        to,
+      });
       if (data.active && state.transcription.active) {
         state.transcription.active = false;
         broadcast(clientId, {
@@ -274,7 +284,13 @@ app.post("/api/ws-events/:type", async (req, res) => {
       if (data) {
         state.announcement.active = false;
         state.viewerActive = false;
-        broadcast(clientId, { type: "announcement", data: state.announcement, from, to });
+        broadcast(clientId, {
+          type: "announcement",
+          data: state.announcement,
+          lastAnnouncementUpdate: state.lastAnnouncementUpdate,
+          from,
+          to,
+        });
         broadcast(clientId, { type: "viewerActive", data: false, from, to });
       }
       broadcast(clientId, {

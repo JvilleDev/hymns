@@ -35,11 +35,32 @@ const lastFinalTimestamp = ref(Date.now())
 
 const availableCameras = ref<MediaDeviceInfo[]>([])
 const selectedCameraId = ref<string>('')
+const availableMicrophones = ref<MediaDeviceInfo[]>([])
+const selectedMicrophoneId = ref<string>('')
 const previewVideo = ref<HTMLVideoElement | null>(null)
+
+/** Tracks sent to viewers (video from local preview + opcionalmente micrófono seleccionado) */
+const rtcOutboundStream = ref<MediaStream | null>(null)
+/** Captura exclusiva para WebRTC — distinta del audio usado solo para el VU meter en STT */
+const broadcastMicStream = ref<MediaStream | null>(null)
 
 const localStream = ref<MediaStream | null>(null)
 const peerConnections = ref(new Map<string, RTCPeerConnection>())
 const iceQueues = ref(new Map<string, any[]>())
+
+let onDeviceInputsChanged: (() => void) | null = null
+
+/** Safari y otros pueden bloquear getUserMedia de audio hasta gesto del usuario — reintentamos tras el primer toque/clic */
+let micEnumeratePointerHooked = false
+const attachMicEnumerateRetryOnFirstPointer = () => {
+  if (!import.meta.client || micEnumeratePointerHooked) return
+  micEnumeratePointerHooked = true
+  window.addEventListener(
+    'pointerdown',
+    () => void getMicrophones(),
+    { once: true, capture: true, passive: true }
+  )
+}
 
 const addLog = (msg: string) => {
   console.log(`[WebRTC] ${msg}`)
@@ -60,6 +81,71 @@ const processIceQueue = (viewerId: string) => {
 
 const rtcConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+}
+
+/** Rebuilds the logical outbound stream descriptor (tracks are those from local preview + mic broadcast). */
+const ensureRtcOutboundStream = () => {
+  if (!rtcOutboundStream.value) rtcOutboundStream.value = new MediaStream()
+  const s = rtcOutboundStream.value
+  for (const t of [...s.getVideoTracks()]) s.removeTrack(t)
+  for (const t of [...s.getAudioTracks()]) s.removeTrack(t)
+  const vt = localStream.value?.getVideoTracks()[0]
+  const at = broadcastMicStream.value?.getAudioTracks()[0]
+  if (vt) s.addTrack(vt)
+  if (at) s.addTrack(at)
+  return s
+}
+
+const syncMicTracksOnPeers = () => {
+  const outbound = ensureRtcOutboundStream()
+  const micTrack = broadcastMicStream.value?.getAudioTracks()[0]
+
+  peerConnections.value.forEach((pc) => {
+    const audioSender = pc.getSenders().find((x) => x.track?.kind === 'audio')
+    if (!micTrack) {
+      audioSender?.replaceTrack(null)
+      return
+    }
+    if (audioSender) {
+      audioSender.replaceTrack(micTrack)
+      return
+    }
+    pc.addTrack(micTrack, outbound)
+  })
+}
+
+const stopBroadcastMicStream = () => {
+  broadcastMicStream.value?.getTracks().forEach((t) => t.stop())
+  broadcastMicStream.value = null
+  syncMicTracksOnPeers()
+}
+
+/** Micrófono para el canal WebRTC (separate track). Se pide al activar transmisión de vídeo. */
+const initBroadcastMicStream = async () => {
+  try {
+    stopBroadcastMicStream()
+    const audioConstraints: MediaTrackConstraints = selectedMicrophoneId.value
+      ? { deviceId: { exact: selectedMicrophoneId.value } }
+      : true
+    broadcastMicStream.value = await navigator.mediaDevices.getUserMedia({
+      audio: audioConstraints,
+      video: false
+    })
+    await getMicrophones({ skipPermissionRequest: true })
+    const capturedId = broadcastMicStream.value?.getAudioTracks()[0]?.getSettings().deviceId
+    if (typeof capturedId === 'string' && capturedId.length) selectedMicrophoneId.value = capturedId
+    ensureRtcOutboundStream()
+    syncMicTracksOnPeers()
+  } catch (e) {
+    console.warn('[WebRTC] No se pudo abrir micrófono para transmisión', e)
+    toast.error('No se pudo acceder al micrófono para transmisión; solo vídeo.')
+  }
+}
+
+const switchBroadcastMicDevice = async () => {
+  if (isStreamingVideo.value || peerConnections.value.size > 0) {
+    await initBroadcastMicStream()
+  }
 }
 
 const initCamera = async () => {
@@ -83,6 +169,7 @@ const initCamera = async () => {
     // Replace tracks for ALL active peer connections
     const videoTrack = localStream.value.getVideoTracks()[0]
     if (videoTrack) {
+      ensureRtcOutboundStream()
       peerConnections.value.forEach((pc) => {
         const sender = pc.getSenders().find(s => s.track?.kind === 'video')
         if (sender) sender.replaceTrack(videoTrack)
@@ -100,6 +187,7 @@ const stopVideoStreaming = () => {
   peerConnections.value.clear()
   iceQueues.value.clear()
   isStreamingVideo.value = false
+  stopBroadcastMicStream()
 }
 
 const initSender = async (viewerId: string) => {
@@ -133,8 +221,9 @@ const initSender = async (viewerId: string) => {
     
     addLog(`RTCPeerConnection creada para ${viewerId}`)
 
-    localStream.value.getTracks().forEach(track => {
-      pc.addTrack(track, localStream.value!)
+    const outbound = ensureRtcOutboundStream()
+    outbound.getTracks().forEach(track => {
+      pc.addTrack(track, outbound)
     })
 
     pc.onicecandidate = (event) => {
@@ -173,6 +262,69 @@ const getCameras = async () => {
   }
 }
 
+const dedupeDevices = (list: MediaDeviceInfo[]) => {
+  const seen = new Set<string>()
+  const out: MediaDeviceInfo[] = []
+  for (const d of list) {
+    const key =
+      typeof d.deviceId === 'string' && d.deviceId.length > 0
+        ? d.deviceId
+        : `g:${d.groupId || '?'}:${d.kind}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(d)
+  }
+  return out
+}
+
+const microphoneLabelFor = (mic: MediaDeviceInfo, index: number) => {
+  const raw = mic.label.trim()
+  if (raw.length) return raw
+  const id = mic.deviceId
+  const shortId = id && id.length > 8 ? `${id.slice(0, 6)}…` : id || ''
+  if (shortId) return `Entrada ${index + 1} (${shortId})`
+  return `Micrófono ${index + 1}`
+}
+
+const getMicrophones = async (opts?: { skipPermissionRequest?: boolean }) => {
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+
+    // Siempre solicitar permiso de micrófono antes de enumerar (navegador solo muestra nombres tras permiso).
+    if (!opts?.skipPermissionRequest && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false
+        })
+        tmp.getTracks().forEach((t) => t.stop())
+      } catch (e) {
+        console.warn('[WebRTC] Sin permiso de micrófono; la lista puede quedar incompleta', e)
+      }
+    }
+
+    const list = dedupeDevices(
+      (await navigator.mediaDevices.enumerateDevices()).filter(
+        (d) => d.kind === 'audioinput'
+      )
+    )
+
+    availableMicrophones.value = list
+
+    const sel = selectedMicrophoneId.value
+    const selectionStillValid =
+      typeof sel === 'string' &&
+      sel.length > 0 &&
+      list.some((m) => m.deviceId === sel)
+
+    if (!selectionStillValid && list.length > 0) {
+      selectedMicrophoneId.value = list[0].deviceId || ''
+    }
+  } catch (e) {
+    console.error('[WebRTC] Error listing microphones:', e)
+  }
+}
+
 const switchCamera = async () => {
   await initCamera()
 }
@@ -188,6 +340,7 @@ const inactivityTimer = ref<NodeJS.Timeout | null>(null)
 const audioContext = ref<AudioContext | null>(null)
 const analyser = ref<AnalyserNode | null>(null)
 const microphone = ref<MediaStreamAudioSourceNode | null>(null)
+const vuMeterMicStream = ref<MediaStream | null>(null)
 const currentVolume = ref(0)
 const lastActiveTime = ref(Date.now())
 
@@ -454,8 +607,15 @@ const startRecognition = () => {
 }
 
 const startAudioAnalysis = async () => {
+  stopAudioAnalysis()
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const audioOpts: MediaTrackConstraints = {}
+    if (selectedMicrophoneId.value) audioOpts.deviceId = { exact: selectedMicrophoneId.value }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: Object.keys(audioOpts).length ? audioOpts : true,
+      video: false
+    })
+    vuMeterMicStream.value = stream
     audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
     analyser.value = audioContext.value.createAnalyser()
     microphone.value = audioContext.value.createMediaStreamSource(stream)
@@ -490,10 +650,12 @@ const stopAudioAnalysis = () => {
     microphone.value = null
   }
   if (audioContext.value) {
-    audioContext.value.close()
+    audioContext.value.close().catch(() => {})
     audioContext.value = null
   }
   analyser.value = null
+  vuMeterMicStream.value?.getTracks().forEach((t) => t.stop())
+  vuMeterMicStream.value = null
   currentVolume.value = 0
 }
 
@@ -508,15 +670,28 @@ const toggleTranscription = () => {
     stopAudioAnalysis()
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   } else {
+    void getMicrophones()
     startRecognition()
     startAudioAnalysis()
   }
 }
 
+watch(selectedMicrophoneId, () => {
+  if (isTranscribing.value) void startAudioAnalysis()
+})
+
 const toggleVideoStreaming = async () => {
   if (isStreamingVideo.value) {
     stopVideoStreaming()
   } else {
+    if (!window.isSecureContext) {
+      addLog('ERROR: Requiere HTTPS (ngrok https)')
+      toast.error('WebRTC requiere una conexión segura (HTTPS)')
+      return
+    }
+    await getMicrophones()
+    await initBroadcastMicStream()
+
     // If not streaming, we don't have a target yet, 
     // but we can set the flag so new requests are accepted
     isStreamingVideo.value = true
@@ -543,12 +718,6 @@ watch([
 
 onMounted(() => {
   checkBrowser()
-  if (isSupportedBrowser.value) {
-    connect()
-    initRecognition()
-    getCameras()
-    initCamera()
-  }
 
   onWebRTCRequest.value = ({ from }) => {
     addLog(`Petición de stream recibida de ${from}`)
@@ -585,6 +754,33 @@ onMounted(() => {
       queue.push(candidate)
     }
   }
+
+  if (!isSupportedBrowser.value) return
+
+  connect()
+  initRecognition()
+
+  onDeviceInputsChanged = () => {
+    void getCameras()
+    void getMicrophones()
+  }
+  navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceInputsChanged)
+
+  attachMicEnumerateRetryOnFirstPointer()
+
+  void (async () => {
+    try {
+      await initCamera()
+      await getCameras()
+    } catch (e) {
+      console.error('[Transcripción] Fallo al iniciar cámara o listar cámaras', e)
+    }
+    try {
+      await getMicrophones()
+    } catch (e) {
+      console.error('[Transcripción] Fallo al listar micrófonos', e)
+    }
+  })()
 })
 
 // Log when transcription state changes for debugging
@@ -595,9 +791,16 @@ onUnmounted(() => {
   recognition.value?.stop()
   setTranscriptionProducing(false)
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  stopAudioAnalysis()
   peerConnections.value.forEach(pc => pc.close())
   if (localStream.value) {
     localStream.value.getTracks().forEach(t => t.stop())
+  }
+  stopBroadcastMicStream()
+  rtcOutboundStream.value = null
+  if (onDeviceInputsChanged) {
+    navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceInputsChanged)
+    onDeviceInputsChanged = null
   }
 })
 
@@ -681,6 +884,36 @@ definePageMeta({
           </div>
         </div>
 
+        <!-- Microphone Selector (canal aparte para WebRTC + mismo dispositivo preferido para STT/VU) -->
+        <div class="flex items-center gap-3 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
+          <div class="size-10 bg-neutral-50 rounded-xl flex items-center justify-center text-neutral-400">
+            <Icon name="tabler:microphone" class="size-5" />
+          </div>
+          <div class="flex-1 min-w-0 relative">
+            <select
+              v-model="selectedMicrophoneId"
+              class="w-full bg-transparent border-none py-1 pr-8 text-[12px] font-medium tracking-tight text-neutral-700 normal-case focus:ring-0 outline-none appearance-none cursor-pointer"
+              @change="switchBroadcastMicDevice"
+              @focus="() => void getMicrophones()"
+            >
+              <option v-if="!availableMicrophones.length" disabled value="">
+                Lista de micrófonos vacía · toca la pantalla o activa dictado
+              </option>
+              <option
+                v-for="(mic, idx) in availableMicrophones"
+                :key="`${idx}:${mic.deviceId || ''}:${mic.groupId || ''}`"
+                :value="mic.deviceId"
+              >
+                {{ microphoneLabelFor(mic, idx) }}
+              </option>
+            </select>
+            <Icon name="tabler:chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
+          </div>
+        </div>
+        <p class="text-[9px] text-neutral-400 font-bold uppercase tracking-wider px-1">
+          El mic se envía por WebRTC al activar transmisión de vídeo (audio separado del vídeo).
+        </p>
+
         <!-- Actions -->
         <div class="grid grid-cols-1 gap-3">
           <!-- Video Toggle -->
@@ -693,7 +926,7 @@ definePageMeta({
               <Icon :name="isStreamingVideo ? 'tabler:video-off' : 'tabler:video'" class="size-6" />
               <div class="text-left">
                 <div class="leading-none">Transmisión Video</div>
-                <div class="text-[9px] font-bold opacity-60 mt-1">{{ isStreamingVideo ? 'Transmitiendo cámara' : 'WebRTC desactivado' }}</div>
+                <div class="text-[9px] font-bold opacity-60 mt-1">{{ isStreamingVideo ? 'Cámara + micrófono seleccionado' : 'WebRTC desactivado' }}</div>
               </div>
             </div>
             <Icon name="tabler:arrow-right" class="size-4 opacity-0 group-hover:opacity-100 transition-all" />
