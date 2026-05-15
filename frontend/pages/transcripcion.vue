@@ -150,8 +150,12 @@ const switchBroadcastMicDevice = async () => {
 
 const initCamera = async () => {
   try {
+    const videoConstraints: MediaTrackConstraints = selectedCameraId.value
+      ? { deviceId: { exact: selectedCameraId.value }, width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } }
+      : { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } }
+
     const constraints: MediaStreamConstraints = {
-      video: selectedCameraId.value ? { deviceId: { exact: selectedCameraId.value } } : true,
+      video: videoConstraints,
       audio: false
     }
 
@@ -241,6 +245,22 @@ const initSender = async (viewerId: string) => {
 
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
+
+    // Cap encoding a 720p / 2.5 Mbps para no saturar la red
+    const videoSender = pc.getSenders().find(s => s.track?.kind === 'video')
+    if (videoSender) {
+      const params = videoSender.getParameters()
+      if (params.encodings?.length) {
+        params.encodings.forEach(enc => {
+          enc.maxBitrate = 2_500_000
+          enc.maxFramerate = 30
+        })
+      } else {
+        params.encodings = [{ maxBitrate: 2_500_000, maxFramerate: 30 }]
+      }
+      await videoSender.setParameters(params).catch(e => addLog(`setParameters warn: ${e.message}`))
+    }
+
     sendWebRTCOffer(offer, viewerId)
     addLog(`Oferta enviada a ${viewerId}`)
     isStreamingVideo.value = true
