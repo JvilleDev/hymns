@@ -220,17 +220,38 @@ const initReceiver = async (offer: any, broadcasterId: string) => {
     addLog(event.track.kind === 'audio' ? 'Track de audio recibido' : 'Track de video recibido')
     remoteStream.value = event.streams[0]
     videoRTC.value = true
-    
-    nextTick(() => {
-      if (videoElement.value) {
-        videoElement.value.srcObject = remoteStream.value
-      }
-      if (videoElementBg.value) {
-        videoElementBg.value.srcObject = remoteStream.value
-      }
-      addLog('Stream asignado a reproductores')
-    })
   }
+
+  const needsInteraction = ref(false)
+
+  const startVideoManually = () => {
+    needsInteraction.value = false
+    if (videoElement.value) videoElement.value.play().catch(() => {})
+    if (videoElementBg.value) videoElementBg.value.play().catch(() => {})
+  }
+
+  const assignStream = () => {
+    const stream = remoteStream.value
+    if (!stream) return
+    
+    if (videoElement.value && videoElement.value.srcObject !== stream) {
+      addLog('Asignando stream a video principal')
+      videoElement.value.srcObject = stream
+      videoElement.value.play().catch(e => {
+        addLog(`Play principal blocked: ${e.message}`)
+        needsInteraction.value = true
+      })
+    }
+    if (videoElementBg.value && videoElementBg.value.srcObject !== stream) {
+      addLog('Asignando stream a video background')
+      videoElementBg.value.srcObject = stream
+      videoElementBg.value.play().catch(e => addLog(`Play background blocked: ${e.message}`))
+    }
+  }
+
+  watch([remoteStream, videoElement, videoElementBg], () => {
+    nextTick(assignStream)
+  })
 
   try {
     await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
@@ -559,6 +580,31 @@ const generatePdf = () => {
                :muted="!playRemoteRtcAudio"
                class="absolute inset-0 w-full h-full object-contain z-10"
              ></video>
+
+             <!-- Play Button Overlay (for blocked autoplay) -->
+             <Transition
+               enter-active-class="transition duration-300 ease-out"
+               enter-from-class="opacity-0 scale-95"
+               enter-to-class="opacity-100 scale-100"
+               leave-active-class="transition duration-200 ease-in"
+               leave-from-class="opacity-100 scale-100"
+               leave-to-class="opacity-0 scale-95"
+             >
+               <div 
+                 v-if="needsInteraction"
+                 class="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+               >
+                  <button 
+                    @click="startVideoManually"
+                    class="group flex flex-col items-center gap-4 active:scale-95 transition-transform"
+                  >
+                     <div class="size-20 bg-white rounded-full flex items-center justify-center shadow-2xl group-hover:bg-blue-600 transition-all">
+                        <Icon name="tabler:play-filled" class="size-10 text-black group-hover:text-white transition-colors ml-1" />
+                     </div>
+                     <span class="text-white text-[10px] font-black uppercase tracking-[0.3em] drop-shadow-lg">Activar Transmisión</span>
+                  </button>
+               </div>
+             </Transition>
           </div>
         </Transition>
       </div>
