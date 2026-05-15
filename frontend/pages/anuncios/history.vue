@@ -68,14 +68,36 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null
 
 const ANNOUNCEMENT_IDLE_MS = 60_000
 
-/** Reinicia el contador de inactividad. Llama esto cada vez que llega un anuncio. */
+/** Reinicia el contador de inactividad basándose en el timestamp del último anuncio. */
 const resetIdleTimer = () => {
   if (idleTimer) clearTimeout(idleTimer)
-  leftColumnVideoFullscreen.value = false
-  if (!videoRTC.value) return
-  idleTimer = setTimeout(() => {
-    if (videoRTC.value) leftColumnVideoFullscreen.value = true
-  }, ANNOUNCEMENT_IDLE_MS)
+  
+  const at = lastAnnouncementUpdate.value
+  const hasVideo = videoRTC.value
+  
+  addLog(`Checking idle timer: at=${at}, video=${hasVideo}`)
+
+  if (at <= 0 || !hasVideo) {
+    leftColumnVideoFullscreen.value = false
+    return
+  }
+
+  const elapsed = Date.now() - at
+  const remaining = ANNOUNCEMENT_IDLE_MS - elapsed
+
+  if (remaining <= 0) {
+    addLog('Idle threshold reached, setting fullscreen')
+    leftColumnVideoFullscreen.value = true
+  } else {
+    addLog(`Still active, waiting ${remaining}ms`)
+    leftColumnVideoFullscreen.value = false
+    idleTimer = setTimeout(() => {
+      if (videoRTC.value) {
+        addLog('Idle timer fired, setting fullscreen')
+        leftColumnVideoFullscreen.value = true
+      }
+    }, remaining)
+  }
 }
 
 const handleScroll = () => {

@@ -92,9 +92,10 @@ export const useRealtime = () => {
         case 'announcement':
           console.log('[Realtime] Received Announcement:', data)
           announcement.value = data
-          if (typeof msg.lastAnnouncementUpdate === 'number' && !Number.isNaN(msg.lastAnnouncementUpdate)) {
-            lastAnnouncementUpdate.value = msg.lastAnnouncementUpdate
-          }
+          lastAnnouncementUpdate.value =
+            typeof msg.lastAnnouncementUpdate === 'number' && !Number.isNaN(msg.lastAnnouncementUpdate)
+              ? msg.lastAnnouncementUpdate
+              : Date.now()
           break
 
         case 'transcriptionState':
