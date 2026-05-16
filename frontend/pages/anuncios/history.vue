@@ -19,10 +19,22 @@ const {
   onWebRTCOffer, 
   onWebRTCAnswer, 
   onWebRTCCandidate, 
-  onWebRTCRequest,
-  connectionId
-} = useRealtime()
-const { parseHTML } = useContentParser()
+    onWebRTCRequest,
+    connectionId
+  } = useRealtime()
+const { parseHTML: originalParseHTML } = useContentParser()
+
+// Memoize HTML parsing to avoid heavy template work
+const parseCache = new Map<string, any[]>()
+const parseHTML = (text: string) => {
+  if (!text) return []
+  if (parseCache.has(text)) return parseCache.get(text)!
+  const result = originalParseHTML(text)
+  parseCache.set(text, result)
+  // Limit cache size
+  if (parseCache.size > 100) parseCache.delete(parseCache.keys().next().value)
+  return result
+}
 
 const route = useRoute()
 
@@ -36,21 +48,11 @@ const playRemoteRtcAudio = computed(() => {
 const videoRTC = ref(false)
 const videoElement = ref<HTMLVideoElement | null>(null)
 const videoElementBg = ref<HTMLVideoElement | null>(null)
-const pc = ref<RTCPeerConnection | null>(null)
-const remoteStream = ref<MediaStream | null>(null)
+const pc = shallowRef<RTCPeerConnection | null>(null)
+const remoteStream = shallowRef<MediaStream | null>(null)
 const iceQueue = ref<any[]>([])
-
-const rtcConfig = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-}
-
-const addLog = (msg: string) => {
-  console.log(`[WebRTC] ${msg}`)
-}
-
-const history = ref<any[]>([])
+const history = shallowRef<any[]>([])
 const isLoading = ref(true)
-const pollInterval = ref<NodeJS.Timeout | null>(null)
 const scrollContainer = ref<HTMLElement | null>(null)
 const desktopScrollContainer = ref<HTMLElement | null>(null)
 const mobileScrollContainer = ref<HTMLElement | null>(null)
@@ -60,6 +62,16 @@ const hideTimeout = ref<NodeJS.Timeout|null>(null)
 const transcriptionHistory = computed(() => transcription.value.final)
 const autoScrollEnabled = ref(true)
 const isAutoScrolling = ref(false)
+
+const rtcConfig = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle' as RTCBundlePolicy
+}
+
+const addLog = (msg: string) => {
+  console.log(`[WebRTC] ${msg}`)
+}
 
 /** Tras 1 min sin nuevo anuncio, el vídeo llena la columna izquierda bajo el encabezado. */
 const leftColumnVideoFullscreen = ref(false)
@@ -220,6 +232,16 @@ const initReceiver = async (offer: any, broadcasterId: string) => {
     addLog(event.track.kind === 'audio' ? 'Track de audio recibido' : 'Track de video recibido')
     remoteStream.value = event.streams[0]
     videoRTC.value = true
+    
+    // Apply jitter buffer hint (mini-buffer)
+    if ('playoutDelayHint' in event.receiver) {
+      try {
+        (event.receiver as any).playoutDelayHint = 0.5 // 500ms delay hint
+        addLog(`Playout delay hint set for ${event.track.kind}`)
+      } catch (e) {
+        console.warn('Failed to set playoutDelayHint', e)
+      }
+    }
   }
 
   const needsInteraction = ref(false)
@@ -274,7 +296,6 @@ const initReceiver = async (offer: any, broadcasterId: string) => {
 onMounted(() => {
   connect()
   fetchHistory()
-  pollInterval.value = setInterval(fetchHistory, 1000)
 
   // Arrancar idle timer si ya hay un anuncio previo
   if (lastAnnouncementUpdate.value > 0) resetIdleTimer()
@@ -314,6 +335,7 @@ onMounted(() => {
 watch(lastAnnouncementUpdate, (next, prev) => {
   if (next <= 0) return
   resetIdleTimer()
+  fetchHistory() // Refresh history when new announcement arrives
 })
 
 // Auto-scroll transcription monitor & auto-hide logic
@@ -359,7 +381,6 @@ watch(isMobileExpanded, (expanded) => {
 })
 
 onUnmounted(() => {
-  if (pollInterval.value) clearInterval(pollInterval.value)
   if (idleTimer) clearTimeout(idleTimer)
   disconnect()
 })
@@ -406,7 +427,7 @@ watch(videoRTC, (on) => {
 
 const leftHistoryAreaClass = computed(() => {
   const base =
-    'flex-1 min-h-0 overflow-y-auto scroll-smooth group/container transition-all duration-700 ease-in-out print:!flex-auto print:!max-h-none print:!opacity-100 print:!overflow-y-auto print:!pointer-events-auto'
+    'flex-1 min-h-0 overflow-y-auto scroll-smooth group/container transition-all duration-700 ease-in-out print:!flex-auto print:!max-h-none print:!opacity-100 print:!overflow-y-auto print:!pointer-events-auto will-change-[height,opacity]'
   return base
 })
 
@@ -416,9 +437,12 @@ const leftHistoryStyle = computed(() => {
   return { paddingBottom: '35vh' }
 })
 
-/** Video siempre absolute bottom-0; height anima entre 35 vh y 100% */
-const leftVideoAreaClass =
-  'bg-black overflow-hidden absolute bottom-0 left-0 right-0 z-20 transition-[height,opacity] duration-700 ease-in-out'
+/** Video siempre bottom-0; height anima entre 35 vh y 100% */
+const leftVideoAreaClass = computed(() => {
+  const base = 'bg-black overflow-hidden bottom-0 left-0 right-0 z-30 transition-[height,opacity] duration-700 ease-in-out will-change-[height,opacity]'
+  // En mobile usamos fixed para asegurar que se vea sobre todo el viewport
+  return `${base} fixed lg:absolute`
+})
 
 const leftVideoStyle = computed(() => ({
   height: leftColumnVideoFullscreen.value ? '100%' : '35vh'
@@ -430,9 +454,9 @@ const generatePdf = () => {
 </script>
 
 <template>
-  <div class="min-h-screen lg:h-screen lg:grid lg:grid-cols-2 lg:overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
+  <div class="h-svh lg:grid lg:grid-cols-2 overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
     <!-- Left Column: Announcements + Video -->
-    <div class="flex flex-col h-full min-h-0 bg-white overflow-hidden relative">
+    <div class="flex flex-col h-svh lg:h-full min-h-0 bg-white overflow-hidden relative">
       <!-- Fixed Header -->
       <div class="bg-white px-6 pt-12 sm:pt-20 pb-8 border-b border-neutral-50 z-10">
         <div class="max-w-2xl mx-auto">

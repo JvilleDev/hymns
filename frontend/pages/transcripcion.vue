@@ -40,13 +40,11 @@ const selectedMicrophoneId = ref<string>('')
 const previewVideo = ref<HTMLVideoElement | null>(null)
 
 /** Tracks sent to viewers (video from local preview + opcionalmente micrófono seleccionado) */
-const rtcOutboundStream = ref<MediaStream | null>(null)
-/** Captura exclusiva para WebRTC — distinta del audio usado solo para el VU meter en STT */
-const broadcastMicStream = ref<MediaStream | null>(null)
-
-const localStream = ref<MediaStream | null>(null)
-const peerConnections = ref(new Map<string, RTCPeerConnection>())
-const iceQueues = ref(new Map<string, any[]>())
+const rtcOutboundStream = shallowRef<MediaStream | null>(null)
+const broadcastMicStream = shallowRef<MediaStream | null>(null)
+const localStream = shallowRef<MediaStream | null>(null)
+const peerConnections = shallowRef(new Map<string, RTCPeerConnection>())
+const iceQueues = shallowRef(new Map<string, any[]>())
 
 let onDeviceInputsChanged: (() => void) | null = null
 
@@ -80,7 +78,9 @@ const processIceQueue = (viewerId: string) => {
 }
 
 const rtcConfig = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle' as RTCBundlePolicy
 }
 
 /** Rebuilds the logical outbound stream descriptor (tracks are those from local preview + mic broadcast). */
@@ -252,11 +252,11 @@ const initSender = async (viewerId: string) => {
       const params = videoSender.getParameters()
       if (params.encodings?.length) {
         params.encodings.forEach(enc => {
-          enc.maxBitrate = 2_500_000
+          enc.maxBitrate = 1_500_000 // Lowered from 2.5 Mbps for stability
           enc.maxFramerate = 30
         })
       } else {
-        params.encodings = [{ maxBitrate: 2_500_000, maxFramerate: 30 }]
+        params.encodings = [{ maxBitrate: 1_500_000, maxFramerate: 30 }]
       }
       await videoSender.setParameters(params).catch(e => addLog(`setParameters warn: ${e.message}`))
     }
@@ -357,10 +357,10 @@ const TRANSITION_WORDS = [
 const isSomeoneElseTranscribing = computed(() => transcription.value.producing && !isLocalProducer.value)
 
 const inactivityTimer = ref<NodeJS.Timeout | null>(null)
-const audioContext = ref<AudioContext | null>(null)
-const analyser = ref<AnalyserNode | null>(null)
-const microphone = ref<MediaStreamAudioSourceNode | null>(null)
-const vuMeterMicStream = ref<MediaStream | null>(null)
+const audioContext = shallowRef<AudioContext | null>(null)
+const analyser = shallowRef<AnalyserNode | null>(null)
+const microphone = shallowRef<MediaStreamAudioSourceNode | null>(null)
+const vuMeterMicStream = shallowRef<MediaStream | null>(null)
 const currentVolume = ref(0)
 const lastActiveTime = ref(Date.now())
 
@@ -654,7 +654,12 @@ const startAudioAnalysis = async () => {
         sum += dataArray[i]
       }
       const average = sum / bufferLength
-      currentVolume.value = average / 128 // Normalize to 0-1 approx
+      const val = average / 128
+      
+      // Throttle reactive updates
+      if (Math.abs(val - currentVolume.value) > 0.05) {
+        currentVolume.value = val
+      }
       
       requestAnimationFrame(analyze)
     }

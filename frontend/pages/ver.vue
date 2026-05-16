@@ -43,7 +43,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="relative h-svh w-svw overflow-hidden flex flex-col transition-all duration-500 ease-in-out">
+  <main class="relative h-svh w-svw overflow-hidden flex flex-col transition-all duration-500 ease-in-out will-change-[transform,opacity]">
 
     <!-- Lyric Content Layer -->
     <div class="flex-1 w-full flex items-end justify-center transition-all duration-500 ease-in-out" :class="[
@@ -99,6 +99,7 @@ body {
 .lyric-fade-enter-active,
 .lyric-fade-leave-active {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
 }
 
 .lyric-fade-enter-from {
@@ -115,6 +116,7 @@ body {
 .slide-up-enter-active,
 .slide-up-leave-active {
   transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
 }
 
 .slide-up-enter-from,
