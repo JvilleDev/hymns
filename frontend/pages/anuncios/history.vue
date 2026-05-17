@@ -63,6 +63,33 @@ const transcriptionHistory = computed(() => transcription.value.final)
 const autoScrollEnabled = ref(true)
 const isAutoScrolling = ref(false)
 
+const needsInteraction = ref(false)
+
+const startVideoManually = () => {
+  needsInteraction.value = false
+  if (videoElement.value) videoElement.value.play().catch(() => {})
+  if (videoElementBg.value) videoElementBg.value.play().catch(() => {})
+}
+
+const assignStream = () => {
+  const stream = remoteStream.value
+  if (!stream) return
+  
+  if (videoElement.value && videoElement.value.srcObject !== stream) {
+    addLog('Asignando stream a video principal')
+    videoElement.value.srcObject = stream
+    videoElement.value.play().catch(e => {
+      addLog(`Play principal blocked: ${e.message}`)
+      needsInteraction.value = true
+    })
+  }
+  if (videoElementBg.value && videoElementBg.value.srcObject !== stream) {
+    addLog('Asignando stream a video background')
+    videoElementBg.value.srcObject = stream
+    videoElementBg.value.play().catch(e => addLog(`Play background blocked: ${e.message}`))
+  }
+}
+
 const rtcConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
   iceCandidatePoolSize: 10,
@@ -72,6 +99,85 @@ const rtcConfig = {
 const addLog = (msg: string) => {
   console.log(`[WebRTC] ${msg}`)
 }
+
+// ── Audio meter ──────────────────────────────────────────
+const audioCanvasRef = ref<HTMLCanvasElement | null>(null)
+const audioLevel = ref(0)
+
+let audioCtx: AudioContext | null = null
+let analyserNode: AnalyserNode | null = null
+let sourceNode: MediaStreamAudioSourceNode | null = null
+let audioRafId: number | null = null
+const AUDIO_BARS = 8
+
+const drawAudioMeter = () => {
+  if (!analyserNode || !audioCanvasRef.value) {
+    audioRafId = requestAnimationFrame(drawAudioMeter)
+    return
+  }
+
+  const canvas = audioCanvasRef.value
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const dataArray = new Uint8Array(analyserNode.frequencyBinCount)
+  analyserNode.getByteFrequencyData(dataArray)
+
+  let sum = 0
+  for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
+  const avg = sum / dataArray.length / 255
+  audioLevel.value = avg
+
+  const w = canvas.width / AUDIO_BARS
+  const h = canvas.height
+
+  ctx.clearRect(0, 0, canvas.width, h)
+
+  for (let i = 0; i < AUDIO_BARS; i++) {
+    const bandStart = Math.floor((i / AUDIO_BARS) * dataArray.length)
+    const bandEnd = Math.floor(((i + 1) / AUDIO_BARS) * dataArray.length)
+    let bandSum = 0
+    for (let j = bandStart; j < bandEnd; j++) bandSum += dataArray[j]
+    const bandAvg = bandSum / (bandEnd - bandStart) / 255
+
+    const barH = Math.max(2, bandAvg * h)
+    const x = i * w + 1
+    const barW = w - 2
+    const ratio = barH / h
+
+    if (ratio < 0.25) ctx.fillStyle = '#22c55e'
+    else if (ratio < 0.55) ctx.fillStyle = '#eab308'
+    else ctx.fillStyle = '#ef4444'
+
+    ctx.fillRect(x, h - barH, barW, barH)
+  }
+
+  audioRafId = requestAnimationFrame(drawAudioMeter)
+}
+
+const startAudioMeter = async (stream: MediaStream) => {
+  stopAudioMeter()
+  audioCtx = new AudioContext()
+  if (audioCtx.state === 'suspended') await audioCtx.resume()
+  analyserNode = audioCtx.createAnalyser()
+  analyserNode.fftSize = 128
+  sourceNode = audioCtx.createMediaStreamSource(stream)
+  sourceNode.connect(analyserNode)
+  drawAudioMeter()
+}
+
+const stopAudioMeter = () => {
+  if (audioRafId) cancelAnimationFrame(audioRafId)
+  audioRafId = null
+  if (sourceNode) sourceNode.disconnect()
+  if (analyserNode) analyserNode.disconnect()
+  if (audioCtx) audioCtx.close()
+  analyserNode = null
+  sourceNode = null
+  audioCtx = null
+  audioLevel.value = 0
+}
+// ── end Audio meter ──────────────────────────────────────
 
 /** Tras 1 min sin nuevo anuncio, el vídeo llena la columna izquierda bajo el encabezado. */
 const leftColumnVideoFullscreen = ref(false)
@@ -89,8 +195,12 @@ const resetIdleTimer = () => {
   
   addLog(`Checking idle timer: at=${at}, video=${hasVideo}`)
 
-  if (at <= 0 || !hasVideo) {
+  if (!hasVideo) {
     leftColumnVideoFullscreen.value = false
+    return
+  }
+  if (at <= 0) {
+    leftColumnVideoFullscreen.value = true
     return
   }
 
@@ -213,6 +323,8 @@ const initReceiver = async (offer: any, broadcasterId: string) => {
     return
   }
 
+  needsInteraction.value = false
+
   addLog(`Oferta recibida de ${broadcasterId}, iniciando receptor...`)
   if (pc.value) {
     pc.value.close()
@@ -241,33 +353,6 @@ const initReceiver = async (offer: any, broadcasterId: string) => {
       } catch (e) {
         console.warn('Failed to set playoutDelayHint', e)
       }
-    }
-  }
-
-  const needsInteraction = ref(false)
-
-  const startVideoManually = () => {
-    needsInteraction.value = false
-    if (videoElement.value) videoElement.value.play().catch(() => {})
-    if (videoElementBg.value) videoElementBg.value.play().catch(() => {})
-  }
-
-  const assignStream = () => {
-    const stream = remoteStream.value
-    if (!stream) return
-    
-    if (videoElement.value && videoElement.value.srcObject !== stream) {
-      addLog('Asignando stream a video principal')
-      videoElement.value.srcObject = stream
-      videoElement.value.play().catch(e => {
-        addLog(`Play principal blocked: ${e.message}`)
-        needsInteraction.value = true
-      })
-    }
-    if (videoElementBg.value && videoElementBg.value.srcObject !== stream) {
-      addLog('Asignando stream a video background')
-      videoElementBg.value.srcObject = stream
-      videoElementBg.value.play().catch(e => addLog(`Play background blocked: ${e.message}`))
     }
   }
 
@@ -382,6 +467,7 @@ watch(isMobileExpanded, (expanded) => {
 
 onUnmounted(() => {
   if (idleTimer) clearTimeout(idleTimer)
+  stopAudioMeter()
   disconnect()
 })
 
@@ -419,10 +505,14 @@ watch(videoRTC, (on) => {
   if (!on) {
     leftColumnVideoFullscreen.value = false
     if (idleTimer) clearTimeout(idleTimer)
-  } else if (lastAnnouncementUpdate.value > 0) {
-    // Video conectado con anuncio previo → arrancar timer
+  } else {
     resetIdleTimer()
   }
+})
+
+watch(remoteStream, (stream) => {
+  if (stream) startAudioMeter(stream)
+  else stopAudioMeter()
 })
 
 const leftHistoryAreaClass = computed(() => {
@@ -456,7 +546,7 @@ const generatePdf = () => {
 <template>
   <div class="h-svh lg:grid lg:grid-cols-2 overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
     <!-- Left Column: Announcements + Video -->
-    <div class="flex flex-col h-svh lg:h-full min-h-0 bg-white overflow-hidden relative">
+    <div class="flex flex-col h-svh lg:h-full min-h-0 bg-white overflow-hidden">
       <!-- Fixed Header -->
       <div class="bg-white px-6 pt-12 sm:pt-20 pb-8 border-b border-neutral-50 z-10">
         <div class="max-w-2xl mx-auto">
@@ -483,7 +573,7 @@ const generatePdf = () => {
         </div>
       </div>
 
-      <div class="flex flex-col flex-1 min-h-0">
+      <div class="flex flex-col flex-1 min-h-0 relative">
         <!-- Announcements History (Scrollable) -->
         <div :class="leftHistoryAreaClass" :style="leftHistoryStyle">
           <div class="max-w-2xl mx-auto px-6 py-12 print:py-12">
@@ -649,6 +739,20 @@ const generatePdf = () => {
           </div>
           <div class="flex flex-col">
             <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+          </div>
+          <div class="ml-auto flex items-center gap-2">
+            <canvas
+              ref="audioCanvasRef"
+              width="64"
+              height="20"
+              class="rounded opacity-60"
+            ></canvas>
+            <span
+              class="text-[9px] font-bold uppercase tracking-wider transition-colors duration-300"
+              :class="audioLevel > 0.05 ? 'text-green-400' : 'text-white/20'"
+            >
+              <Icon name="tabler:wave-sine" class="size-3" />
+            </span>
           </div>
         </div>
       </div>
