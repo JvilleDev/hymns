@@ -26,13 +26,8 @@ const maxErrors = 10
 const isLocalProducer = ref(false)
 const lastFinalTimestamp = ref(Date.now())
 
-const availableCameras = ref<MediaDeviceInfo[]>([])
-const selectedCameraId = ref<string>('')
 const availableMicrophones = ref<MediaDeviceInfo[]>([])
 const selectedMicrophoneId = ref<string>('')
-const previewVideo = ref<HTMLVideoElement | null>(null)
-
-const localStream = shallowRef<MediaStream | null>(null)
 
 let onDeviceInputsChanged: (() => void) | null = null
 
@@ -46,42 +41,6 @@ const attachMicEnumerateRetryOnFirstPointer = () => {
     () => void getMicrophones(),
     { once: true, capture: true, passive: true }
   )
-}
-
-const initCamera = async () => {
-  try {
-    const videoConstraints: MediaTrackConstraints = selectedCameraId.value
-      ? { deviceId: { exact: selectedCameraId.value }, width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } }
-      : { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } }
-
-    if (localStream.value) {
-      localStream.value.getTracks().forEach(t => t.stop())
-    }
-
-    localStream.value = await navigator.mediaDevices.getUserMedia({
-      video: videoConstraints,
-      audio: false
-    })
-    
-    if (previewVideo.value) {
-      previewVideo.value.srcObject = localStream.value
-    }
-  } catch (e) {
-    console.error('[Camera] Error initializing camera:', e)
-    toast.error('Error al acceder a la cámara')
-  }
-}
-
-const getCameras = async () => {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    availableCameras.value = devices.filter(d => d.kind === 'videoinput')
-    if (availableCameras.value.length && !selectedCameraId.value) {
-      selectedCameraId.value = availableCameras.value[0].deviceId
-    }
-  } catch (e) {
-    console.error('[WebRTC] Error listing cameras:', e)
-  }
 }
 
 const dedupeDevices = (list: MediaDeviceInfo[]) => {
@@ -534,11 +493,6 @@ onMounted(() => {
 
   void (async () => {
     try {
-      await initCamera()
-    } catch (e) {
-      console.error('[Transcripción] Fallo al iniciar cámara', e)
-    }
-    try {
       await getMicrophones()
     } catch (e) {
       console.error('[Transcripción] Fallo al listar micrófonos', e)
@@ -555,9 +509,6 @@ onUnmounted(() => {
   setTranscriptionProducing(false)
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   stopAudioAnalysis()
-  if (localStream.value) {
-    localStream.value.getTracks().forEach(t => t.stop())
-  }
   if (onDeviceInputsChanged) {
     navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceInputsChanged)
     onDeviceInputsChanged = null
@@ -581,8 +532,8 @@ definePageMeta({
 
     <div v-else class="h-[90vh] w-full max-w-[1600px] mx-auto flex flex-col lg:flex-row gap-8">
       
-      <!-- Sidebar: Controls & Preview -->
-      <aside class="w-full lg:w-[400px] flex flex-col gap-6 shrink-0 h-full overflow-y-auto pr-2">
+      <!-- Sidebar: Controls -->
+      <aside class="w-full lg:w-[340px] flex flex-col gap-6 shrink-0 h-full overflow-y-auto pr-2">
         
         <!-- Header -->
         <header class="space-y-4">
@@ -607,42 +558,6 @@ definePageMeta({
             </div>
           </div>
         </header>
-
-        <!-- Video Preview Area -->
-        <div class="relative group aspect-video w-full bg-black rounded-[2rem] overflow-hidden shadow-2xl ring-1 ring-neutral-200">
-           <video 
-             ref="previewVideo" 
-             autoplay 
-             muted 
-             playsinline 
-             class="w-full h-full object-cover"
-           ></video>
-           <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end p-6">
-              <div class="flex items-center gap-2">
-                <div class="size-2 rounded-full bg-blue-500"></div>
-                <span class="text-[10px] font-black text-white uppercase tracking-[0.2em]">Vista Previa</span>
-              </div>
-           </div>
-        </div>
-
-        <!-- Camera Selector -->
-        <div class="flex items-center gap-3 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
-          <div class="size-10 bg-neutral-50 rounded-xl flex items-center justify-center text-neutral-400">
-            <Icon name="tabler:video" class="size-5" />
-          </div>
-          <div class="flex-1 min-w-0 relative">
-            <select 
-              v-model="selectedCameraId"
-              @change="initCamera"
-              class="w-full bg-transparent border-none py-1 pr-8 text-[11px] font-bold uppercase tracking-widest text-neutral-600 focus:ring-0 outline-none appearance-none cursor-pointer truncate"
-            >
-              <option v-for="cam in availableCameras" :key="cam.deviceId" :value="cam.deviceId">
-                {{ cam.label || `Cámara ${availableCameras.indexOf(cam) + 1}` }}
-              </option>
-            </select>
-            <Icon name="tabler:chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
-          </div>
-        </div>
 
         <!-- Microphone Selector -->
         <div class="flex items-center gap-3 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
