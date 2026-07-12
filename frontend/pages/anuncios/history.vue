@@ -324,22 +324,32 @@ const generatePdf = () => {
 
         <!-- Spotlight text -->
         <div v-else-if="spotlight" class="w-full max-w-4xl text-center">
-          <div class="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-            <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
-              <Icon
-                v-if="segment.type === 'icon'"
-                :name="segment.value"
-                :class="segment.class"
-                class="size-12 mb-1"
-              />
-              <span
-                v-else
-                v-html="segment.value"
-                :class="segment.class"
-                class="text-7xl font-black leading-none"
-              ></span>
-            </template>
-          </div>
+          <Transition
+            mode="out-in"
+            enter-active-class="transition duration-500 ease-out"
+            enter-from-class="opacity-0 translate-y-2"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition duration-300 ease-in"
+            leave-from-class="opacity-100 translate-y-0"
+            leave-to-class="opacity-0 -translate-y-2"
+          >
+            <div :key="spotlight.text" class="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+              <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
+                <Icon
+                  v-if="segment.type === 'icon'"
+                  :name="segment.value"
+                  :class="segment.class"
+                  class="size-6 mb-1"
+                />
+                <span
+                  v-else
+                  v-html="segment.value"
+                  :class="segment.class"
+                  class="text-3xl font-bold leading-snug"
+                ></span>
+              </template>
+            </div>
+          </Transition>
         </div>
       </div>
 
@@ -407,7 +417,7 @@ const generatePdf = () => {
     <!-- Right Panel: Live Transcription -->
     <aside
       v-if="showTranscription"
-      class="hidden lg:flex flex-col h-full w-96 bg-black text-white relative overflow-hidden shrink-0"
+      class="hidden lg:flex flex-col h-full w-[480px] bg-black text-white relative overflow-hidden shrink-0"
     >
       <div class="p-10 pb-0">
         <div class="flex items-center gap-4 mb-6">
