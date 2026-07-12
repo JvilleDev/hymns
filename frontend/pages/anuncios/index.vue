@@ -15,7 +15,7 @@ const { icons: availableIcons } = useAnnouncementIcons()
 
 const textInput = ref('')
 const currentTopic = ref(announcement.value.topic || '')
-const isLoading = ref(false)
+const isLoading = ref(true)
 const history = ref<any[]>([])
 const showMobileHistory = ref(false)
 const transcriptionScrollRef = ref<HTMLElement | null>(null)
@@ -504,8 +504,17 @@ onMounted(() => {
             </div>
           </div>
 
+          <!-- Loading skeleton -->
+          <div v-if="isLoading && history.length === 0" class="space-y-1">
+            <div v-for="n in 4" :key="n" class="flex items-center gap-3 px-3 py-2">
+              <GSkeleton class="size-4 rounded border-2 shrink-0" />
+              <GSkeleton class="h-3.5 flex-1 rounded" />
+              <GSkeleton class="h-2.5 w-12 rounded shrink-0" />
+            </div>
+          </div>
+
           <!-- Empty state -->
-          <div v-if="history.length === 0" class="py-12 flex flex-col items-center text-muted-foreground/15">
+          <div v-else-if="history.length === 0" class="py-12 flex flex-col items-center text-muted-foreground/15">
             <Icon name="tabler:archive" class="size-8 mb-2" />
             <p class="text-[9px] font-black uppercase tracking-widest">Sin anuncios</p>
           </div>
@@ -616,7 +625,6 @@ onMounted(() => {
         <div class="flex flex-col bg-background p-8">
           <div class="flex items-center justify-between mb-6">
              <h2 class="text-lg font-black uppercase tracking-[0.2em]">Comandos</h2>
-             <button @click="showHelp = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-6" /></button>
           </div>
           <div class="grid gap-2">
              <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">

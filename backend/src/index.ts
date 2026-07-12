@@ -278,6 +278,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
         from,
         to,
       });
+      broadcast(clientId, { type: "historyRefresh", data: true });
       if (data.active && state.transcription.active) {
         state.transcription.active = false;
         broadcast(clientId, {
@@ -545,6 +546,7 @@ app.post("/api/anuncios", (req, res) => {
       "INSERT INTO anuncios (id, text, topic, createdAt, clientId) VALUES (?, ?, ?, ?, ?)",
     );
     insert.run(id, text, topic || null, createdAt, clientId);
+    broadcast(clientId, { type: "historyRefresh", data: true });
     res.json({ id, text, topic: topic || null, createdAt, clientId });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -556,6 +558,7 @@ app.delete("/api/anuncios/:id", (req, res) => {
     const clientId = (req.headers["x-client-id"] as string) || "default";
     const query = db.query("DELETE FROM anuncios WHERE id = ? AND clientId = ?");
     query.run(req.params.id, clientId);
+    broadcast(clientId, { type: "historyRefresh", data: true });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -567,6 +570,7 @@ app.delete("/api/anuncios", (req, res) => {
     const clientId = (req.headers["x-client-id"] as string) || "default";
     const query = db.query("DELETE FROM anuncios WHERE clientId = ?");
     query.run(clientId);
+    broadcast(clientId, { type: "historyRefresh", data: true });
     res.json({ success: true, message: "All announcements deleted for this client" });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -587,6 +591,7 @@ app.post("/api/anuncios/delete-selected", (req, res) => {
         query.run(id, clientId);
       }
     })();
+    broadcast(clientId, { type: "historyRefresh", data: true });
     res.json({ success: true, count: ids.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

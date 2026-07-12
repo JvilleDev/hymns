@@ -39,6 +39,8 @@ export const useRealtime = () => {
   }))
   /** Marca de tiempo del servidor para el último cambio en anuncio (ms). */
   const lastAnnouncementUpdate = useState('realtime:lastAnnouncementUpdate', () => 0)
+  /** Incrementa cada vez que el server pide refrescar historial. */
+  const historyRefreshVersion = useState('realtime:historyRefreshVersion', () => 0)
 
   const handleMessage = (payload: string) => {
     try {
@@ -105,6 +107,7 @@ export const useRealtime = () => {
           break
 
         case 'historyRefresh':
+          historyRefreshVersion.value++
           break
       }
     } catch (e) {
@@ -267,6 +270,7 @@ export const useRealtime = () => {
     announcement,
     transcription,
     lastAnnouncementUpdate,
+    historyRefreshVersion,
     connect,
     disconnect,
     sendLine,
