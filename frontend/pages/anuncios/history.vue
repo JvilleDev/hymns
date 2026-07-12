@@ -12,16 +12,8 @@ const {
   lastAnnouncementUpdate,
   connect, 
   disconnect, 
-  sendWebRTCOffer, 
-  sendWebRTCAnswer, 
-  sendWebRTCCandidate, 
-  sendWebRTCRequest, 
-  onWebRTCOffer, 
-  onWebRTCAnswer, 
-  onWebRTCCandidate, 
-    onWebRTCRequest,
-    connectionId
-  } = useRealtime()
+  connectionId
+} = useRealtime()
 const { parseHTML: originalParseHTML } = useContentParser()
 
 // Memoize HTML parsing to avoid heavy template work
@@ -36,24 +28,8 @@ const parseHTML = (text: string) => {
   return result
 }
 
-const route = useRoute()
-
-/** Por defecto el audio remoto está silenciado; use ?audio=true en la URL para escuchar el micrófono del transmitter. */
-const playRemoteRtcAudio = computed(() => {
-  const v = route.query.audio
-  const s = Array.isArray(v) ? v[0] : v
-  return s === 'true' || s === '1'
-})
-
-const videoRTC = ref(false)
-const videoElement = ref<HTMLVideoElement | null>(null)
-const videoElementBg = ref<HTMLVideoElement | null>(null)
-const pc = shallowRef<RTCPeerConnection | null>(null)
-const remoteStream = shallowRef<MediaStream | null>(null)
-const iceQueue = ref<any[]>([])
 const history = shallowRef<any[]>([])
 const isLoading = ref(true)
-const scrollContainer = ref<HTMLElement | null>(null)
 const desktopScrollContainer = ref<HTMLElement | null>(null)
 const mobileScrollContainer = ref<HTMLElement | null>(null)
 const showMonitor = ref(false)
@@ -62,165 +38,7 @@ const hideTimeout = ref<NodeJS.Timeout|null>(null)
 const transcriptionHistory = computed(() => transcription.value.final)
 const autoScrollEnabled = ref(true)
 const isAutoScrolling = ref(false)
-
-const needsInteraction = ref(false)
-
-const startVideoManually = () => {
-  needsInteraction.value = false
-  if (videoElement.value) videoElement.value.play().catch(() => {})
-  if (videoElementBg.value) videoElementBg.value.play().catch(() => {})
-}
-
-const assignStream = () => {
-  const stream = remoteStream.value
-  if (!stream) return
-  
-  if (videoElement.value && videoElement.value.srcObject !== stream) {
-    addLog('Asignando stream a video principal')
-    videoElement.value.srcObject = stream
-    videoElement.value.play().catch(e => {
-      addLog(`Play principal blocked: ${e.message}`)
-      needsInteraction.value = true
-    })
-  }
-  if (videoElementBg.value && videoElementBg.value.srcObject !== stream) {
-    addLog('Asignando stream a video background')
-    videoElementBg.value.srcObject = stream
-    videoElementBg.value.play().catch(e => addLog(`Play background blocked: ${e.message}`))
-  }
-}
-
-const rtcConfig = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-  iceCandidatePoolSize: 10,
-  bundlePolicy: 'max-bundle' as RTCBundlePolicy
-}
-
-const addLog = (msg: string) => {
-  console.log(`[WebRTC] ${msg}`)
-}
-
-// ── Audio meter ──────────────────────────────────────────
-const audioCanvasRef = ref<HTMLCanvasElement | null>(null)
-const audioLevel = ref(0)
-
-let audioCtx: AudioContext | null = null
-let analyserNode: AnalyserNode | null = null
-let sourceNode: MediaStreamAudioSourceNode | null = null
-let audioRafId: number | null = null
-const AUDIO_BARS = 8
-
-const drawAudioMeter = () => {
-  if (!analyserNode || !audioCanvasRef.value) {
-    audioRafId = requestAnimationFrame(drawAudioMeter)
-    return
-  }
-
-  const canvas = audioCanvasRef.value
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  const dataArray = new Uint8Array(analyserNode.frequencyBinCount)
-  analyserNode.getByteFrequencyData(dataArray)
-
-  let sum = 0
-  for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
-  const avg = sum / dataArray.length / 255
-  audioLevel.value = avg
-
-  const w = canvas.width / AUDIO_BARS
-  const h = canvas.height
-
-  ctx.clearRect(0, 0, canvas.width, h)
-
-  for (let i = 0; i < AUDIO_BARS; i++) {
-    const bandStart = Math.floor((i / AUDIO_BARS) * dataArray.length)
-    const bandEnd = Math.floor(((i + 1) / AUDIO_BARS) * dataArray.length)
-    let bandSum = 0
-    for (let j = bandStart; j < bandEnd; j++) bandSum += dataArray[j]
-    const bandAvg = bandSum / (bandEnd - bandStart) / 255
-
-    const barH = Math.max(2, bandAvg * h)
-    const x = i * w + 1
-    const barW = w - 2
-    const ratio = barH / h
-
-    if (ratio < 0.25) ctx.fillStyle = '#22c55e'
-    else if (ratio < 0.55) ctx.fillStyle = '#eab308'
-    else ctx.fillStyle = '#ef4444'
-
-    ctx.fillRect(x, h - barH, barW, barH)
-  }
-
-  audioRafId = requestAnimationFrame(drawAudioMeter)
-}
-
-const startAudioMeter = async (stream: MediaStream) => {
-  stopAudioMeter()
-  audioCtx = new AudioContext()
-  if (audioCtx.state === 'suspended') await audioCtx.resume()
-  analyserNode = audioCtx.createAnalyser()
-  analyserNode.fftSize = 128
-  sourceNode = audioCtx.createMediaStreamSource(stream)
-  sourceNode.connect(analyserNode)
-  drawAudioMeter()
-}
-
-const stopAudioMeter = () => {
-  if (audioRafId) cancelAnimationFrame(audioRafId)
-  audioRafId = null
-  if (sourceNode) sourceNode.disconnect()
-  if (analyserNode) analyserNode.disconnect()
-  if (audioCtx) audioCtx.close()
-  analyserNode = null
-  sourceNode = null
-  audioCtx = null
-  audioLevel.value = 0
-}
-// ── end Audio meter ──────────────────────────────────────
-
-/** Tras 1 min sin nuevo anuncio, el vídeo llena la columna izquierda bajo el encabezado. */
-const leftColumnVideoFullscreen = ref(false)
-
-let idleTimer: ReturnType<typeof setTimeout> | null = null
-
-const ANNOUNCEMENT_IDLE_MS = 60_000
-
-/** Reinicia el contador de inactividad basándose en el timestamp del último anuncio. */
-const resetIdleTimer = () => {
-  if (idleTimer) clearTimeout(idleTimer)
-  
-  const at = lastAnnouncementUpdate.value
-  const hasVideo = videoRTC.value
-  
-  addLog(`Checking idle timer: at=${at}, video=${hasVideo}`)
-
-  if (!hasVideo) {
-    leftColumnVideoFullscreen.value = false
-    return
-  }
-  if (at <= 0) {
-    leftColumnVideoFullscreen.value = true
-    return
-  }
-
-  const elapsed = Date.now() - at
-  const remaining = ANNOUNCEMENT_IDLE_MS - elapsed
-
-  if (remaining <= 0) {
-    addLog('Idle threshold reached, setting fullscreen')
-    leftColumnVideoFullscreen.value = true
-  } else {
-    addLog(`Still active, waiting ${remaining}ms`)
-    leftColumnVideoFullscreen.value = false
-    idleTimer = setTimeout(() => {
-      if (videoRTC.value) {
-        addLog('Idle timer fired, setting fullscreen')
-        leftColumnVideoFullscreen.value = true
-      }
-    }, remaining)
-  }
-}
+const scrollContainer = ref<HTMLElement | null>(null)
 
 const handleScroll = () => {
     if (!desktopScrollContainer.value || isAutoScrolling.value) return
@@ -294,7 +112,6 @@ const fetchHistory = async () => {
 
 const copyToClipboard = async (text: string) => {
   try {
-    // Strip HTML tags for clean text copying
     const plainText = text.replace(/<[^>]*>/g, '')
     await navigator.clipboard.writeText(plainText)
     toast.success('Copiado al portapapeles', {
@@ -306,121 +123,14 @@ const copyToClipboard = async (text: string) => {
   }
 }
 
-const processIceQueue = () => {
-  if (!pc.value || !pc.value.remoteDescription) return
-  while (iceQueue.value.length > 0) {
-    const candidate = iceQueue.value.shift()
-    pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
-      console.warn('[WebRTC] Error processing queued candidate', e)
-    })
-  }
-}
-
-const initReceiver = async (offer: any, broadcasterId: string) => {
-  // If we are already negotiating or connected, and the state is not stable, ignore new offers
-  // to avoid the "Called in wrong state" error.
-  if (pc.value && pc.value.signalingState !== 'stable') {
-    return
-  }
-
-  needsInteraction.value = false
-
-  addLog(`Oferta recibida de ${broadcasterId}, iniciando receptor...`)
-  if (pc.value) {
-    pc.value.close()
-  }
-
-  pc.value = new RTCPeerConnection(rtcConfig)
-  addLog('RTCPeerConnection creada')
-
-  pc.value.onicecandidate = (event) => {
-    if (event.candidate) {
-      addLog('Candidato ICE generado')
-      sendWebRTCCandidate(event.candidate, broadcasterId)
-    }
-  }
-
-  pc.value.ontrack = (event) => {
-    addLog(event.track.kind === 'audio' ? 'Track de audio recibido' : 'Track de video recibido')
-    remoteStream.value = event.streams[0]
-    videoRTC.value = true
-    
-    // Apply jitter buffer hint (mini-buffer)
-    if ('playoutDelayHint' in event.receiver) {
-      try {
-        (event.receiver as any).playoutDelayHint = 0.5 // 500ms delay hint
-        addLog(`Playout delay hint set for ${event.track.kind}`)
-      } catch (e) {
-        console.warn('Failed to set playoutDelayHint', e)
-      }
-    }
-  }
-
-  watch([remoteStream, videoElement, videoElementBg], () => {
-    nextTick(assignStream)
-  })
-
-  try {
-    await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
-    addLog('Descripción remota establecida')
-    
-    // Procesar candidatos en cola
-    processIceQueue()
-
-    const answer = await pc.value.createAnswer()
-    addLog('Respuesta WebRTC creada')
-    await pc.value.setLocalDescription(answer)
-    sendWebRTCAnswer(answer, broadcasterId)
-    addLog('Respuesta enviada vía Socket')
-  } catch (e: any) {
-    addLog(`Error en receiver: ${e.message}`)
-    console.error('[WebRTC] Receiver error:', e)
-  }
-}
-
 onMounted(() => {
   connect()
   fetchHistory()
-
-  // Arrancar idle timer si ya hay un anuncio previo
-  if (lastAnnouncementUpdate.value > 0) resetIdleTimer()
-
-  onWebRTCOffer.value = ({ data: offer, from }) => {
-    initReceiver(offer, from)
-  }
-
-  onWebRTCCandidate.value = ({ data: candidate, from }) => {
-    if (pc.value && pc.value.remoteDescription && candidate) {
-      pc.value.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {
-        console.error('[WebRTC] Error adding ice candidate:', e)
-      })
-    } else if (candidate) {
-      iceQueue.value.push(candidate)
-    }
-  }
-  
-  // history.vue doesn't need onWebRTCAnswer, as it is the one sending the answers
-
-  // Request stream if someone is already producing
-  setTimeout(() => {
-    addLog('Enviando petición de stream...')
-    sendWebRTCRequest()
-  }, 1500)
-  
-  // Retry once more just in case
-  setTimeout(() => {
-    if (!videoRTC.value) {
-       addLog('Re-intentando petición de stream...')
-       sendWebRTCRequest()
-    }
-  }, 4000)
 })
 
-// Al recibir un anuncio nuevo: volver a vista partida y reiniciar cuenta regresiva
-watch(lastAnnouncementUpdate, (next, prev) => {
+watch(lastAnnouncementUpdate, (next) => {
   if (next <= 0) return
-  resetIdleTimer()
-  fetchHistory() // Refresh history when new announcement arrives
+  fetchHistory()
 })
 
 // Auto-scroll transcription monitor & auto-hide logic
@@ -453,21 +163,17 @@ watch([() => transcription.value.final, () => transcription.value.interim], ([ne
 
 watch(isMobileExpanded, (expanded) => {
     if (!expanded) {
-        // Resume hide timeout when closing
         if (hideTimeout.value) clearTimeout(hideTimeout.value)
         hideTimeout.value = setTimeout(() => {
             showMonitor.value = false
         }, 5000)
     } else {
-        // Ensure monitor stays visible while expanded
         if (hideTimeout.value) clearTimeout(hideTimeout.value)
         showMonitor.value = true
     }
 })
 
 onUnmounted(() => {
-  if (idleTimer) clearTimeout(idleTimer)
-  stopAudioMeter()
   disconnect()
 })
 
@@ -489,54 +195,13 @@ const formatTimeAgo = (date: Date | string | number) => {
   }).value
 }
 
-// Compute current topic title
 const displayTopic = computed(() => {
     if (announcement.value.active && announcement.value.topic) {
         return announcement.value.topic
     }
-    
-    // Find the latest historical item that has a topic
     const latestWithTopic = history.value.find(item => item.topic)
     return latestWithTopic?.topic || 'Historial'
 })
-
-
-watch(videoRTC, (on) => {
-  if (!on) {
-    leftColumnVideoFullscreen.value = false
-    if (idleTimer) clearTimeout(idleTimer)
-  } else {
-    resetIdleTimer()
-  }
-})
-
-watch(remoteStream, (stream) => {
-  if (stream) startAudioMeter(stream)
-  else stopAudioMeter()
-})
-
-const leftHistoryAreaClass = computed(() => {
-  const base =
-    'flex-1 min-h-0 overflow-y-auto scroll-smooth group/container transition-all duration-700 ease-in-out print:!flex-auto print:!max-h-none print:!opacity-100 print:!overflow-y-auto print:!pointer-events-auto will-change-[height,opacity]'
-  return base
-})
-
-/** Padding inferior para que el contenido no quede tapado por el video parcial */
-const leftHistoryStyle = computed(() => {
-  if (!videoRTC.value || leftColumnVideoFullscreen.value) return {}
-  return { paddingBottom: '35vh' }
-})
-
-/** Video siempre bottom-0; height anima entre 35 vh y 100% */
-const leftVideoAreaClass = computed(() => {
-  const base = 'bg-black overflow-hidden bottom-0 left-0 right-0 z-30 transition-[height,opacity] duration-700 ease-in-out will-change-[height,opacity]'
-  // En mobile usamos fixed para asegurar que se vea sobre todo el viewport
-  return `${base} fixed lg:absolute`
-})
-
-const leftVideoStyle = computed(() => ({
-  height: leftColumnVideoFullscreen.value ? '100%' : '35vh'
-}))
 
 const generatePdf = () => {
   window.print()
@@ -545,7 +210,7 @@ const generatePdf = () => {
 
 <template>
   <div class="h-svh lg:grid lg:grid-cols-2 overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
-    <!-- Left Column: Announcements + Video -->
+    <!-- Left Column: Announcements -->
     <div class="flex flex-col h-svh lg:h-full min-h-0 bg-white overflow-hidden">
       <!-- Fixed Header -->
       <div class="bg-white px-6 pt-12 sm:pt-20 pb-8 border-b border-neutral-50 z-10">
@@ -575,7 +240,7 @@ const generatePdf = () => {
 
       <div class="flex flex-col flex-1 min-h-0 relative">
         <!-- Announcements History (Scrollable) -->
-        <div :class="leftHistoryAreaClass" :style="leftHistoryStyle">
+        <div class="flex-1 min-h-0 overflow-y-auto scroll-smooth group/container print:!flex-auto print:!max-h-none print:!opacity-100 print:!overflow-y-auto print:!pointer-events-auto">
           <div class="max-w-2xl mx-auto px-6 py-12 print:py-12">
         
         <div class="relative">
@@ -662,65 +327,6 @@ const generatePdf = () => {
         </div>
           </div>
         </div>
-
-        <!-- Video (llena la columna si 1 min sin nuevo anuncio; altura anima) -->
-        <Transition
-          enter-active-class="transition-[height,opacity] duration-700 ease-out"
-          enter-from-class="opacity-0"
-          enter-to-class="opacity-100"
-          leave-active-class="transition-[height,opacity] duration-500 ease-in"
-          leave-from-class="opacity-100"
-          leave-to-class="opacity-0"
-        >
-          <div 
-            v-if="videoRTC" 
-            :class="leftVideoAreaClass"
-            :style="leftVideoStyle"
-          >
-             <!-- Background Blur Video -->
-             <video
-               ref="videoElementBg"
-               autoplay
-               playsinline
-               muted
-               class="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-30"
-             ></video>
-
-             <!-- Main Video -->
-             <video
-               ref="videoElement"
-               autoplay
-               playsinline
-               :muted="!playRemoteRtcAudio"
-               class="absolute inset-0 w-full h-full object-contain z-10"
-             ></video>
-
-             <!-- Play Button Overlay (for blocked autoplay) -->
-             <Transition
-               enter-active-class="transition duration-300 ease-out"
-               enter-from-class="opacity-0 scale-95"
-               enter-to-class="opacity-100 scale-100"
-               leave-active-class="transition duration-200 ease-in"
-               leave-from-class="opacity-100 scale-100"
-               leave-to-class="opacity-0 scale-95"
-             >
-               <div 
-                 v-if="needsInteraction"
-                 class="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-               >
-                  <button 
-                    @click="startVideoManually"
-                    class="group flex flex-col items-center gap-4 active:scale-95 transition-transform"
-                  >
-                     <div class="size-20 bg-white rounded-full flex items-center justify-center shadow-2xl group-hover:bg-blue-600 transition-all">
-                        <Icon name="tabler:play-filled" class="size-10 text-black group-hover:text-white transition-colors ml-1" />
-                     </div>
-                     <span class="text-white text-[10px] font-black uppercase tracking-[0.3em] drop-shadow-lg">Activar Transmisión</span>
-                  </button>
-               </div>
-             </Transition>
-          </div>
-        </Transition>
       </div>
     </div>
 
@@ -739,20 +345,6 @@ const generatePdf = () => {
           </div>
           <div class="flex flex-col">
             <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
-          </div>
-          <div class="ml-auto flex items-center gap-2">
-            <canvas
-              ref="audioCanvasRef"
-              width="64"
-              height="20"
-              class="rounded opacity-60"
-            ></canvas>
-            <span
-              class="text-[9px] font-bold uppercase tracking-wider transition-colors duration-300"
-              :class="audioLevel > 0.05 ? 'text-green-400' : 'text-white/20'"
-            >
-              <Icon name="tabler:wave-sine" class="size-3" />
-            </span>
           </div>
         </div>
       </div>

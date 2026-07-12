@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 
 export interface ParsedSong {
     id: string;
@@ -39,11 +39,6 @@ export const useRealtime = () => {
   }))
   /** Marca de tiempo del servidor para el último cambio en anuncio (ms). */
   const lastAnnouncementUpdate = useState('realtime:lastAnnouncementUpdate', () => 0)
-
-  const onWebRTCOffer = ref<((data: any) => void) | null>(null)
-  const onWebRTCAnswer = ref<((data: any) => void) | null>(null)
-  const onWebRTCCandidate = ref<((data: any) => void) | null>(null)
-  const onWebRTCRequest = ref<((data: any) => void) | null>(null)
 
   const handleMessage = (payload: string) => {
     try {
@@ -110,24 +105,6 @@ export const useRealtime = () => {
           break
 
         case 'historyRefresh':
-          // The backend sends this when it clears history due to inactivity
-          // We don't need to do much here because announcement watchers will trigger fetchHistory
-          break
-
-        case 'webrtc-offer':
-          if (onWebRTCOffer.value) onWebRTCOffer.value({ data, from })
-          break
-        
-        case 'webrtc-answer':
-          if (onWebRTCAnswer.value) onWebRTCAnswer.value({ data, from })
-          break
-        
-        case 'webrtc-ice-candidate':
-          if (onWebRTCCandidate.value) onWebRTCCandidate.value({ data, from })
-          break
-        
-        case 'webrtc-request':
-          if (onWebRTCRequest.value) onWebRTCRequest.value({ data, from })
           break
       }
     } catch (e) {
@@ -279,11 +256,6 @@ export const useRealtime = () => {
     sendEvent('transcriptionUpdate', data)
   }
 
-  const sendWebRTCOffer = (offer: any, to: string) => sendEvent('webrtc-offer', offer, to)
-  const sendWebRTCAnswer = (answer: any, to: string) => sendEvent('webrtc-answer', answer, to)
-  const sendWebRTCCandidate = (candidate: any, to?: string) => sendEvent('webrtc-ice-candidate', candidate, to)
-  const sendWebRTCRequest = () => sendEvent('webrtc-request', {})
-
   return {
     isConnected,
     connectionStatus,
@@ -296,10 +268,6 @@ export const useRealtime = () => {
     announcement,
     transcription,
     lastAnnouncementUpdate,
-    onWebRTCOffer,
-    onWebRTCAnswer,
-    onWebRTCCandidate,
-    onWebRTCRequest,
     connect,
     disconnect,
     sendLine,
@@ -309,10 +277,6 @@ export const useRealtime = () => {
     setAnnouncement,
     setTranscriptionActive,
     setTranscriptionProducing,
-    updateTranscription,
-    sendWebRTCOffer,
-    sendWebRTCAnswer,
-    sendWebRTCCandidate,
-    sendWebRTCRequest
+    updateTranscription
   }
 }
