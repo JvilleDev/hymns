@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
 
+useHead({ title: 'Historial' })
+
 definePageMeta({
   layout: 'empty'
 })

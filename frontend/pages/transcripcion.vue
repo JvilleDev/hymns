@@ -515,6 +515,8 @@ onUnmounted(() => {
   }
 })
 
+useHead({ title: 'Transcripción' })
+
 definePageMeta({
   layout: false
 })

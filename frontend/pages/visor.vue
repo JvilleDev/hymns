@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
+useHead({ title: 'Visor' })
+
 // Opciones disponibles para el visor
 const options = ref({
   bg: true,      // Añade un fondo azul detrás del texto

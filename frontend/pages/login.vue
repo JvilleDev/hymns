@@ -1,4 +1,6 @@
 <script setup lang="ts">
+useHead({ title: 'Iniciar sesión' })
+
 const { login } = useAuth();
 const password = ref('');
 const error = ref(false);

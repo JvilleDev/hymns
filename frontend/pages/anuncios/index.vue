@@ -3,6 +3,8 @@ import { toast } from 'vue-sonner'
 import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
 import { onKeyStroke, watchDebounced } from '@vueuse/core'
 
+useHead({ title: 'Anuncios' })
+
 const { 
   announcement, 
   setAnnouncement, 

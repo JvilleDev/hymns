@@ -3,6 +3,8 @@ import SongToolbar from '@/components/songs/SongToolbar.vue';
 import SongSheet from '@/components/songs/SongSheet.vue';
 import SongList from '@/components/songs/SongList.vue';
 
+useHead({ title: 'Lista' })
+
 const {
   songs: _songs,
   isLoading,

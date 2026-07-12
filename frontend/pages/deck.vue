@@ -1,4 +1,6 @@
 <script setup lang="ts">
+useHead({ title: 'Mando' })
+
 const { sendLine, sendIndex, activeIndex, activeLine, activeSong, activeCantoId, changeViewerState, viewerActive, connect, disconnect } = useRealtime()
 const socketConnected = ref(false)
 
