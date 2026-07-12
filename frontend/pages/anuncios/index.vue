@@ -9,12 +9,9 @@ const {
   transcription, 
   setTranscriptionActive, 
   connect, 
-  isConnected, 
-  connectionStatus 
 } = useRealtime()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
-const { isAdmin } = useAuth()
 
 const textInput = ref('')
 const currentTopic = ref(announcement.value.topic || '')
@@ -26,6 +23,7 @@ const transcriptionHistory = ref('')
 const showFullHistory = ref(false)
 const showHelp = ref(false)
 const isMac = ref(false)
+const showTranscription = ref(false)
 
 // Accumulate transcription history
 watch(() => transcription.value.final, (newFinal) => {
@@ -125,19 +123,17 @@ onKeyStroke(['v', 'V'], (e) => {
     const target = e.target as HTMLElement
     const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
     
-    if (isInput) return // Let the browser handle standard Paste
+    if (isInput) return
 
     e.preventDefault()
     const newState = !transcription.value.active
     setTranscriptionActive(newState)
+    showTranscription.value = newState
     toast.success(`Transcripción: ${newState ? 'ACTIVADO' : 'DESACTIVADO'}`)
   }
 })
 
 onKeyStroke(['Escape'], (e) => {
-  const target = e.target as HTMLElement
-  const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
-  
   if (textInput.value) {
     e.preventDefault()
     textInput.value = ''
@@ -179,13 +175,11 @@ const sendAnnouncement = async () => {
       .replace(/WSS:/g, '<span class="text-red-600 font-black">WSS:</span>')
       .replace(/WMB/g, '<span class="text-purple-600 font-black">WMB</span>')
 
-    // Background DB creation
     createAnnouncement(processedText, currentTopic.value)
       .then(() => fetchHistory())
       .catch(() => toast.error('Error al guardar historial'))
     
     if (autoSendToAir.value) {
-        console.log('[Index] Auto-sending announcement to air:', processedText)
         setAnnouncement({
           text: processedText,
           active: true,
@@ -213,7 +207,6 @@ const toggleVisibility = () => {
 }
 
 const resendFromHistory = (item: any) => {
-  textInput.value = item.text
   setAnnouncement({
     text: item.text,
     active: true,
@@ -230,11 +223,9 @@ const deleteItem = async (id: string) => {
   }
 }
 
-// Robust Parser for HTML content (mirrors LowerThird logic)
 const parseHTMLContent = (html: string) => {
   if (!html) return []
   
-  // Auto-inject spans for keywords
   const enrichedHTML = html
     .replace(/WSS:/g, '<span class="text-red-600 font-black">WSS:</span>')
     .replace(/WMB/g, '<span class="text-purple-600 font-black">WMB</span>')
@@ -266,7 +257,6 @@ const parseHTMLContent = (html: string) => {
       if (['STRONG', 'B'].includes(el.tagName)) newStyles.bold = true
       if (['EM', 'I'].includes(el.tagName)) newStyles.italic = true
       
-      // Handle custom styles from classes
       if (el.classList.contains('text-red-600')) newStyles.color = 'red'
       if (el.classList.contains('text-purple-600')) newStyles.color = 'purple'
       if (el.classList.contains('font-black')) newStyles.bold = true
@@ -301,15 +291,6 @@ const parseHTMLContent = (html: string) => {
   return segments
 }
 
-// Suggested topics based on history
-const suggestedTopics = computed(() => {
-    const topics = history.value
-        .map(h => h.topic)
-        .filter((t, i, arr) => t && arr.indexOf(t) === i)
-        .slice(0, 8)
-    return topics
-})
-
 watchDebounced(currentTopic, (newVal) => {
   if (newVal !== announcement.value.topic) {
     setAnnouncement({ ...announcement.value, topic: newVal })
@@ -320,15 +301,6 @@ watch(() => announcement.value.topic, (newVal) => {
   if (newVal !== currentTopic.value) {
     currentTopic.value = newVal || ''
   }
-})
-
-watch(announcement, (newVal) => {
-  console.log('[Index] Announcement state changed:', newVal)
-  fetchHistory()
-}, { deep: true })
-
-watch(() => announcement.value.active, () => {
-  fetchHistory()
 })
 
 watch([() => transcription.value.final, () => transcription.value.interim], () => {
@@ -348,336 +320,322 @@ onMounted(() => {
 
 <template>
   <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
-    <!-- Desktop Command Center -->
-    <div class="flex-1 flex overflow-hidden relative">
-      
-      <!-- LEFT SIDEBAR REMOVED -->
 
-      <!-- CENTRAL PANEL: Studio Monitor & Editor -->
-      <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
+    <!-- STATUS BAR: Always visible -->
+    <div class="flex-none flex items-center justify-between px-6 py-3 border-b border-border bg-muted/30">
+      <div class="flex items-center gap-3 select-none">
+        <div class="flex items-center gap-2">
+          <span 
+            class="size-2 rounded-full transition-all duration-300"
+            :class="announcement.active 
+              ? 'bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]' 
+              : 'bg-neutral-300 dark:bg-neutral-700'"
+          ></span>
+          <span 
+            class="text-[11px] font-black uppercase tracking-[0.15em]"
+            :class="announcement.active ? 'text-red-500' : 'text-neutral-400 dark:text-neutral-500'"
+          >
+            {{ announcement.active ? 'EN PANTALLA' : 'FUERA DEL AIRE' }}
+          </span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button 
+          v-if="announcement.active"
+          @click="toggleVisibility"
+          class="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
+        >
+          <Icon name="tabler:player-stop" class="size-3" />
+          Ocultar
+        </button>
+        <button 
+          @click="showHelp = true"
+          class="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <Icon name="tabler:help-circle" class="size-4" />
+        </button>
+      </div>
+    </div>
 
-        <!-- Editor Area -->
-        <div class="flex-1 overflow-y-auto p-6 md:p-10 bg-background">
-          <div class="max-w-4xl mx-auto space-y-10">
-            
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-              <!-- Content Form -->
-              <div class="lg:col-span-8 space-y-8">
-                 <div class="space-y-4">
-                    <div class="flex items-center justify-between">
-                       <div class="flex items-center gap-4">
-                          <div class="flex items-center gap-2 select-none">
-                             <span class="text-[11px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5" :class="announcement.active ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'">
-                                <span v-if="announcement.active" class="inline-block text-red-500 animate-pulse">●</span>
-                                <span v-else class="inline-block text-neutral-400 dark:text-neutral-600">○</span>
-                                {{ announcement.active ? 'EN PANTALLA' : 'FUERA DEL AIRE' }}
-                             </span>
-                          </div>
-                       </div>
-                        <div class="flex items-center gap-3">
-                           <div class="flex items-center gap-3 group/commands relative">
-                              <button @click="showHelp = true" class="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors flex items-center gap-1">
-                                 <Icon name="tabler:help-circle" class="size-3.5" />
-                                 Comandos
-                              </button>
-                              <!-- Tooltip Visual -->
-                              <div class="absolute right-0 top-full mt-2 w-48 p-3 rounded-lg bg-popover border border-border shadow-md opacity-0 pointer-events-none group-hover/commands:opacity-100 transition-opacity z-50 text-[10px] space-y-1.5 text-popover-foreground">
-                                 <div class="font-bold border-b border-border pb-1 mb-1 text-[9px] uppercase tracking-wider">Atajos Rápidos</div>
-                                 <div class="flex justify-between"><span>Mostrar</span><kbd class="font-mono bg-muted px-1 rounded">{{ isMac ? '⌘↵' : 'Ctrl+Enter' }}</kbd></div>
-                                 <div class="flex justify-between"><span>Ocultar/Limpiar</span><kbd class="font-mono bg-muted px-1 rounded">Esc</kbd></div>
-                                 <div class="flex justify-between"><span>Ocultar/Mostrar</span><kbd class="font-mono bg-muted px-1 rounded">{{ isMac ? '⌘L' : 'Ctrl+L' }}</kbd></div>
-                              </div>
-                           </div>
-                        </div>
-                     </div>
-                    <AnnouncementsEditor v-model="textInput" @submit="sendAnnouncement" />
-                    <div class="flex items-center justify-end gap-2">
-                      <button 
-                        @click="textInput = ''"
-                        :disabled="!textInput || isLoading"
-                        class="px-6 py-3 rounded-xl border border-border/60 hover:border-border bg-transparent text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
-                      >
-                         Limpiar
-                      </button>
-                      <button 
-                        v-if="announcement.active && !textInput"
-                        @click="toggleVisibility"
-                        class="flex items-center justify-center gap-3 px-8 py-3 rounded-xl bg-red-600 hover:bg-red-750 text-white font-black text-[11px] uppercase tracking-[0.2em] transition-all hover:scale-[1.02] active:scale-95 shadow-xl shadow-red-650/20"
-                      >
-                         <Icon name="tabler:player-stop" class="size-4" />
-                         Ocultar de Pantalla
-                      </button>
-                      <button 
-                        v-else
-                        @click="sendAnnouncement"
-                        :disabled="!textInput || isLoading"
-                        class="flex items-center justify-center gap-3 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-black text-[11px] uppercase tracking-[0.2em] disabled:opacity-50 transition-all hover:scale-[1.02] active:scale-95 shadow-xl shadow-primary/20"
-                      >
-                         <Icon name="tabler:player-play" class="size-4" />
-                         {{ autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar' }}
-                      </button>
-                    </div>
-                 </div>
-              </div>
+    <!-- MAIN CONTENT: Scrollable -->
+    <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
 
-              <!-- Extra Controls -->
-              <div class="lg:col-span-4">
-                  <div class="bg-muted/30 border border-border/50 rounded-2xl p-6 space-y-6 shadow-sm">
-                      <div class="space-y-2">
-                         <label class="text-[10px] font-black uppercase tracking-wider block">Tema Actual</label>
-                         <p class="text-[10px] text-muted-foreground leading-tight">Encabezado o categoría fija en el gráfico de pantalla</p>
-                         <input 
-                           v-model="currentTopic" 
-                           type="text" 
-                           placeholder="Escribir tema..." 
-                           class="w-full bg-background border border-border rounded-md px-3 py-2 text-xs focus:ring-1 focus:ring-primary outline-none transition-all shadow-sm"
-                         />
-                      </div>
-                      <div class="h-px bg-border/50"></div>
-                      <div class="flex items-center justify-between">
-                         <div>
-                            <label class="text-[10px] font-black uppercase tracking-wider block mb-0.5">Auto-Emisión</label>
-                            <p class="text-[10px] text-muted-foreground">Enviar automáticamente al presionar Enter o Mostrar</p>
-                         </div>
-                        <GSwitch v-model="autoSendToAir" />
-                     </div>
-
-                     <div class="h-px bg-border/50"></div>
-
-                     <!-- Voice Transport Controls -->
-                     <div class="space-y-4">
-                        <div class="flex items-center gap-2">
-                           <div class="size-2.5 rounded-full transition-all duration-300" :class="transcription.active ? 'bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-neutral-300 dark:bg-neutral-700'"></div>
-                           <span class="text-[10px] font-black uppercase tracking-widest" :class="transcription.active ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'">Motor de Transcripción</span>
-                        </div>
-                        
-                        <button 
-                           @click="setTranscriptionActive(!transcription.active)"
-                           class="flex items-center justify-center gap-2 w-full py-3 border rounded-xl text-[9px] font-black uppercase tracking-[0.2em] transition-all hover:shadow-sm"
-                           :class="transcription.active 
-                             ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 text-red-650 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/50' 
-                             : 'bg-background border-border text-neutral-600 dark:text-neutral-300 hover:text-primary hover:border-primary/50'"
-                        >
-                           <Icon :name="transcription.active ? 'tabler:square' : 'tabler:play'" class="size-3" />
-                           {{ transcription.active ? '■ DETENER TRANSCRIPCIÓN' : '▶ INICIAR TRANSCRIPCIÓN' }}
-                        </button>
-                     </div>
-                  </div>
-              </div>
-            </div>
-
+      <!-- EDITOR -->
+      <div class="px-6 md:px-10 pt-6 pb-4">
+        <div class="max-w-3xl mx-auto">
+          <AnnouncementsEditor v-model="textInput" @submit="sendAnnouncement" />
+          <div class="flex items-center justify-between mt-4">
+            <button 
+              @click="textInput = ''"
+              :disabled="!textInput || isLoading"
+              class="px-4 py-2 rounded-lg border border-border/60 hover:border-border text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+            >
+              Limpiar
+            </button>
+            <button 
+              @click="sendAnnouncement"
+              :disabled="!textInput || isLoading"
+              class="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-95 shadow-lg shadow-primary/20"
+            >
+              <Icon name="tabler:player-play" class="size-3.5" />
+              {{ autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar' }}
+            </button>
           </div>
         </div>
-      </main>
+      </div>
 
-      <!-- RIGHT SIDEBAR: Transcription & History -->
-      <aside class="hidden lg:flex flex-col w-80 border-l border-border bg-muted/10 shrink-0 overflow-hidden">
-         
-         <!-- Top: Live Transcription Monitor -->
-         <div class="h-1/3 border-b border-border p-6 flex flex-col min-h-[220px]">
-            <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-6 flex items-center gap-2">
-               <Icon name="tabler:terminal-2" class="size-4" />
-               Transcripción en Vivo
-            </h3>
-            
+      <!-- SETTINGS ROW -->
+      <div class="px-6 md:px-10 pb-4">
+        <div class="max-w-3xl mx-auto flex flex-wrap items-center gap-4 text-[10px]">
+          <div class="flex items-center gap-2">
+            <label class="font-black uppercase tracking-wider text-muted-foreground">Tema</label>
+            <input 
+              v-model="currentTopic" 
+              type="text" 
+              placeholder="Categoría..."
+              class="w-40 bg-background border border-border rounded-md px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-primary outline-none transition-all"
+            />
+          </div>
+          <div class="h-4 w-px bg-border"></div>
+          <div class="flex items-center gap-2">
+            <label class="font-black uppercase tracking-wider text-muted-foreground">Auto</label>
+            <GSwitch v-model="autoSendToAir" />
+          </div>
+          <div class="h-4 w-px bg-border"></div>
+          <button 
+            @click="showTranscription = !showTranscription; if (showTranscription && !transcription.active) setTranscriptionActive(true)"
+            class="flex items-center gap-1.5 font-black uppercase tracking-wider transition-colors"
+            :class="transcription.active ? 'text-red-500' : 'text-muted-foreground hover:text-foreground'"
+          >
+            <span 
+              class="size-1.5 rounded-full"
+              :class="transcription.active ? 'bg-red-500 animate-pulse' : 'bg-neutral-300 dark:bg-neutral-700'"
+            ></span>
+            Transcripción
+          </button>
+        </div>
+      </div>
+
+      <!-- TRANSCRIPTION PANEL (collapsible) -->
+      <div v-if="showTranscription" class="px-6 md:px-10 pb-4">
+        <div class="max-w-3xl mx-auto border border-border/50 rounded-xl bg-muted/20 overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+            <div class="flex items-center gap-2">
+              <Icon name="tabler:terminal-2" class="size-3.5 text-muted-foreground" />
+              <span class="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Transcripción en Vivo</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button 
+                v-if="transcriptionHistory"
+                @click="appendToEditor(transcriptionHistory)"
+                class="text-[9px] font-black uppercase tracking-wider text-primary/60 hover:text-primary transition-colors"
+              >
+                Copiar al editor
+              </button>
+              <button 
+                @click="setTranscriptionActive(false); showTranscription = false"
+                class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Icon name="tabler:x" class="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <div 
+            ref="transcriptionScrollRef"
+            class="p-4 max-h-48 overflow-y-auto font-sans text-[12px] leading-relaxed scroll-smooth"
+          >
+            <div v-if="!transcription.final && !transcription.interim" class="py-6 flex flex-col items-center text-muted-foreground/30">
+              <Icon name="tabler:activity" class="size-6 mb-1 animate-pulse" />
+              <span class="text-[9px] uppercase font-bold tracking-widest">Silencio</span>
+            </div>
+            <div v-else class="space-y-3">
+              <div v-if="transcriptionHistory && showFullHistory" class="text-muted-foreground text-[11px] bg-background/50 p-3 rounded-lg border border-border/50">
+                {{ transcriptionHistory }}
+              </div>
+              <button 
+                v-if="transcriptionHistory"
+                @click="showFullHistory = !showFullHistory"
+                class="text-[9px] font-black uppercase tracking-wider text-primary/40 hover:text-primary transition-colors"
+              >
+                {{ showFullHistory ? 'Ocultar registro' : 'Ver registro' }}
+              </button>
+              <TransitionGroup name="word-stream" tag="p" class="text-foreground font-bold leading-relaxed flex flex-wrap gap-x-1 gap-y-1">
+                <span 
+                  v-for="word in interimWords" 
+                  :key="word.id"
+                  class="inline-block text-blue-600 italic"
+                >
+                  {{ word.text }}
+                </span>
+              </TransitionGroup>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- HISTORY: Compact Rows -->
+      <div class="px-6 md:px-10 pb-6 flex-1">
+        <div class="max-w-3xl mx-auto">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60">Historial</h3>
+            <div class="flex items-center gap-3">
+              <button 
+                v-if="isSelecting" 
+                @click="deleteSelected" 
+                class="flex items-center gap-1 text-[9px] font-black text-red-500 bg-red-500/10 px-2 py-0.5 rounded hover:bg-red-500/20 uppercase tracking-tighter transition-colors"
+              >
+                <Icon name="tabler:trash" class="size-3" />
+                Eliminar ({{ selectedIds.size }})
+              </button>
+              <button 
+                v-if="!isSelecting && history.length > 0" 
+                @click="clearAll" 
+                class="text-[9px] font-medium text-muted-foreground hover:text-red-500 uppercase tracking-wider transition-colors"
+              >
+                Limpiar
+              </button>
+              <button 
+                v-if="history.length > 0"
+                @click="selectAll" 
+                class="text-[9px] font-medium text-muted-foreground hover:text-primary uppercase tracking-wider transition-colors"
+              >
+                {{ selectedIds.size === history.length ? 'Deseleccionar' : 'Seleccionar' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Empty state -->
+          <div v-if="history.length === 0" class="py-12 flex flex-col items-center text-muted-foreground/15">
+            <Icon name="tabler:archive" class="size-8 mb-2" />
+            <p class="text-[9px] font-black uppercase tracking-widest">Sin anuncios</p>
+          </div>
+
+          <!-- Compact list -->
+          <div v-else class="space-y-1">
             <div 
-               ref="transcriptionScrollRef"
-               class="flex-1 bg-background rounded-2xl border border-border/50 p-5 overflow-y-auto scroll-smooth font-sans text-[12px] leading-relaxed group shadow-sm relative"
+              v-for="item in history" 
+              :key="item.id"
+              class="flex items-center gap-3 px-3 py-2 rounded-lg transition-all group"
+              :class="[
+                isActive(item) ? 'bg-primary/5 border border-primary/30' : 'hover:bg-muted/50 border border-transparent',
+                selectedIds.has(item.id) ? 'bg-primary/10 border-primary/40' : ''
+              ]"
             >
-               <div v-if="!transcription.final && !transcription.interim" class="h-full flex flex-col items-center justify-center text-muted-foreground/20">
-                  <Icon name="tabler:activity" class="size-8 mb-2 animate-pulse" />
-                  <span class="text-[8px] uppercase font-bold tracking-[0.4em] text-center">Silencio</span>
-               </div>
-                <div v-else class="relative space-y-4">
-                   <!-- Collapsible History -->
-                   <div v-if="transcriptionHistory" class="space-y-2">
-                       <button 
-                         @click="showFullHistory = !showFullHistory"
-                         class="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-primary/40 hover:text-primary transition-colors"
-                       >
-                          <Icon :name="showFullHistory ? 'tabler:chevron-down' : 'tabler:chevron-right'" class="size-3" />
-                          {{ showFullHistory ? 'Ver Registro' : 'Ver Registro' }}
-                       </button>
-                       
-                       <div v-if="showFullHistory" class="text-muted-foreground font-medium leading-relaxed text-[11px] bg-muted/30 p-4 rounded-xl border border-border/50">
-                          {{ transcriptionHistory }}
-                          <div class="mt-3 pt-3 border-t border-border/50 flex justify-end">
-                             <button @click="appendToEditor(transcriptionHistory)" class="text-[9px] font-black uppercase tracking-widest text-primary/60 hover:text-primary transition-colors">Copiar al editor</button>
-                          </div>
-                       </div>
-                    </div>
+              <!-- Select checkbox -->
+              <button 
+                @click.stop="toggleSelect(item.id)" 
+                class="flex-none size-4 rounded border-2 flex items-center justify-center transition-all"
+                :class="selectedIds.has(item.id) 
+                  ? 'bg-primary border-primary' 
+                  : 'border-border/60 hover:border-primary/50'"
+              >
+                <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-2.5 text-white" stroke-width="4" />
+              </button>
 
-                   <!-- Live Partial Stream -->
-                    <TransitionGroup 
-                      name="word-stream" 
-                      tag="p" 
-                      class="text-foreground font-bold leading-relaxed flex flex-wrap gap-x-1 gap-y-1 opacity-100"
-                    >
-                       <span 
-                          v-for="word in interimWords" 
-                          :key="word.id"
-                          class="inline-block text-blue-600 italic"
-                       >
-                          {{ word.text }}
-                       </span>
-                   </TransitionGroup>
-                </div>
+              <!-- Text preview -->
+              <div 
+                class="flex-1 min-w-0 text-[12px] font-medium text-foreground leading-tight truncate cursor-pointer"
+                @click="resendFromHistory(item)"
+              >
+                <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
+                  <Icon v-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
+                  <span v-else v-html="segment.value" :class="segment.class"></span>
+                </template>
+              </div>
 
-               <!-- Terminal Glow -->
-                <div class="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-background to-transparent pointer-events-none opacity-50"></div>
+              <!-- Time -->
+              <span class="flex-none text-[9px] font-black text-muted-foreground/40 uppercase tracking-tighter tabular-nums">
+                {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+              </span>
+
+              <!-- Actions (visible on hover) -->
+              <div class="flex-none flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button 
+                  @click.stop="resendFromHistory(item)" 
+                  class="p-1 rounded text-muted-foreground hover:text-primary transition-colors"
+                  title="Reenviar"
+                >
+                  <Icon name="tabler:send" class="size-3.5" />
+                </button>
+                <button 
+                  @click.stop="deleteItem(item.id)" 
+                  class="p-1 rounded text-muted-foreground hover:text-red-500 transition-colors"
+                  title="Eliminar"
+                >
+                  <Icon name="tabler:trash" class="size-3.5" />
+                </button>
+              </div>
             </div>
-         </div>
-
-         <!-- Bottom: Command History -->
-         <div class="flex-1 flex flex-col overflow-hidden bg-background">
-            <div class="p-6 border-b border-border flex items-center justify-between">
-               <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Historial</h3>
-               <div class="flex items-center gap-3">
-                  <button v-if="isSelecting" @click="deleteSelected" class="flex items-center gap-1 text-[9px] font-black text-red-500 bg-red-500/10 px-2 py-1 rounded hover:bg-red-500/20 uppercase tracking-tighter transition-colors">
-                     <Icon name="tabler:trash" class="size-3" />
-                     Eliminar ({{ selectedIds.size }})
-                  </button>
-                  <button v-if="!isSelecting" @click="clearAll" class="text-[9px] font-medium text-neutral-450 dark:text-neutral-500 hover:text-red-500 uppercase tracking-wider transition-colors">
-                     Eliminar Todos
-                  </button>
-                  <button @click="selectAll" class="text-[9px] font-medium text-neutral-450 dark:text-neutral-500 hover:text-primary uppercase tracking-wider transition-colors">
-                     {{ selectedIds.size === history.length && history.length > 0 ? 'Deseleccionar' : 'Seleccionar Todo' }}
-                  </button>
-               </div>
-            </div>
-            
-            <div class="flex-1 overflow-y-auto p-4 relative">
-               <!-- Vertical Timeline Line -->
-               <div v-if="history.length > 0" class="absolute left-[33px] top-6 bottom-6 w-0.5 bg-neutral-150 dark:bg-neutral-800 z-0"></div>
-               
-               <div class="space-y-4 relative z-10">
-                  <div v-if="history.length === 0" class="h-full flex flex-col items-center justify-center text-muted-foreground/10 py-12">
-                     <Icon name="tabler:archive" class="size-12 mb-2" />
-                     <p class="text-[9px] font-black uppercase tracking-widest">Historial Vacío</p>
-                  </div>
-                  
-                  <div 
-                    v-for="item in history" 
-                    :key="item.id"
-                    class="p-4 pl-10 rounded-xl transition-all group relative border-2"
-                    :class="[
-                       isActive(item) ? 'bg-primary/5 border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.05)]' : 'bg-background border-border hover:border-primary/30',
-                       selectedIds.has(item.id) ? 'border-primary ring-2 ring-primary/20' : ''
-                    ]"
-                    @click="isSelecting ? toggleSelect(item.id) : null"
-                  >
-                     <!-- Selection Indicator -->
-                     <div class="absolute -left-3 top-4 z-20">
-                        <button @click.stop="toggleSelect(item.id)" class="size-5 rounded-full border-2 border-border bg-background flex items-center justify-center transition-all shadow-sm" :class="{ 'bg-primary border-primary': selectedIds.has(item.id) }">
-                           <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-2.5 text-white" stroke-width="4" />
-                        </button>
-                     </div>
-
-                     <!-- Timeline Dot -->
-                     <div 
-                       class="absolute left-[13px] top-[22px] size-2 rounded-full border-2 transition-all duration-300 z-10"
-                       :class="[
-                         isActive(item) 
-                         ? 'bg-green-500 border-green-500 scale-125 shadow-[0_0_8px_rgba(34,197,94,0.5)]' 
-                         : 'bg-background border-neutral-300 dark:border-neutral-700 group-hover:border-primary'
-                       ]"
-                     ></div>
-
-                     <div class="text-[13px] font-medium text-foreground leading-tight line-clamp-3 mb-3">
-                        <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
-                           <Icon v-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
-                           <span v-else v-html="segment.value" :class="segment.class"></span>
-                        </template>
-                     </div>
-
-                     <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                           <span class="text-[9px] font-black text-muted-foreground/45 dark:text-muted-foreground/60 uppercase tracking-tighter">{{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
-                           <div v-if="isActive(item)" class="size-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <button @click.stop="resendFromHistory(item)" class="p-1.5 text-neutral-400 dark:text-neutral-500 opacity-40 group-hover:opacity-100 hover:!text-primary transition-all" title="Reenviar">
-                               <Icon name="tabler:send" class="size-4" />
-                            </button>
-                            <button @click.stop="deleteItem(item.id)" class="p-1.5 text-neutral-400 dark:text-neutral-500 opacity-40 group-hover:opacity-100 hover:!text-red-500 transition-all" title="Eliminar">
-                               <Icon name="tabler:trash" class="size-4" />
-                            </button>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         </div>
-      </aside>
+          </div>
+        </div>
+      </div>
 
     </div>
 
-    <!-- Mobile History Popup -->
+    <!-- Mobile History Trigger -->
+    <button 
+        @click="showMobileHistory = true"
+        class="lg:hidden fixed bottom-6 right-6 size-14 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
+    >
+        <Icon name="tabler:history" class="size-6" />
+    </button>
+    
+    <!-- Mobile History Sheet -->
     <GSheet v-model="showMobileHistory">
-        <div class="flex flex-col h-full bg-background p-8">
-          <div class="flex items-center justify-between mb-8">
-             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Cola en Vivo</h2>
+        <div class="flex flex-col h-full bg-background p-6">
+          <div class="flex items-center justify-between mb-6">
+             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Historial</h2>
              <div class="flex items-center gap-4">
-                <button @click="clearAll" class="text-[10px] font-bold uppercase text-red-500">Limpiar Todo</button>
-                <button @click="showMobileHistory = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-8" /></button>
+                <button @click="clearAll" class="text-[10px] font-bold uppercase text-red-500">Limpiar</button>
+                <button @click="showMobileHistory = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-6" /></button>
              </div>
           </div>
-          
-          <div class="flex-1 overflow-y-auto space-y-4">
+          <div class="flex-1 overflow-y-auto space-y-2">
              <div 
                v-for="item in history" 
                :key="item.id"
                @click="resendFromHistory(item); showMobileHistory = false"
-               class="p-5 rounded-2xl border-2 border-border bg-muted/20 active:bg-primary/10 active:border-primary transition-all flex items-center gap-5 shadow-sm"
+               class="p-4 rounded-xl border border-border bg-muted/10 active:bg-primary/10 active:border-primary transition-all flex items-center gap-4"
              >
                 <div class="flex-1 min-w-0">
-                   <div class="flex items-center justify-between mb-2">
-                      <span class="text-[10px] font-black text-muted-foreground/40 uppercase">{{ new Date(item.createdAt).toLocaleTimeString() }}</span>
-
-                   </div>
-                   <div class="text-[15px] font-bold truncate text-foreground">
+                   <div class="text-[13px] font-bold truncate text-foreground">
                       {{ item.text.replace(/<[^>]+>/g, '') }}
                    </div>
+                   <span class="text-[9px] font-black text-muted-foreground/40 uppercase mt-1 block">
+                      {{ new Date(item.createdAt).toLocaleTimeString() }}
+                   </span>
                 </div>
-                <Icon name="tabler:chevron-right" class="size-6 text-muted-foreground" />
+                <Icon name="tabler:chevron-right" class="size-5 text-muted-foreground flex-none" />
              </div>
           </div>
         </div>
     </GSheet>
 
-    <!-- Mobile History Trigger -->
-    <button 
-        @click="showMobileHistory = true"
-        class="lg:hidden fixed bottom-8 right-8 size-16 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
-    >
-        <Icon name="tabler:history" class="size-8" />
-    </button>
-    
-    <!-- Help Commands Sheet -->
+    <!-- Help Sheet -->
     <GSheet v-model="showHelp">
         <div class="flex flex-col bg-background p-8">
-          <div class="flex items-center justify-between mb-8">
-             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Comandos de Teclado</h2>
-             <button @click="showHelp = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-8" /></button>
-                   <div class="grid gap-3">
-             <div class="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/20">
-                <span class="text-[12px] font-bold">Ocultar / Limpiar</span>
-                <span class="text-[11px] font-mono bg-background border border-border px-2 py-1 rounded">ESC</span>
+          <div class="flex items-center justify-between mb-6">
+             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Comandos</h2>
+             <button @click="showHelp = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-6" /></button>
+          </div>
+          <div class="grid gap-2">
+             <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+                <span class="text-[12px] font-bold">Enviar texto</span>
+                <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">{{ isMac ? '⌘' : 'Ctrl' }} + Enter</span>
              </div>
-             <div class="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/20">
-                <span class="text-[12px] font-bold">En Pantalla / Apagar</span>
-                <span class="text-[11px] font-mono bg-background border border-border px-2 py-1 rounded">{{ isMac ? 'CMD' : 'CTRL' }} + L</span>
+             <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+                <span class="text-[12px] font-bold">Toggle en pantalla</span>
+                <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">{{ isMac ? '⌘' : 'Ctrl' }} + L</span>
              </div>
-             <div class="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/20">
-                <span class="text-[12px] font-bold">Enviar Texto</span>
-                <span class="text-[11px] font-mono bg-background border border-border px-2 py-1 rounded">{{ isMac ? 'CMD' : 'CTRL' }} + ENTER</span>
+             <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+                <span class="text-[12px] font-bold">Limpiar / Apagar</span>
+                <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">Esc</span>
              </div>
-             <div class="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/20">
-                <span class="text-[12px] font-bold">Transcripción en vivo</span>
-                <span class="text-[11px] font-mono bg-background border border-border px-2 py-1 rounded">{{ isMac ? 'CMD' : 'CTRL' }} + V</span>
+             <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+                <span class="text-[12px] font-bold">Transcripción</span>
+                <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">{{ isMac ? '⌘' : 'Ctrl' }} + V</span>
              </div>
-          </div>    </div>
+          </div>
         </div>
     </GSheet>
 
@@ -685,33 +643,20 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* High contrast terminal feel for transcription */
-::-webkit-scrollbar {
-  width: 5px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--primary);
-}
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
-/* Streaming word animation */
 .word-stream-enter-active {
   transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
   transition-delay: 0.05s;
 }
-
 .word-stream-enter-from {
   opacity: 0;
   transform: translateY(4px) scale(0.95);
   filter: blur(4px);
 }
-
 .word-stream-move {
   transition: transform 0.4s ease;
 }

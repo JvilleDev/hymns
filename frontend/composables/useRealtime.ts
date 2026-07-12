@@ -11,6 +11,8 @@ export interface ParsedSong {
 
 // Single instance of connections for the application
 let sharedWS: WebSocket | null = null
+let reconnectAttempt = 0
+let wasConnected = false // ponytail: track if we ever connected — reload on reconnect
 
 export const useRealtime = () => {
   const api = useApi()
@@ -153,6 +155,14 @@ export const useRealtime = () => {
             console.log('[Realtime] WebSocket connected')
             isConnected.value = true
             connectionStatus.value = 'connected'
+            // ponytail: si nos reconectamos después de una caída, recargar para tomar cambios del server
+            if (wasConnected) {
+                console.log('[Realtime] Reconnected after disconnect — reloading page')
+                location.reload()
+                return
+            }
+            wasConnected = true
+            reconnectAttempt = 0
             resolve()
         }
 
@@ -167,12 +177,13 @@ export const useRealtime = () => {
 
         ws.onclose = () => {
             sharedWS = null
-            if (isConnected.value) {
-                isConnected.value = false
-                connectionStatus.value = 'disconnected'
-                // Reconnect attempt
-                setTimeout(() => connect(), 3000)
-            }
+            isConnected.value = false
+            connectionStatus.value = 'disconnected'
+            // ponytail: siempre reintentar, sin importar si llegamos a conectar
+            reconnectAttempt++
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempt - 1), 10000)
+            console.log(`[Realtime] Reconnecting in ${delay}ms (attempt ${reconnectAttempt})`)
+            setTimeout(() => connect(), delay)
         }
     })
   }
@@ -189,6 +200,7 @@ export const useRealtime = () => {
         console.error('[Realtime] Error en la conexión WebSocket:', wsErr)
         isConnected.value = false
         connectionStatus.value = 'disconnected'
+        // ponytail: el retry lo maneja ws.onclose (único punto de retry)
     }
   }
 
@@ -199,14 +211,19 @@ export const useRealtime = () => {
     }
     isConnected.value = false
     connectionStatus.value = 'disconnected'
+    wasConnected = false
+    reconnectAttempt = 0
   }
 
-  const sendEvent = async (type: string, data: any, to?: string) => {
-    try {
-        await api.post(`/api/ws-events/${type}`, { data, from: connectionId.value, to })
-    } catch (e) {
-        console.error(`[Realtime] Error sending event ${type}:`, e)
+  const sendEvent = (type: string, data: any, to?: string) => {
+    // ponytail: WS directo, mitad de latencia vs HTTP POST round-trip
+    const msg = JSON.stringify({ type, data, from: connectionId.value, to })
+    if (sharedWS?.readyState === WebSocket.OPEN) {
+      sharedWS.send(msg)
     }
+    // ponytail: sin fallback HTTP, si el WS no está conectado el evento se pierde
+    // y el reconnect re-sincroniza el estado via 'initial'. Más simple y correcto
+    // que un POST que puede llegar fuera de orden tras reconexión.
   }
 
   const sendLine = (line: string) => {
@@ -215,6 +232,12 @@ export const useRealtime = () => {
   }
 
   const sendCanto = (id: string) => {
+    // ponytail: optimistic — el server resuelve el parse del song,
+    // pero seteamos el ID y reseteamos índice para feedback inmediato
+    activeCantoId.value = id
+    activeIndex.value = 0
+    activeLine.value = ''
+    activeSong.value = null
     sendEvent('changeCanto', id)
   }
 

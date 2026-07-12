@@ -92,6 +92,22 @@ wss.on("connection", async (ws, request) => {
     colorprint.DEBUG(`[WS Disconnected] Client: ${clientId}`);
   });
 
+  // ponytail: eventos client→server via WS directo, sin HTTP POST round-trip
+  ws.on("message", async (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      const { type, data, from, to } = msg;
+
+      // Skip if targeted to someone else
+      if (to && to !== connectionId) return;
+
+      colorprint.DEBUG(`[WS Event] Client: ${clientId}, Type: ${type}, From: ${from}, To: ${to}`);
+      await handleWSEvent(clientId, connectionId, type, data, from, to);
+    } catch (e) {
+      console.error("[WS Message Error]", e);
+    }
+  });
+
   ws.on("error", (err) => {
     console.error("[WS Error]", err);
   });
@@ -198,15 +214,9 @@ function broadcast(clientId: string, data: any) {
 
 // SSE removed in favor of WebSockets
 
-// -- Real-time Actions (Previously WS) --
+// -- Event Handler (shared by WS messages and HTTP POST fallback) --
 
-app.post("/api/ws-events/:type", async (req, res) => {
-  const { type } = req.params;
-  const { data, from, to } = req.body;
-  const clientId = (req.headers["x-client-id"] as string) || "default";
-  
-  colorprint.DEBUG(`[Event] Client: ${clientId}, Type: ${type}, From: ${from}, To: ${to}`);
-
+async function handleWSEvent(clientId: string, connectionId: string, type: string, data: any, from: string, to?: string) {
   const state = await getClientState(clientId);
 
   switch (type) {
@@ -324,6 +334,17 @@ app.post("/api/ws-events/:type", async (req, res) => {
   }
 
   saveClientState(clientId, state);
+}
+
+// -- HTTP POST fallback (kept for backwards compat) --
+
+app.post("/api/ws-events/:type", async (req, res) => {
+  const { type } = req.params;
+  const { data, from, to } = req.body;
+  const clientId = (req.headers["x-client-id"] as string) || "default";
+  const connectionId = from || "";
+
+  await handleWSEvent(clientId, connectionId, type, data, from, to);
   res.json({ success: true });
 });
 
