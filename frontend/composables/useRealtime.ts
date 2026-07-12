@@ -134,9 +134,8 @@ export const useRealtime = () => {
             connectionStatus.value = 'connected'
             // ponytail: si nos reconectamos después de una caída, recargar para tomar cambios del server
             if (wasConnected) {
-                console.log('[Realtime] Reconnected after disconnect — reloading page')
-                location.reload()
-                return
+                console.log('[Realtime] Reconnected after disconnect — reloading in 5s')
+                setTimeout(() => location.reload(), 5000)
             }
             wasConnected = true
             reconnectAttempt = 0
