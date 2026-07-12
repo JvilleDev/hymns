@@ -36,6 +36,7 @@ const mobileScrollContainer = ref<HTMLElement | null>(null)
 const showMonitor = ref(false)
 const isMobileExpanded = ref(false)
 const hideTimeout = ref<NodeJS.Timeout|null>(null)
+const manuallyHidden = ref(false)
 const transcriptionHistory = computed(() => transcription.value.final)
 const autoScrollEnabled = ref(true)
 const isAutoScrolling = ref(false)
@@ -157,10 +158,10 @@ watch(isConnected, (connected) => {
 
 watch([() => transcription.value.final, () => transcription.value.interim], ([newFinal, newInterim]) => {
     if (newFinal || newInterim) {
-        showMonitor.value = true
+        if (!manuallyHidden.value) showMonitor.value = true
         if (hideTimeout.value) clearTimeout(hideTimeout.value)
         if (!isMobileExpanded.value) {
-            hideTimeout.value = setTimeout(() => { showMonitor.value = false }, 5000)
+            hideTimeout.value = setTimeout(() => { showMonitor.value = false }, 60000)
         }
     }
     nextTick(() => {
@@ -177,7 +178,7 @@ watch([() => transcription.value.final, () => transcription.value.interim], ([ne
 watch(isMobileExpanded, (expanded) => {
     if (!expanded) {
         if (hideTimeout.value) clearTimeout(hideTimeout.value)
-        hideTimeout.value = setTimeout(() => { showMonitor.value = false }, 5000)
+        hideTimeout.value = setTimeout(() => { showMonitor.value = false }, 60000)
     } else {
         if (hideTimeout.value) clearTimeout(hideTimeout.value)
         showMonitor.value = true
@@ -284,7 +285,7 @@ const generatePdf = () => {
           </div>
           <button
             v-if="showTranscription"
-            @click="showTranscription = false"
+            @click="showTranscription = false; manuallyHidden = true"
             class="hidden lg:flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 active:scale-95 transition-all"
           >
             <Icon name="tabler:eye-off" class="size-4" />
@@ -292,7 +293,7 @@ const generatePdf = () => {
           </button>
           <button
             v-else
-            @click="showTranscription = true"
+            @click="showTranscription = true; manuallyHidden = false"
             class="hidden lg:flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 active:scale-95 transition-all"
           >
             <Icon name="tabler:eye" class="size-4" />
@@ -515,6 +516,9 @@ const generatePdf = () => {
                   Transcripción automática
                 </span>
                 <div class="h-px flex-1 bg-white/5"></div>
+                <button @click.stop="showMonitor = false; manuallyHidden = true" class="p-1 -mr-1 text-white/30 hover:text-white/70 transition-colors">
+                  <Icon name="tabler:x" class="size-3.5" />
+                </button>
                 <Icon name="tabler:chevron-up" class="size-4 text-white/20" />
              </div>
              <div
@@ -558,7 +562,7 @@ const generatePdf = () => {
                 </div>
                 <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
               </div>
-              <button @click="isMobileExpanded = false" class="p-2 -mr-2 text-white/40 hover:text-white">
+              <button @click="isMobileExpanded = false; showMonitor = false; manuallyHidden = true" class="p-2 -mr-2 text-white/40 hover:text-white">
                 <Icon name="tabler:x" class="size-6" />
               </button>
            </header>
