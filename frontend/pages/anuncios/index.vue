@@ -158,6 +158,8 @@ const fetchHistory = async () => {
     }
   } catch (e) {
     toast.error('Error al cargar historial')
+  } finally {
+    isLoading.value = false
   }
 }
 
