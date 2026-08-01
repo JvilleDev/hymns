@@ -12,7 +12,8 @@ export interface ParsedSong {
 // Single instance of connections for the application
 let sharedWS: WebSocket | null = null
 let reconnectAttempt = 0
-let wasConnected = false // ponytail: track if we ever connected — reload on reconnect
+// ID del arranque del backend; si cambia en localStorage el backend se reinició y hay que recargar
+const SERVER_INSTANCE_KEY = 'realtime:serverInstanceId'
 
 export const useRealtime = () => {
   const api = useApi()
@@ -66,6 +67,17 @@ export const useRealtime = () => {
             typeof data.lastAnnouncementUpdate === 'number' && !Number.isNaN(data.lastAnnouncementUpdate)
               ? data.lastAnnouncementUpdate
               : Date.now()
+
+          // ponytail: si el backend se reinició (uuid distinto al almacenado) recargar
+          // para tomar los cambios del server; un blip de red no cambia el uuid, así que no recarga
+          if (data.serverInstanceId) {
+            const known = localStorage.getItem(SERVER_INSTANCE_KEY)
+            localStorage.setItem(SERVER_INSTANCE_KEY, data.serverInstanceId)
+            if (known && known !== data.serverInstanceId) {
+              console.log('[Realtime] Backend reiniciado — recargando en 2s')
+              setTimeout(() => location.reload(), 2000)
+            }
+          }
           break
 
         case 'viewerActive':
@@ -135,12 +147,7 @@ export const useRealtime = () => {
             console.log('[Realtime] WebSocket connected')
             isConnected.value = true
             connectionStatus.value = 'connected'
-            // ponytail: si nos reconectamos después de una caída, recargar para tomar cambios del server
-            if (wasConnected) {
-                console.log('[Realtime] Reconnected after disconnect — reloading in 5s')
-                setTimeout(() => location.reload(), 5000)
-            }
-            wasConnected = true
+            // ponytail: sin reload en reconnect — el mensaje 'initial' re-sincroniza todo el estado
             reconnectAttempt = 0
             resolve()
         }
@@ -190,7 +197,6 @@ export const useRealtime = () => {
     }
     isConnected.value = false
     connectionStatus.value = 'disconnected'
-    wasConnected = false
     reconnectAttempt = 0
   }
 

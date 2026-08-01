@@ -15,6 +15,9 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
+// ponytail: se regenera en cada arranque; si cambia en el cliente, el backend se reinició y hay que recargar
+const serverInstanceId = uuid();
+
 function getColombianDate() {
   const d = new Date();
   const formatter = new Intl.DateTimeFormat('es-CO', {
@@ -86,7 +89,7 @@ wss.on("connection", async (ws, request) => {
 
   // Send initial state immediately
   const state = await getClientState(clientId);
-  ws.send(JSON.stringify({ type: "initial", data: { ...state, connectionId } }));
+  ws.send(JSON.stringify({ type: "initial", data: { ...state, connectionId, serverInstanceId } }));
 
   ws.on("close", () => {
     colorprint.DEBUG(`[WS Disconnected] Client: ${clientId}`);
