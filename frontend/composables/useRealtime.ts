@@ -74,8 +74,8 @@ export const useRealtime = () => {
             const known = localStorage.getItem(SERVER_INSTANCE_KEY)
             localStorage.setItem(SERVER_INSTANCE_KEY, data.serverInstanceId)
             if (known && known !== data.serverInstanceId) {
-              console.log('[Realtime] Backend reiniciado — recargando en 2s')
-              setTimeout(() => location.reload(), 2000)
+              console.log('[Realtime] Backend reiniciado — recargando en 7s')
+              setTimeout(() => location.reload(), 7000)
             }
           }
           break
