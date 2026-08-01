@@ -16,6 +16,12 @@ const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncem
 const { icons: availableIcons } = useAnnouncementIcons()
 
 const textInput = ref('')
+const DRAFT_KEY = 'anuncios:draft'
+
+// ponytail: borrador en localStorage para no perder lo escrito si la página se recarga
+watch(textInput, (val) => {
+  localStorage.setItem(DRAFT_KEY, val)
+})
 const currentTopic = ref(announcement.value.topic || '')
 const isLoading = ref(true)
 const history = ref<any[]>([])
@@ -316,6 +322,7 @@ watch([() => transcription.value.final, () => transcription.value.interim], () =
 })
 
 onMounted(() => {
+  textInput.value = localStorage.getItem(DRAFT_KEY) || ''
   isMac.value = navigator.platform.toUpperCase().indexOf('MAC') >= 0
   connect()
   fetchHistory()
