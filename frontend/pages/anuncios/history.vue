@@ -48,8 +48,19 @@ watch([() => transcription.value.final, () => transcription.value.interim], ([f,
   if (f || i) showTranscription.value = true
 })
 
-// Spotlight: active announcement or latest from history
+// Per-user selection: clicking a history item shows it in the spotlight,
+// overriding the live announcement only for this user.
+const selectedHistoryId = ref<string | null>(null)
+const selectedHistoryItem = computed(() => history.value.find(i => i.id === selectedHistoryId.value) || null)
+const selectHistory = (item: any) => {
+  selectedHistoryId.value = selectedHistoryId.value === item.id ? null : item.id
+}
+
+// Spotlight: user selection, else active announcement, else latest from history
 const spotlight = computed(() => {
+  if (selectedHistoryItem.value) {
+    return { text: selectedHistoryItem.value.text, topic: selectedHistoryItem.value.topic, active: false }
+  }
   if (announcement.value.active && announcement.value.text) {
     return { text: announcement.value.text, topic: announcement.value.topic, active: true }
   }
@@ -208,6 +219,9 @@ const formatTimeAgo = (date: Date | string | number) => {
 }
 
 const displayTopic = computed(() => {
+    if (selectedHistoryItem.value) {
+        return selectedHistoryItem.value.topic || 'Historial'
+    }
     if (announcement.value.active && announcement.value.topic) {
         return announcement.value.topic
     }
@@ -243,18 +257,25 @@ const generatePdf = () => {
           <button
             v-for="item in history"
             :key="item.id"
+            @click="selectHistory(item)"
             class="w-full text-left px-5 py-3 rounded-lg transition-all group"
             :class="[
-              announcement.active && announcement.text === item.text
-                ? 'bg-blue-50 border border-blue-100'
-                : 'hover:bg-neutral-50 border border-transparent'
+              selectedHistoryId === item.id
+                ? 'bg-amber-50 border border-amber-200'
+                : announcement.active && announcement.text === item.text
+                  ? 'bg-blue-50 border border-blue-100'
+                  : 'hover:bg-neutral-50 border border-transparent'
             ]"
           >
             <div class="flex items-center gap-2 mb-1.5">
               <span class="text-[9px] font-bold text-neutral-300 uppercase tracking-widest">
                 {{ formatTimeAgo(new Date(item.createdAt)) }}
               </span>
-              <span v-if="announcement.active && announcement.text === item.text"
+              <span v-if="selectedHistoryId === item.id"
+                    class="text-[8px] font-black text-amber-600 uppercase tracking-[0.2em] bg-amber-100 px-1.5 py-0.5 rounded">
+                Mostrando
+              </span>
+              <span v-else-if="announcement.active && announcement.text === item.text"
                     class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
                 Ahora
               </span>
