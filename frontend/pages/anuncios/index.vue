@@ -126,21 +126,6 @@ onKeyStroke(['Enter'], (e) => {
   }
 })
 
-onKeyStroke(['v', 'V'], (e) => {
-  if (e.metaKey || e.ctrlKey) {
-    const target = e.target as HTMLElement
-    const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
-    
-    if (isInput) return
-
-    e.preventDefault()
-    const newState = !transcription.value.active
-    setTranscriptionActive(newState)
-    showTranscription.value = newState
-    toast.success(`Transcripción: ${newState ? 'ACTIVADO' : 'DESACTIVADO'}`)
-  }
-})
-
 onKeyStroke(['Escape'], (e) => {
   if (textInput.value) {
     e.preventDefault()
@@ -370,6 +355,10 @@ onMounted(() => {
 
     <!-- MAIN CONTENT: Scrollable -->
     <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
+      <div class="flex-1 flex flex-col lg:flex-row lg:items-start">
+
+        <!-- LEFT COLUMN -->
+        <div class="flex-1 min-w-0">
 
       <!-- EDITOR -->
       <div class="px-6 md:px-10 pt-6 pb-4">
@@ -414,7 +403,7 @@ onMounted(() => {
           </div>
           <div class="h-4 w-px bg-border"></div>
           <button 
-            @click="showTranscription = !showTranscription; if (showTranscription && !transcription.active) setTranscriptionActive(true)"
+            @click="showTranscription = !showTranscription"
             class="flex items-center gap-1.5 font-black uppercase tracking-wider transition-colors"
             :class="transcription.active ? 'text-red-500' : 'text-muted-foreground hover:text-foreground'"
           >
@@ -424,63 +413,6 @@ onMounted(() => {
             ></span>
             Transcripción
           </button>
-        </div>
-      </div>
-
-      <!-- TRANSCRIPTION PANEL (collapsible) -->
-      <div v-if="showTranscription" class="px-6 md:px-10 pb-4">
-        <div class="max-w-3xl mx-auto border border-border/50 rounded-xl bg-muted/20 overflow-hidden">
-          <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
-            <div class="flex items-center gap-2">
-              <Icon name="tabler:terminal-2" class="size-3.5 text-muted-foreground" />
-              <span class="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Transcripción en Vivo</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button 
-                v-if="transcriptionHistory"
-                @click="appendToEditor(transcriptionHistory)"
-                class="text-[9px] font-black uppercase tracking-wider text-primary/60 hover:text-primary transition-colors"
-              >
-                Copiar al editor
-              </button>
-              <button 
-                @click="setTranscriptionActive(false); showTranscription = false"
-                class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <Icon name="tabler:x" class="size-3.5" />
-              </button>
-            </div>
-          </div>
-          <div 
-            ref="transcriptionScrollRef"
-            class="p-4 max-h-48 overflow-y-auto font-sans text-[12px] leading-relaxed scroll-smooth"
-          >
-            <div v-if="!transcription.final && !transcription.interim" class="py-6 flex flex-col items-center text-muted-foreground/30">
-              <Icon name="tabler:activity" class="size-6 mb-1 animate-pulse" />
-              <span class="text-[9px] uppercase font-bold tracking-widest">Silencio</span>
-            </div>
-            <div v-else class="space-y-3">
-              <div v-if="transcriptionHistory && showFullHistory" class="text-muted-foreground text-[11px] bg-background/50 p-3 rounded-lg border border-border/50">
-                {{ transcriptionHistory }}
-              </div>
-              <button 
-                v-if="transcriptionHistory"
-                @click="showFullHistory = !showFullHistory"
-                class="text-[9px] font-black uppercase tracking-wider text-primary/40 hover:text-primary transition-colors"
-              >
-                {{ showFullHistory ? 'Ocultar registro' : 'Ver registro' }}
-              </button>
-              <TransitionGroup name="word-stream" tag="p" class="text-foreground font-bold leading-relaxed flex flex-wrap gap-x-1 gap-y-1">
-                <span 
-                  v-for="word in interimWords" 
-                  :key="word.id"
-                  class="inline-block text-blue-600 italic"
-                >
-                  {{ word.text }}
-                </span>
-              </TransitionGroup>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -588,7 +520,76 @@ onMounted(() => {
             </div>
           </div>
         </div>
+        </div>
+
+        <!-- TRANSCRIPTION LATERAL -->
+        <aside v-if="showTranscription" class="w-full lg:w-[400px] lg:shrink-0 lg:sticky lg:top-0 lg:border-l lg:border-border lg:bg-background lg:px-6 lg:pt-6 pb-6 lg:pb-0">
+          <div class="border border-border/50 rounded-xl bg-muted/20 overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+              <div class="flex items-center gap-2">
+                <Icon name="tabler:terminal-2" class="size-3.5 text-muted-foreground" />
+                <span class="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Transcripción en Vivo</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button 
+                  v-if="transcriptionHistory"
+                  @click="appendToEditor(transcriptionHistory)"
+                  class="text-[9px] font-black uppercase tracking-wider text-primary/60 hover:text-primary transition-colors"
+                >
+                  Copiar al editor
+                </button>
+                <button 
+                  @click="setTranscriptionActive(!transcription.active)"
+                  class="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded transition-colors"
+                  :class="transcription.active ? 'text-red-600 bg-red-500/10' : 'text-primary/60 hover:text-primary'"
+                >
+                  <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-3" />
+                  {{ transcription.active ? 'En pantalla' : 'Mostrar en pantalla' }}
+                </button>
+                <button 
+                  @click="showTranscription = false"
+                  class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <Icon name="tabler:x" class="size-3.5" />
+                </button>
+              </div>
+            </div>
+            <div 
+              ref="transcriptionScrollRef"
+              class="p-4 max-h-48 overflow-y-auto font-sans text-[12px] leading-relaxed scroll-smooth"
+            >
+              <div v-if="!transcription.final && !transcription.interim" class="py-6 flex flex-col items-center text-muted-foreground/30">
+                <Icon name="tabler:activity" class="size-6 mb-1 animate-pulse" />
+                <span class="text-[9px] uppercase font-bold tracking-widest">Silencio</span>
+              </div>
+              <div v-else class="space-y-3">
+                <div v-if="transcriptionHistory && showFullHistory" class="text-muted-foreground text-[11px] bg-background/50 p-3 rounded-lg border border-border/50">
+                  {{ transcriptionHistory }}
+                </div>
+                <button 
+                  v-if="transcriptionHistory"
+                  @click="showFullHistory = !showFullHistory"
+                  class="text-[9px] font-black uppercase tracking-wider text-primary/40 hover:text-primary transition-colors"
+                >
+                  {{ showFullHistory ? 'Ocultar registro' : 'Ver registro' }}
+                </button>
+                <TransitionGroup name="word-stream" tag="p" class="text-foreground font-bold leading-relaxed flex flex-wrap gap-x-1 gap-y-1">
+                  <span 
+                    v-for="word in interimWords" 
+                    :key="word.id"
+                    class="inline-block text-blue-600 italic"
+                  >
+                    {{ word.text }}
+                  </span>
+                </TransitionGroup>
+              </div>
+            </div>
+          </div>
+        </aside>
+
       </div>
+
+    </div>
 
     </div>
 
@@ -649,10 +650,6 @@ onMounted(() => {
              <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
                 <span class="text-[12px] font-bold">Limpiar / Apagar</span>
                 <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">Esc</span>
-             </div>
-             <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
-                <span class="text-[12px] font-bold">Transcripción</span>
-                <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">{{ isMac ? '⌘' : 'Ctrl' }} + V</span>
              </div>
           </div>
         </div>
