@@ -29,9 +29,7 @@ const editor = useEditor({
     Placeholder.configure({
       placeholder: 'Escribe un anuncio o "/" para comandos...',
     }),
-    CharacterCount.configure({
-      limit: 1000,
-    }),
+    CharacterCount,
     AnnouncementIcon,
     SpecialTextHighlight,
     SlashCommand.configure({

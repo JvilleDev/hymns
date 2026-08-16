@@ -357,7 +357,7 @@ const generatePdf = () => {
             leave-from-class="opacity-100 translate-y-0"
             leave-to-class="opacity-0 -translate-y-2"
           >
-            <div :key="spotlight.text" class="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <div :key="spotlight.text" class="whitespace-pre-line text-3xl font-bold leading-snug">
               <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
                 <Icon
                   v-if="segment.type === 'icon'"
@@ -369,7 +369,6 @@ const generatePdf = () => {
                   v-else
                   v-html="segment.value"
                   :class="segment.class"
-                  class="text-3xl font-bold leading-snug"
                 ></span>
               </template>
             </div>
@@ -410,7 +409,7 @@ const generatePdf = () => {
                 Ahora
               </span>
             </div>
-            <div class="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <div class="whitespace-pre-line text-sm font-semibold leading-snug">
               <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
                 <Icon
                   v-if="segment.type === 'icon'"
@@ -422,7 +421,6 @@ const generatePdf = () => {
                   v-else
                   v-html="segment.value"
                   :class="segment.class"
-                  class="text-sm font-semibold leading-snug"
                 ></span>
               </template>
             </div>
@@ -648,7 +646,7 @@ const generatePdf = () => {
             </span>
           </div>
           <div class="text-xl font-bold leading-relaxed">
-            <div class="inline-flex flex-wrap items-center gap-x-2">
+            <div class="whitespace-pre-line">
               <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
                 <Icon v-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" class="mb-1" />
                 <span v-else v-html="segment.value" :class="segment.class"></span>

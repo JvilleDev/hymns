@@ -41,6 +41,12 @@ export const useContentParser = () => {
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement
+
+        if (el.tagName === 'BR') {
+          segments.push({ type: 'text', value: '\n', class: '' })
+          return
+        }
+
         const newStyles = { ...currentStyles }
         
         if (['STRONG', 'B'].includes(el.tagName)) newStyles.bold = true
@@ -76,7 +82,7 @@ export const useContentParser = () => {
         el.childNodes.forEach(child => walk(child, newStyles))
         
         if (el.tagName === 'P') {
-          segments.push({ type: 'text', value: ' ', class: '' })
+          segments.push({ type: 'text', value: '\n', class: '' })
         }
       }
     }
