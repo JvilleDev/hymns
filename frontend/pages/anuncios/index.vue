@@ -31,7 +31,63 @@ const transcriptionScrollRef = ref<HTMLElement | null>(null)
 const transcriptionHistory = ref('')
 const showFullHistory = ref(false)
 const showHelp = ref(false)
+const showMediaManager = ref(false)
 const isMac = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+const isUploading = ref(false)
+const mediaList = ref<any[]>([])
+
+const fetchMediaList = async () => {
+  try {
+    const data = await useApi().getMedia()
+    mediaList.value = data
+  } catch(e) {
+    console.error('Error fetching media', e)
+  }
+}
+
+const triggerFileUpload = () => {
+  fileInput.value?.click()
+}
+
+const handleFileUpload = async (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length) return
+  const file = target.files[0]
+  if (!file.type.startsWith('image/')) {
+    toast.error('Solo se permiten imágenes por ahora')
+    return
+  }
+  isUploading.value = true
+  try {
+    const name = prompt('Nombre corto para esta imagen (usado con /):', file.name.split('.')[0])
+    if (!name) {
+      isUploading.value = false
+      return
+    }
+    await useApi().uploadMedia(file, name.toLowerCase().replace(/\s+/g, '-'), 'image')
+    toast.success('Imagen subida')
+    fetchMediaList()
+    useAnnouncementIcons().fetchMediaIcons()
+  } catch (err) {
+    toast.error('Error al subir imagen')
+  } finally {
+    isUploading.value = false
+    if (fileInput.value) fileInput.value.value = ''
+  }
+}
+
+const deleteMediaItem = async (id: string) => {
+  if (!confirm('¿Eliminar esta imagen?')) return
+  try {
+    await useApi().deleteMedia(id)
+    fetchMediaList()
+    useAnnouncementIcons().fetchMediaIcons()
+    toast.success('Imagen eliminada')
+  } catch (e) {
+    toast.error('Error al eliminar')
+  }
+}
 
 // Accumulate transcription history
 watch(() => transcription.value.final, (newFinal) => {
@@ -321,16 +377,24 @@ const parseHTMLContent = (html: string) => {
       if (el.classList.contains('announcement-icon') || el.hasAttribute('data-icon')) {
         const iconName = el.getAttribute('data-icon')
         if (iconName) {
-            const iconDef = availableIcons.find(i => i.name === iconName)
+            const iconDef = availableIcons.value.find(i => i.name === iconName)
             if (iconDef) {
                  let iconColorClass = ''
                  if (iconName === 'david') iconColorClass = 'text-primary'
                  
-                 segments.push({
-                     type: 'icon',
-                     value: iconDef.icon,
-                     class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
-                 })
+                 if (iconDef.url) {
+                     segments.push({
+                         type: 'image',
+                         value: iconDef.url,
+                         class: 'inline-block align-text-bottom mx-1 max-h-[1.5em] rounded object-contain'
+                     } as any)
+                 } else {
+                     segments.push({
+                         type: 'icon',
+                         value: iconDef.icon,
+                         class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
+                     })
+                 }
                  return 
             }
         }
@@ -365,6 +429,10 @@ watch([() => transcription.value.final, () => transcription.value.interim], () =
             transcriptionScrollRef.value.scrollTop = transcriptionScrollRef.value.scrollHeight
         }
     })
+})
+
+watch(showMediaManager, (val) => {
+  if (val) fetchMediaList()
 })
 
 onMounted(() => {
@@ -402,6 +470,13 @@ onMounted(() => {
                 class="px-4 py-2 rounded-lg border border-border/60 hover:border-border text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
               >
                 Limpiar
+              </button>
+              <button 
+                @click="showMediaManager = true"
+                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                title="Librería de Medios"
+              >
+                <Icon name="tabler:photo" class="size-4" />
               </button>
               <button 
                 @click="showHelp = true"
@@ -550,7 +625,8 @@ onMounted(() => {
                 @click="resendFromHistory(item)"
               >
                 <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
-                  <Icon v-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
+                  <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
+                  <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
                   <span v-else v-html="segment.value" :class="segment.class"></span>
                 </template>
               </div>
@@ -715,6 +791,40 @@ onMounted(() => {
                 <span class="text-[12px] font-bold">Limpiar / Apagar</span>
                 <span class="text-[11px] font-mono bg-background border border-border px-2 py-0.5 rounded">Esc</span>
              </div>
+          </div>
+        </div>
+    </GSheet>
+
+    <!-- Media Manager Sheet -->
+    <GSheet v-model="showMediaManager">
+        <div class="flex flex-col bg-background p-8 h-full">
+          <div class="flex items-center justify-between mb-6">
+             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Librería de Medios</h2>
+             <div class="flex items-center gap-4">
+               <button @click="triggerFileUpload" :disabled="isUploading" class="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-primary/90 transition-colors disabled:opacity-50">
+                 <Icon :name="isUploading ? 'tabler:loader' : 'tabler:upload'" class="size-4" :class="{ 'animate-spin': isUploading }" />
+                 {{ isUploading ? 'Subiendo...' : 'Subir Imagen' }}
+               </button>
+               <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileUpload" />
+               <button @click="showMediaManager = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-6" /></button>
+             </div>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            <div v-if="mediaList.length === 0 && !isUploading" class="py-12 flex flex-col items-center text-muted-foreground/30">
+              <Icon name="tabler:photo" class="size-12 mb-3" />
+              <p class="text-[10px] font-bold uppercase tracking-widest">Sin imágenes</p>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div v-for="media in mediaList" :key="media.id" class="group relative border border-border rounded-xl overflow-hidden bg-muted/20 flex flex-col">
+                <img :src="useApi().getFullUrl(media.url)" class="w-full h-32 object-contain bg-background" />
+                <div class="p-3 border-t border-border mt-auto">
+                  <div class="text-[12px] font-bold text-foreground">/{{ media.name }}</div>
+                </div>
+                <button @click="deleteMediaItem(media.id)" class="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Icon name="tabler:trash" class="size-4" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
     </GSheet>

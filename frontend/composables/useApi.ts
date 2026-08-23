@@ -100,6 +100,25 @@ export const useApi = () => {
     clearAnnouncements: () => request<any>('/api/anuncios', { method: 'DELETE' }),
     deleteSelectedAnnouncements: (ids: string[]) => request<any>('/api/anuncios/delete-selected', { method: 'POST', body: { ids } }),
     
+    // Media
+    getMedia: () => request<any[]>('/api/media'),
+    uploadMedia: async (file: File, name?: string, type?: string) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (name) formData.append('name', name)
+      if (type) formData.append('type', type)
+      const authCookie = useCookie('himnario_auth_token')
+      return $fetch(`${backendUrl}/api/media`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Client-Id': clientId.value,
+          'Authorization': authCookie.value || ''
+        }
+      })
+    },
+    deleteMedia: (id: string) => request<any>(`/api/media/${id}`, { method: 'DELETE' }),
+    
     // Config & Helpers
     isHealthy,
     isConnectionError,

@@ -8,7 +8,8 @@ import { WebSocketServer } from "ws";
 import colorprint from "colorprint";
 import cors from "cors";
 import Fuse from "fuse.js";
-
+import multer from "multer";
+import path from "path";
 const db = new Database("./src/data/database.db");
 
 const app = express();
@@ -57,6 +58,16 @@ app.use(express.static("public"));
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "5mb" }));
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "public/uploads/");
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${uuid()}${ext}`);
+  },
+});
+const upload = multer({ storage });
 // -- Auth Middleware --
 const authAdmin = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
@@ -598,6 +609,54 @@ app.post("/api/anuncios/delete-selected", (req, res) => {
   }
 });
 
+app.get("/api/media", (req, res) => {
+  try {
+    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const query = db.query(
+      "SELECT * FROM media WHERE clientId = ? ORDER BY createdAt DESC"
+    );
+    const results = query.all(clientId);
+    res.json(results);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/media", upload.single("file"), (req, res) => {
+  try {
+    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const { name, type } = req.body;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "File is required" });
+      return;
+    }
+    const id = uuid();
+    const url = `/uploads/${file.filename}`;
+    const createdAt = Date.now();
+    
+    const insert = db.query(
+      "INSERT INTO media (id, type, name, url, createdAt, clientId) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    insert.run(id, type || "image", name || file.originalname, url, createdAt, clientId);
+    
+    res.json({ id, type: type || "image", name: name || file.originalname, url, createdAt, clientId });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/media/:id", (req, res) => {
+  try {
+    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const query = db.query("DELETE FROM media WHERE id = ? AND clientId = ?");
+    query.run(req.params.id, clientId);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/search", async (req, res) => {
   try {
     if (!req.query.q) {
@@ -841,6 +900,9 @@ async function prepareDb() {
     );
     db.run(
       "CREATE TABLE IF NOT EXISTS anuncios (id TEXT PRIMARY KEY, text TEXT NOT NULL, topic TEXT, createdAt INTEGER, clientId TEXT)",
+    );
+    db.run(
+      "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, type TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, createdAt INTEGER, clientId TEXT)"
     );
     db.run(
       `CREATE TABLE IF NOT EXISTS client_states (

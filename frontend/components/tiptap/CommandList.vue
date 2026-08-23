@@ -63,7 +63,8 @@ defineExpose({
         :class="index === selectedIndex ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'"
         @click="selectItem(index)"
       >
-        <Icon :name="item.icon" class="size-4" />
+        <img v-if="item.url" :src="item.url" class="size-4 object-contain rounded-sm bg-background" />
+        <Icon v-else :name="item.icon" class="size-4" />
         <span class="font-bold font-mono text-xs bg-muted border border-border px-1.5 py-0.5 rounded shadow-sm text-foreground">/{{ item.name }}</span>
         <span class="ml-auto text-xs opacity-70">{{ item.label }}</span>
       </button>

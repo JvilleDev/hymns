@@ -22,8 +22,13 @@ const iconColorClass = computed(() => {
       class="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-muted border border-border group select-none cursor-default"
       :class="{ 'ring-2 ring-primary/20 border-primary/50': props.selected }"
     >
+      <img
+        v-if="iconDef?.url"
+        :src="iconDef.url"
+        class="size-4 object-contain rounded-sm"
+      />
       <Icon 
-        v-if="iconDef" 
+        v-else-if="iconDef" 
         :name="iconDef.icon" 
         class="size-4"
         :class="iconColorClass"

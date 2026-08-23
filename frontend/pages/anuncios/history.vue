@@ -358,19 +358,24 @@ const generatePdf = () => {
             leave-to-class="opacity-0 -translate-y-2"
           >
             <div :key="spotlight.text" class="whitespace-pre-line text-3xl font-bold leading-snug">
-              <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
-                <Icon
-                  v-if="segment.type === 'icon'"
-                  :name="segment.value"
-                  :class="segment.class"
-                  class="size-6 mb-1"
-                />
-                <span
-                  v-else
-                  v-html="segment.value"
-                  :class="segment.class"
-                ></span>
-              </template>
+                <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
+                  <img
+                    v-if="segment.type === 'image'"
+                    :src="segment.value"
+                    :class="segment.class"
+                  />
+                  <Icon
+                    v-else-if="segment.type === 'icon'"
+                    :name="segment.value"
+                    :class="segment.class"
+                    class="size-6 mb-1"
+                  />
+                  <span
+                    v-else
+                    v-html="segment.value"
+                    :class="segment.class"
+                  ></span>
+                </template>
             </div>
           </Transition>
         </div>
@@ -411,8 +416,9 @@ const generatePdf = () => {
             </div>
             <div class="whitespace-pre-line text-sm font-semibold leading-snug">
               <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
+                <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
                 <Icon
-                  v-if="segment.type === 'icon'"
+                  v-else-if="segment.type === 'icon'"
                   :name="segment.value"
                   :class="segment.class"
                   class="size-4 mb-0.5"
@@ -648,7 +654,8 @@ const generatePdf = () => {
           <div class="text-xl font-bold leading-relaxed">
             <div class="whitespace-pre-line">
               <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
-                <Icon v-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" class="mb-1" />
+                <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
+                <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" class="mb-1" />
                 <span v-else v-html="segment.value" :class="segment.class"></span>
               </template>
             </div>

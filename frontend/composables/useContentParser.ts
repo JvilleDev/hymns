@@ -62,16 +62,24 @@ export const useContentParser = () => {
         if (el.classList.contains('announcement-icon') || el.hasAttribute('data-icon')) {
           const iconName = el.getAttribute('data-icon')
           if (iconName) {
-            const iconDef = icons.find(i => i.name === iconName)
+            const iconDef = icons.value.find(i => i.name === iconName)
             if (iconDef) {
                  let iconColorClass = ''
                  if (iconName === 'david') iconColorClass = 'text-primary'
                  
-                 segments.push({
-                   type: 'icon',
-                   value: iconDef.icon,
-                   class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
-                 })
+                 if (iconDef.url) {
+                   segments.push({
+                     type: 'image',
+                     value: iconDef.url,
+                     class: `inline-block align-text-bottom mx-1 max-h-[1.5em] rounded object-contain`
+                   } as any)
+                 } else {
+                   segments.push({
+                     type: 'icon',
+                     value: iconDef.icon,
+                     class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
+                   })
+                 }
                  return 
             } else {
                // If icon not found, just walk children
