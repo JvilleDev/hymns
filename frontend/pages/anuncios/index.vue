@@ -412,7 +412,7 @@ onMounted(() => {
 
     <!-- MAIN CONTENT: Scrollable -->
     <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
-      <div class="flex-1 flex flex-col lg:flex-row lg:items-start">
+      <div class="flex-1 flex flex-row items-start">
 
         <!-- LEFT COLUMN -->
         <div class="flex-1 min-w-0">
@@ -623,7 +623,7 @@ onMounted(() => {
         </div>
 
         <!-- TRANSCRIPTION LATERAL -->
-        <aside class="hidden lg:block lg:w-[400px] lg:shrink-0 lg:sticky lg:top-0 lg:border-l lg:border-border lg:bg-background lg:px-6 lg:pt-6 pb-6 lg:pb-0">
+        <aside class="w-[300px] md:w-[400px] shrink-0 sticky top-0 border-l border-border bg-background px-4 md:px-6 pt-4 md:pt-6 pb-0">
           <div class="border border-border/50 rounded-xl bg-muted/20 overflow-hidden">
             <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
               <div class="flex items-center gap-2">
