@@ -747,8 +747,7 @@ onMounted(() => {
           <div class="flex items-center justify-between mb-6">
              <h2 class="text-lg font-black uppercase tracking-[0.2em]">Historial</h2>
              <div class="flex items-center gap-4">
-                <button @click="clearAll" class="text-[10px] font-bold uppercase text-red-500">Limpiar</button>
-                <button @click="showMobileHistory = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-6" /></button>
+                <button @click="clearAll" class="text-[10px] font-bold uppercase text-red-500 mr-8">Limpiar</button>
              </div>
           </div>
           <div class="flex-1 overflow-y-auto space-y-2">
@@ -776,7 +775,7 @@ onMounted(() => {
     <GSheet v-model="showHelp">
         <div class="flex flex-col bg-background p-8">
           <div class="flex items-center justify-between mb-6">
-             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Comandos</h2>
+             <h2 class="text-lg font-black uppercase tracking-[0.2em] pr-8">Comandos</h2>
           </div>
           <div class="grid gap-2">
              <div class="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
@@ -800,13 +799,13 @@ onMounted(() => {
         <div class="flex flex-col bg-background p-8 h-full">
           <div class="flex items-center justify-between mb-6">
              <h2 class="text-lg font-black uppercase tracking-[0.2em]">Librería de Medios</h2>
-             <div class="flex items-center gap-4">
+             <div class="flex items-center gap-4 mr-8">
                <button @click="triggerFileUpload" :disabled="isUploading" class="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-primary/90 transition-colors disabled:opacity-50">
                  <Icon :name="isUploading ? 'tabler:loader' : 'tabler:upload'" class="size-4" :class="{ 'animate-spin': isUploading }" />
-                 {{ isUploading ? 'Subiendo...' : 'Subir Imagen' }}
+                 <span class="hidden sm:inline">{{ isUploading ? 'Subiendo...' : 'Subir Imagen' }}</span>
+                 <span class="sm:hidden">{{ isUploading ? '...' : 'Subir' }}</span>
                </button>
                <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileUpload" />
-               <button @click="showMediaManager = false" class="text-muted-foreground hover:text-foreground transition-colors"><Icon name="tabler:x" class="size-6" /></button>
              </div>
           </div>
           <div class="flex-1 overflow-y-auto">
