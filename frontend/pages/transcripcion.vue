@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
-import { watchDebounced } from '@vueuse/core'
+import { watchDebounced, useThrottleFn } from '@vueuse/core'
 
 const { 
   connect, 
-  updateTranscription, 
+  updateTranscription: rawUpdateTranscription, 
   setTranscriptionProducing, 
   isConnected,
   transcription,
   connectionId
 } = useRealtime()
 const { clientId, isManualConnectionTrigger } = useApi()
+
+// Evitamos saturar el WebSocket enviando un máximo de ~10 mensajes por segundo
+const updateTranscription = useThrottleFn(rawUpdateTranscription, 100)
 
 const isSupportedBrowser = ref(false)
 const isTranscribing = ref(false)
