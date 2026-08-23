@@ -623,7 +623,7 @@ onMounted(() => {
         </div>
 
         <!-- TRANSCRIPTION LATERAL -->
-        <aside class="w-full lg:w-[400px] lg:shrink-0 lg:sticky lg:top-0 lg:border-l lg:border-border lg:bg-background lg:px-6 lg:pt-6 pb-6 lg:pb-0">
+        <aside class="hidden lg:block lg:w-[400px] lg:shrink-0 lg:sticky lg:top-0 lg:border-l lg:border-border lg:bg-background lg:px-6 lg:pt-6 pb-6 lg:pb-0">
           <div class="border border-border/50 rounded-xl bg-muted/20 overflow-hidden">
             <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
               <div class="flex items-center gap-2">
