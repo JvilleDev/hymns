@@ -911,8 +911,28 @@ interface Canto {
 
 // -- Start Server --
 
+async function checkRpunct() {
+  const url = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
+  try {
+    const res = await fetch(`${url}/punctuate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "prueba de conexion con rpunct" }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      colorprint.INFO(`rpunct OK ${url} → ${JSON.stringify(data)}`);
+    } else {
+      colorprint.WARN(`rpunct respondió HTTP ${res.status} en ${url}`);
+    }
+  } catch (e: any) {
+    colorprint.WARN(`rpunct NO accesible en ${url}: ${e.cause?.code ?? e.message}`);
+  }
+}
+
 server.listen(PORT, "0.0.0.0", async () => {
   colorprint.INFO("Server running in http://0.0.0.0:" + PORT);
   await prepareDb();
   await setupFuse();
+  checkRpunct();
 });
