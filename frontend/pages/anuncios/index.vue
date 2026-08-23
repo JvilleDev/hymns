@@ -462,32 +462,32 @@ onMounted(() => {
             class="w-full bg-transparent text-xl sm:text-2xl font-bold border-none outline-none mb-4 px-2 placeholder:text-muted-foreground/30 focus:ring-0 text-foreground"
           />
           <AnnouncementsEditor v-model="textInput" @submit="sendAnnouncement" />
-          <div class="flex items-center justify-between mt-4">
-            <div class="flex items-center gap-2">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mt-4">
+            <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
               <button 
                 @click="textInput = ''"
                 :disabled="!textInput || isLoading"
-                class="px-4 py-2 rounded-lg border border-border/60 hover:border-border text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                class="px-4 py-2 rounded-lg border border-border/60 hover:border-border text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none whitespace-nowrap"
               >
                 Limpiar
               </button>
               <button 
                 @click="showMediaManager = true"
-                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
                 title="Librería de Medios"
               >
                 <Icon name="tabler:photo" class="size-4" />
               </button>
               <button 
                 @click="showHelp = true"
-                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
                 title="Ayuda"
               >
                 <Icon name="tabler:help-circle" class="size-4" />
               </button>
-              <div class="h-4 w-px bg-border mx-1"></div>
-              <div class="flex items-center gap-2 px-2" title="Enviar directamente a la pantalla al guardar">
-                <label class="text-[10px] font-black uppercase tracking-wider text-muted-foreground cursor-pointer">Auto</label>
+              <div class="h-4 w-px bg-border mx-1 shrink-0"></div>
+              <div class="flex items-center gap-2 px-2 shrink-0" title="Enviar directamente a la pantalla al guardar">
+                <label class="text-[10px] font-black uppercase tracking-wider text-muted-foreground cursor-pointer whitespace-nowrap">Auto</label>
                 <GSwitch v-model="autoSendToAir" />
               </div>
             </div>
@@ -495,13 +495,13 @@ onMounted(() => {
             <button 
               @click="announcement.active ? toggleVisibility() : sendAnnouncement()"
               :disabled="(!announcement.active && !textInput) || isLoading"
-              class="flex items-center gap-2 px-6 py-2.5 rounded-lg text-white text-[11px] font-black uppercase tracking-wider transition-all duration-300 hover:scale-[1.01] active:scale-95 shadow-lg"
+              class="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-white text-[11px] font-black uppercase tracking-wider transition-all duration-300 hover:scale-[1.01] active:scale-95 shadow-lg w-full sm:w-auto shrink-0"
               :class="announcement.active 
                 ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20' 
                 : 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20 disabled:opacity-50'"
             >
               <Icon :name="announcement.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-3.5 transition-all duration-300" />
-              <span>{{ announcement.active ? 'Ocultar' : (autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar') }}</span>
+              <span class="whitespace-nowrap">{{ announcement.active ? 'Ocultar' : (autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar') }}</span>
             </button>
           </div>
         </div>
@@ -736,7 +736,7 @@ onMounted(() => {
     </aside>
 
     <button @click="showMobileHistory = true"
-        class="lg:hidden fixed bottom-6 right-6 size-14 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
+        class="lg:hidden fixed bottom-24 right-6 size-14 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
     >
         <Icon name="tabler:history" class="size-6" />
     </button>
