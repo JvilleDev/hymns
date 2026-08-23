@@ -6,7 +6,7 @@ const props = defineProps(nodeViewProps)
 const { icons } = useAnnouncementIcons()
 
 const iconName = computed(() => props.node.attrs.name)
-const iconDef = computed(() => icons.find(i => i.name === iconName.value))
+const iconDef = computed(() => icons.value.find(i => i.name === iconName.value))
 
 const iconColorClass = computed(() => {
   if (iconName.value === 'check') return 'text-green-500'
