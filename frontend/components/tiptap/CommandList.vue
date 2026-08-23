@@ -37,7 +37,7 @@ const onKeyDown = ({ event }) => {
     return true
   }
 
-  if (event.key === 'Tab') {
+  if (event.key === 'Tab' || event.key === 'Enter') {
     selectItem(selectedIndex.value)
     return true
   }

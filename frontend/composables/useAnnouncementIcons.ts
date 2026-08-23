@@ -1,12 +1,4 @@
-const staticIcons = [
-    { name: 'triangle', label: 'Triángulo (Borde)', icon: 'tabler:triangle' },
-    { name: 'david', label: 'Estrella de David', icon: 'mdi:star-david' },
-    { name: "eagle", label: "Águila", icon: "icon-park-outline:eagle" },
-    { name: 'arrow-right', label: 'Flecha Derecha', icon: 'tabler:arrow-right' },
-    { name: 'arrow-left', label: 'Flecha Izquierda', icon: 'tabler:arrow-left' },
-]
-
-const globalIcons = ref([...staticIcons])
+const globalIcons = ref<any[]>([])
 let isFetched = false
 
 export const useAnnouncementIcons = () => {
@@ -23,7 +15,7 @@ export const useAnnouncementIcons = () => {
                     icon: '',
                     url: getFullUrl(m.url)
                 }))
-            globalIcons.value = [...staticIcons, ...dynamicIcons]
+            globalIcons.value = dynamicIcons
             isFetched = true
         } catch (e) {
             console.error('Error fetching media icons', e)
