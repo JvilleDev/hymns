@@ -58,9 +58,16 @@ app.use(express.static("public"));
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "5mb" }));
 
+import fs from "fs";
+
+const uploadDir = path.join(process.cwd(), "public/uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "public/uploads/");
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
