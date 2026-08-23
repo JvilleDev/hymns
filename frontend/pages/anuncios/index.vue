@@ -11,6 +11,7 @@ const {
   transcription, 
   setTranscriptionActive, 
   connect, 
+  isConnected,
 } = useRealtime()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
@@ -156,7 +157,72 @@ const fetchHistory = async () => {
 
 const autoSendToAir = ref(true)
 
-const sendAnnouncement = async () => {
+// --- Outbox optimista: guarda en localStorage y sincroniza cuando hay conexión ---
+type OutboxItem = {
+  id: string
+  text: string
+  topic?: string
+  createdAt: number
+  status: 'pending' | 'sending' | 'failed'
+}
+const OUTBOX_KEY = 'anuncios:outbox'
+const outbox = ref<OutboxItem[]>([])
+const isSyncing = ref(false)
+
+const persistOutbox = () => {
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox.value))
+}
+
+const loadOutbox = () => {
+  try {
+    const raw = localStorage.getItem(OUTBOX_KEY)
+    outbox.value = raw ? JSON.parse(raw) : []
+  } catch {
+    outbox.value = []
+  }
+}
+
+const removeFromOutbox = (id: string) => {
+  outbox.value = outbox.value.filter(i => i.id !== id)
+  persistOutbox()
+}
+
+const flushOutbox = async () => {
+  if (isSyncing.value || outbox.value.length === 0) return
+  isSyncing.value = true
+  const items = [...outbox.value]
+  for (const item of items) {
+    const wasFailed = item.status === 'failed'
+    item.status = 'sending'
+    persistOutbox()
+    try {
+      await createAnnouncement(item.text, item.topic)
+      outbox.value = outbox.value.filter(i => i.id !== item.id)
+      persistOutbox()
+      if (wasFailed) toast.success('Anuncio sincronizado')
+    } catch (e) {
+      item.status = 'failed'
+      persistOutbox()
+      toast.error('Sin conexión: el anuncio quedó pendiente')
+      break
+    }
+  }
+  isSyncing.value = false
+  fetchHistory()
+}
+
+const enqueueAnnouncement = (text: string, topic?: string) => {
+  outbox.value.push({ id: crypto.randomUUID(), text, topic, createdAt: Date.now(), status: 'pending' })
+  persistOutbox()
+  flushOutbox()
+}
+
+// Al renovar la conexión, sincroniza lo pendiente SIN mandar a live
+watch(isConnected, (connected) => {
+  if (connected) flushOutbox()
+})
+
+const sendAnnouncement = () => {
   if (!textInput.value) return
   const isEmpty = textInput.value.replace(/<[^>]*>?/gm, '').trim().length === 0 && !textInput.value.includes('data-icon')
   if (isEmpty) {
@@ -164,30 +230,20 @@ const sendAnnouncement = async () => {
      return
   }
 
-  isLoading.value = true
-  try {
-    const processedText = textInput.value
-      .replace(/WSS:/g, '<span class="text-red-600 font-black">WSS:</span>')
-      .replace(/WMB/g, '<span class="text-purple-600 font-black">WMB</span>')
+  const processedText = textInput.value
+    .replace(/WSS:/g, '<span class="text-red-600 font-black">WSS:</span>')
+    .replace(/WMB/g, '<span class="text-purple-600 font-black">WMB</span>')
 
-    createAnnouncement(processedText, currentTopic.value)
-      .then(() => fetchHistory())
-      .catch(() => toast.error('Error al guardar historial'))
-    
-    if (autoSendToAir.value) {
-        setAnnouncement({
-          text: processedText,
-          active: true,
-        })
-    }
-
-    toast.success(autoSendToAir.value ? 'Anuncio enviado' : 'Anuncio guardado')
-    textInput.value = ''
-  } catch (e) {
-    toast.error('Error al enviar anuncio')
-  } finally {
-    isLoading.value = false
+  if (autoSendToAir.value) {
+      setAnnouncement({
+        text: processedText,
+        active: true,
+      })
   }
+
+  enqueueAnnouncement(processedText, currentTopic.value)
+  toast.success(autoSendToAir.value ? 'Anuncio enviado' : 'Anuncio guardado')
+  textInput.value = ''
 }
 
 const isActive = (item: any) => {
@@ -309,6 +365,8 @@ watch([() => transcription.value.final, () => transcription.value.interim], () =
 onMounted(() => {
   textInput.value = localStorage.getItem(DRAFT_KEY) || ''
   isMac.value = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+  loadOutbox()
+  if (isConnected.value) flushOutbox()
   connect()
   fetchHistory()
 })
@@ -413,6 +471,50 @@ onMounted(() => {
             ></span>
             Transcripción
           </button>
+        </div>
+      </div>
+
+      <!-- OUTBOX: Pendientes de sincronizar -->
+      <div v-if="outbox.length" class="px-6 md:px-10 pb-4">
+        <div class="max-w-3xl mx-auto">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-[10px] font-black uppercase tracking-[0.15em] text-amber-500/80">Pendientes de sincronizar</h3>
+            <button 
+              @click="flushOutbox"
+              :disabled="isSyncing"
+              class="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-primary/60 hover:text-primary disabled:opacity-40 transition-colors"
+            >
+              <Icon :name="isSyncing ? 'tabler:loader' : 'tabler:refresh'" class="size-3" :class="{ 'animate-spin': isSyncing }" />
+              {{ isSyncing ? 'Sincronizando…' : 'Reintentar' }}
+            </button>
+          </div>
+          <div class="space-y-1">
+            <div 
+              v-for="item in outbox" 
+              :key="item.id"
+              class="flex items-center gap-3 px-3 py-2 rounded-lg border transition-all"
+              :class="item.status === 'failed' ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/30 bg-amber-500/5'"
+            >
+              <Icon 
+                :name="item.status === 'sending' ? 'tabler:loader' : (item.status === 'failed' ? 'tabler:cloud-off' : 'tabler:clock')"
+                class="size-4 shrink-0"
+                :class="item.status === 'sending' ? 'animate-spin text-primary' : item.status === 'failed' ? 'text-red-500' : 'text-amber-500'"
+              />
+              <div class="flex-1 min-w-0 text-[12px] font-medium text-foreground leading-tight truncate">{{ item.text.replace(/<[^>]+>/g, '') }}</div>
+              <span class="flex-none text-[9px] font-black uppercase tracking-tighter"
+                :class="item.status === 'failed' ? 'text-red-500' : 'text-amber-500'">
+                {{ item.status === 'sending' ? 'Enviando…' : item.status === 'failed' ? 'Error' : 'Pendiente' }}
+              </span>
+              <button 
+                v-if="item.status !== 'sending'"
+                @click="removeFromOutbox(item.id)"
+                class="flex-none p-1 rounded text-muted-foreground hover:text-red-500 transition-colors"
+                title="Descartar"
+              >
+                <Icon name="tabler:x" class="size-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

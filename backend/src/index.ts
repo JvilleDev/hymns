@@ -627,8 +627,11 @@ app.get("/search", async (req, res) => {
 });
 
 app.post("/api/punctuate", async (req, res) => {
+  console.log("=== TEST ===")
+  console.log("PUNCTUATION REQUESTED")
   try {
     const { text } = req.body;
+    console.log("TEXT:", text)
     if (!text) {
       res.json({ text: "" });
       return;
@@ -644,6 +647,7 @@ app.post("/api/punctuate", async (req, res) => {
     
     if (response.ok) {
       const data = await response.json();
+      console.log("RPUNCT RES:", data)
       res.json(data);
     } else {
       console.warn("Python service returned error status", response.status);
