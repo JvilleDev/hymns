@@ -12,19 +12,5 @@ services:
     volumes:
       - db_data:/app/src/data
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: hymns-frontend
-    restart: unless-stopped
-    environment:
-      - BACKEND_URL=http://hymns-backend:3100
-      - NUXT_PUBLIC_API_URL=https://hymns-back.jville.dev
-    ports:
-      - "3000"
-    depends_on:
-      - backend
-
 volumes:
   db_data:
