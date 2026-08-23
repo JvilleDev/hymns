@@ -70,8 +70,13 @@ onUnmounted(() => {
         >
           <span class="mx-48 inline-flex items-center gap-2" v-for="i in repeatCount" :key="i">
               <template v-for="(segment, idx) in parsedContent" :key="idx">
+                  <img 
+                      v-if="segment.type === 'image'" 
+                      :src="segment.value" 
+                      :class="segment.class" 
+                  />
                   <Icon 
-                      v-if="segment.type === 'icon'" 
+                      v-else-if="segment.type === 'icon'" 
                       :name="segment.value" 
                       :class="segment.class"
                   />
@@ -91,8 +96,13 @@ onUnmounted(() => {
        <div ref="measureRef" class="inline-block text-6xl font-bold tracking-wide uppercase">
           <span class="mx-48 inline-flex items-center gap-2">
             <template v-for="(segment, idx) in parsedContent" :key="idx">
+                <img 
+                    v-if="segment.type === 'image'" 
+                    :src="segment.value" 
+                    :class="segment.class" 
+                />
                 <Icon 
-                    v-if="segment.type === 'icon'" 
+                    v-else-if="segment.type === 'icon'" 
                     :name="segment.value" 
                     :class="segment.class"
                 />
