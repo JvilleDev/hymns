@@ -6,7 +6,7 @@ import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
 export default {
   items: ({ query }) => {
     const { icons: availableIcons } = useAnnouncementIcons()
-    return availableIcons
+    return availableIcons.value
       .filter(item => 
         item.name.toLowerCase().includes(query.toLowerCase()) || 
         item.label.toLowerCase().includes(query.toLowerCase())

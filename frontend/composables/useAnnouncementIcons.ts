@@ -1,15 +1,16 @@
+const staticIcons = [
+    { name: 'triangle', label: 'Triángulo (Borde)', icon: 'tabler:triangle' },
+    { name: 'david', label: 'Estrella de David', icon: 'mdi:star-david' },
+    { name: "eagle", label: "Águila", icon: "icon-park-outline:eagle" },
+    { name: 'arrow-right', label: 'Flecha Derecha', icon: 'tabler:arrow-right' },
+    { name: 'arrow-left', label: 'Flecha Izquierda', icon: 'tabler:arrow-left' },
+]
+
+const globalIcons = ref([...staticIcons])
+let isFetched = false
+
 export const useAnnouncementIcons = () => {
     const { getMedia, getFullUrl } = useApi()
-
-    const staticIcons = [
-        { name: 'triangle', label: 'Triángulo (Borde)', icon: 'tabler:triangle' },
-        { name: 'david', label: 'Estrella de David', icon: 'mdi:star-david' },
-        { name: "eagle", label: "Águila", icon: "icon-park-outline:eagle" },
-        { name: 'arrow-right', label: 'Flecha Derecha', icon: 'tabler:arrow-right' },
-        { name: 'arrow-left', label: 'Flecha Izquierda', icon: 'tabler:arrow-left' },
-    ]
-
-    const icons = useState('announcement-icons', () => [...staticIcons])
 
     const fetchMediaIcons = async () => {
         try {
@@ -22,18 +23,21 @@ export const useAnnouncementIcons = () => {
                     icon: '',
                     url: getFullUrl(m.url)
                 }))
-            icons.value = [...staticIcons, ...dynamicIcons]
+            globalIcons.value = [...staticIcons, ...dynamicIcons]
+            isFetched = true
         } catch (e) {
             console.error('Error fetching media icons', e)
         }
     }
 
-    onMounted(() => {
+    // Auto-fetch once on client if not already fetched
+    if (!isFetched && typeof window !== 'undefined') {
+        isFetched = true // prevent double fetch
         fetchMediaIcons()
-    })
+    }
 
     return {
-        icons,
+        icons: globalIcons,
         fetchMediaIcons
     }
 }
