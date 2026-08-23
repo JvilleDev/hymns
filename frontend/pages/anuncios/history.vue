@@ -45,7 +45,7 @@ const showTranscription = ref(!!(transcription.value.final || transcription.valu
 const historyRailRef = ref<HTMLElement | null>(null)
 
 watch([() => transcription.value.final, () => transcription.value.interim], ([f, i]) => {
-  if (f || i) showTranscription.value = true
+  if ((f || i) && !manuallyHidden.value) showTranscription.value = true
 })
 
 // Per-user selection: clicking a history item shows it in the spotlight,

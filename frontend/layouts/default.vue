@@ -156,7 +156,7 @@ onMounted(() => {
       </NuxtLink>
     </nav>
 
-    <Toaster position="top-center" richColors />
+    <Toaster position="bottom-left" richColors />
   </div>
 </template>
 

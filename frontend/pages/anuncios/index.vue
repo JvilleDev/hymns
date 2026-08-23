@@ -250,10 +250,16 @@ const isActive = (item: any) => {
 }
 
 const toggleVisibility = () => {
+  const willBeActive = !announcement.value.active
   setAnnouncement({
     text: announcement.value.text,
-    active: !announcement.value.active,
+    active: willBeActive,
   })
+  if (willBeActive) {
+    toast.success('Anuncio en pantalla')
+  } else {
+    toast.info('Anuncio oculto')
+  }
 }
 
 const resendFromHistory = (item: any) => {
@@ -372,102 +378,56 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
-
-    <!-- STATUS BAR: Always visible -->
-    <div class="flex-none flex items-center justify-between px-6 py-3 border-b border-border bg-muted/30">
-      <div class="flex items-center gap-3 select-none">
-        <div class="flex items-center gap-2">
-          <span 
-            class="size-2 rounded-full transition-all duration-300"
-            :class="announcement.active 
-              ? 'bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]' 
-              : 'bg-neutral-300 dark:bg-neutral-700'"
-          ></span>
-          <span 
-            class="text-[11px] font-black uppercase tracking-[0.15em]"
-            :class="announcement.active ? 'text-red-500' : 'text-neutral-400 dark:text-neutral-500'"
-          >
-            {{ announcement.active ? 'EN PANTALLA' : 'FUERA DEL AIRE' }}
-          </span>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <button 
-          v-if="announcement.active"
-          @click="toggleVisibility"
-          class="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
-        >
-          <Icon name="tabler:player-stop" class="size-3" />
-          Ocultar
-        </button>
-        <button 
-          @click="showHelp = true"
-          class="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        >
-          <Icon name="tabler:help-circle" class="size-4" />
-        </button>
-      </div>
-    </div>
-
+  <div class="flex-1 flex flex-row w-full h-full min-h-0 overflow-hidden bg-background">
+  <div class="flex-1 flex flex-col min-w-0 min-h-0">
     <!-- MAIN CONTENT: Scrollable -->
-    <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
-      <div class="flex-1 flex flex-row items-start">
-
-        <!-- LEFT COLUMN -->
-        <div class="flex-1 min-w-0">
+    <div class="flex-1 overflow-y-auto">
+        <div class="w-full">
 
       <!-- EDITOR -->
       <div class="px-6 md:px-10 pt-6 pb-4">
         <div class="max-w-3xl mx-auto">
+          <input 
+            v-model="currentTopic" 
+            type="text" 
+            placeholder="Título del anuncio..."
+            class="w-full bg-transparent text-xl sm:text-2xl font-bold border-none outline-none mb-4 px-2 placeholder:text-muted-foreground/30 focus:ring-0 text-foreground"
+          />
           <AnnouncementsEditor v-model="textInput" @submit="sendAnnouncement" />
           <div class="flex items-center justify-between mt-4">
+            <div class="flex items-center gap-2">
+              <button 
+                @click="textInput = ''"
+                :disabled="!textInput || isLoading"
+                class="px-4 py-2 rounded-lg border border-border/60 hover:border-border text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              >
+                Limpiar
+              </button>
+              <button 
+                @click="showHelp = true"
+                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                title="Ayuda"
+              >
+                <Icon name="tabler:help-circle" class="size-4" />
+              </button>
+              <div class="h-4 w-px bg-border mx-1"></div>
+              <div class="flex items-center gap-2 px-2" title="Enviar directamente a la pantalla al guardar">
+                <label class="text-[10px] font-black uppercase tracking-wider text-muted-foreground cursor-pointer">Auto</label>
+                <GSwitch v-model="autoSendToAir" />
+              </div>
+            </div>
+            
             <button 
-              @click="textInput = ''"
-              :disabled="!textInput || isLoading"
-              class="px-4 py-2 rounded-lg border border-border/60 hover:border-border text-neutral-500 dark:text-neutral-450 hover:text-neutral-700 dark:hover:text-neutral-200 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              @click="announcement.active ? toggleVisibility() : sendAnnouncement()"
+              :disabled="(!announcement.active && !textInput) || isLoading"
+              class="flex items-center gap-2 px-6 py-2.5 rounded-lg text-white text-[11px] font-black uppercase tracking-wider transition-all duration-300 hover:scale-[1.01] active:scale-95 shadow-lg"
+              :class="announcement.active 
+                ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20' 
+                : 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20 disabled:opacity-50'"
             >
-              Limpiar
+              <Icon :name="announcement.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-3.5 transition-all duration-300" />
+              <span>{{ announcement.active ? 'Ocultar' : (autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar') }}</span>
             </button>
-            <button 
-              @click="sendAnnouncement"
-              :disabled="!textInput || isLoading"
-              class="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-95 shadow-lg shadow-primary/20"
-            >
-              <Icon name="tabler:player-play" class="size-3.5" />
-              {{ autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- SETTINGS ROW -->
-      <div class="px-6 md:px-10 pb-4">
-        <div class="max-w-3xl mx-auto flex flex-wrap items-center gap-4 text-[10px]">
-          <div class="flex items-center gap-2">
-            <label class="font-black uppercase tracking-wider text-muted-foreground">Tema</label>
-            <input 
-              v-model="currentTopic" 
-              type="text" 
-              placeholder="Categoría..."
-              class="w-40 bg-background border border-border rounded-md px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-primary outline-none transition-all"
-            />
-          </div>
-          <div class="h-4 w-px bg-border"></div>
-          <div class="flex items-center gap-2">
-            <label class="font-black uppercase tracking-wider text-muted-foreground">Auto</label>
-            <GSwitch v-model="autoSendToAir" />
-          </div>
-          <div class="h-4 w-px bg-border"></div>
-          <div
-            class="flex items-center gap-1.5 font-black uppercase tracking-wider"
-            :class="transcription.active ? 'text-red-500' : 'text-muted-foreground'"
-          >
-            <span 
-              class="size-1.5 rounded-full"
-              :class="transcription.active ? 'bg-red-500 animate-pulse' : 'bg-neutral-300 dark:bg-neutral-700'"
-            ></span>
-            Transcripción
           </div>
         </div>
       </div>
@@ -622,70 +582,84 @@ onMounted(() => {
         </div>
         </div>
 
-        <!-- TRANSCRIPTION LATERAL -->
-        <aside class="w-[300px] md:w-[400px] shrink-0 sticky top-0 border-l border-border bg-background px-4 md:px-6 pt-4 md:pt-6 pb-0">
-          <div class="border border-border/50 rounded-xl bg-muted/20 overflow-hidden">
-            <div class="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
-              <div class="flex items-center gap-2">
-                <span 
-                  class="size-1.5 rounded-full"
-                  :class="transcription.active ? 'bg-red-500 animate-pulse' : 'bg-neutral-300 dark:bg-neutral-700'"
-                ></span>
-                <span class="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Transcripción en Vivo</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <button 
-                  v-if="transcriptionHistory"
-                  @click="appendToEditor(transcriptionHistory)"
-                  class="text-[9px] font-black uppercase tracking-wider text-primary/60 hover:text-primary transition-colors"
-                >
-                  Copiar al editor
-                </button>
+        </div>
+    </div>
+  </div>
 
-              </div>
+    <!-- TRANSCRIPTION FULL ASIDE -->
+    <aside class="hidden lg:flex flex-col h-full w-[400px] xl:w-[480px] bg-background text-foreground relative overflow-hidden shrink-0 border-l border-border">
+      <div class="p-8 pb-0">
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-3">
+            <div class="relative flex size-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                    :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
+              <span class="relative inline-flex rounded-full size-2.5"
+                    :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
             </div>
-            <div 
-              ref="transcriptionScrollRef"
-              class="p-4 max-h-64 overflow-y-auto font-sans text-[12px] leading-relaxed scroll-smooth"
-            >
-              <div v-if="!transcription.final && !transcription.interim" class="py-6 flex flex-col items-center text-muted-foreground/30">
-                <Icon name="tabler:activity" class="size-6 mb-1 animate-pulse" />
-                <span class="text-[9px] uppercase font-bold tracking-widest">Silencio</span>
-              </div>
-              <div v-else class="space-y-3">
-                <div v-if="transcriptionHistory && showFullHistory" class="text-muted-foreground text-[11px] bg-background/50 p-3 rounded-lg border border-border/50">
-                  {{ transcriptionHistory }}
-                </div>
-                <button 
-                  v-if="transcriptionHistory"
-                  @click="showFullHistory = !showFullHistory"
-                  class="text-[9px] font-black uppercase tracking-wider text-primary/40 hover:text-primary transition-colors"
-                >
-                  {{ showFullHistory ? 'Ocultar registro' : 'Ver registro' }}
-                </button>
-                <TransitionGroup name="word-stream" tag="p" class="text-foreground font-bold leading-relaxed flex flex-wrap gap-x-1 gap-y-1">
-                  <span 
-                    v-for="word in interimWords" 
-                    :key="word.id"
-                    class="inline-block text-blue-600 italic"
-                  >
-                    {{ word.text }}
-                  </span>
-                </TransitionGroup>
-              </div>
-            </div>
+            <h2 class="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground">Traducción en vivo</h2>
           </div>
-        </aside>
-
+          <button 
+            v-if="transcriptionHistory"
+            @click="appendToEditor(transcriptionHistory.split('\n').filter(p => p.trim()).pop() || '')"
+            class="text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors bg-muted px-3 py-1.5 rounded-full"
+            title="Copiar último fragmento"
+          >
+            Copiar al editor
+          </button>
+        </div>
       </div>
 
-    </div>
+      <div 
+        ref="transcriptionScrollRef"
+        class="flex-1 overflow-y-auto px-8 pb-10 space-y-6"
+      >
+        <div class="space-y-4">
+          <div v-if="transcriptionHistory" class="flex flex-col gap-y-4">
+             <div class="flex items-center justify-between">
+               <h3 class="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/60">Registro Anterior</h3>
+             </div>
+             <div class="space-y-4">
+               <div
+                 v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
+                 :key="i"
+                 class="group relative"
+               >
+                 <p class="text-lg sm:text-xl font-normal text-muted-foreground leading-relaxed pr-8">
+                    {{ p }}
+                 </p>
+                 <button 
+                   @click="appendToEditor(p)"
+                   class="absolute top-1 right-0 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground transition-all"
+                   title="Copiar al editor"
+                 >
+                   <Icon name="tabler:copy" class="size-4" />
+                 </button>
+               </div>
+             </div>
+          </div>
 
-    </div>
+          <div class="prose prose-p:text-foreground max-w-none pt-2">
+             <TransitionGroup
+               name="word-stream"
+               tag="p"
+               class="text-lg sm:text-xl leading-relaxed tracking-tight flex flex-wrap gap-x-1.5 gap-y-1 text-foreground font-medium"
+             >
+                <span v-for="word in interimWords" :key="word.id" class="transition-colors">
+                   {{ word.text }}
+                </span>
+             </TransitionGroup>
+          </div>
 
-    <!-- Mobile History Trigger -->
-    <button 
-        @click="showMobileHistory = true"
+          <div v-if="!transcription.final && !transcription.interim" class="py-16 text-center border border-dashed border-border/60 rounded-3xl mt-8">
+            <Icon name="tabler:ear" class="size-8 text-muted-foreground/20 mx-auto mb-3" />
+            <p class="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest italic">Silencio detectado</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <button @click="showMobileHistory = true"
         class="lg:hidden fixed bottom-6 right-6 size-14 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
     >
         <Icon name="tabler:history" class="size-6" />
