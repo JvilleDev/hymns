@@ -19,9 +19,18 @@ const {
   connectionId
 } = useRealtime()
 const { parseHTML: originalParseHTML } = useContentParser()
+const { icons } = useAnnouncementIcons()
 
 const parseCache = new Map<string, any[]>()
+
+// Clear cache when icons update so images render correctly
+watch(icons, () => {
+  parseCache.clear()
+}, { deep: true })
+
 const parseHTML = (text: string) => {
+  // Access icons to track dependency in Vue
+  const _ = icons.value
   if (!text) return []
   if (parseCache.has(text)) return parseCache.get(text)!
   const result = originalParseHTML(text)
