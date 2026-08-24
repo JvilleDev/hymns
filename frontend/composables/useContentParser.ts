@@ -10,6 +10,9 @@ export const useContentParser = () => {
   const { icons } = useAnnouncementIcons()
 
   const parseHTML = (html: string): ContentSegment[] => {
+    // Force Vue to track icons as a dependency for any computed properties using this
+    const _ = icons.value
+    
     if (!html) return []
     
     // Auto-inject spans for keywords to ensure they are always styled
