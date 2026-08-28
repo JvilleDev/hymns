@@ -238,6 +238,14 @@ const displayTopic = computed(() => {
     return latestWithTopic?.topic || 'Historial'
 })
 
+const spotlightSizeClass = computed(() => {
+  const len = (spotlight.value?.text || '').replace(/<[^>]*>/g, '').length
+  if (len > 500) return 'text-xl sm:text-2xl'
+  if (len > 250) return 'text-2xl sm:text-3xl'
+  if (len > 120) return 'text-3xl sm:text-4xl'
+  return 'text-5xl sm:text-6xl'
+})
+
 const generatePdf = () => {
   window.print()
 }
@@ -340,7 +348,7 @@ const generatePdf = () => {
       </div>
 
       <!-- Spotlight area (desktop only) -->
-      <div class="hidden lg:flex flex-1 items-center justify-center px-6 sm:px-12 py-8 overflow-hidden relative">
+      <div class="hidden lg:flex flex-1 items-center justify-center px-6 sm:px-12 py-8 overflow-y-auto relative">
 
         <!-- Empty state -->
         <div v-if="!spotlight && !isLoading" class="text-center">
@@ -367,7 +375,7 @@ const generatePdf = () => {
             leave-from-class="opacity-100 translate-y-0"
             leave-to-class="opacity-0 -translate-y-2"
           >
-            <div :key="spotlight.text" class="whitespace-pre-line text-5xl sm:text-6xl font-black leading-tight tracking-tight">
+            <div :key="spotlight.text" class="whitespace-pre-line font-black leading-tight tracking-tight text-balance" :class="spotlightSizeClass">
                 <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
                   <img
                     v-if="segment.type === 'image'"
