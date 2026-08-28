@@ -367,7 +367,7 @@ const generatePdf = () => {
             leave-from-class="opacity-100 translate-y-0"
             leave-to-class="opacity-0 -translate-y-2"
           >
-            <div :key="spotlight.text" class="whitespace-pre-line text-3xl font-bold leading-snug">
+            <div :key="spotlight.text" class="whitespace-pre-line text-5xl sm:text-6xl font-black leading-tight tracking-tight">
                 <template v-for="(segment, idx) in parseHTML(spotlight.text)" :key="idx">
                   <img
                     v-if="segment.type === 'image'"
