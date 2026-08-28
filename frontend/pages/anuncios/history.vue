@@ -362,7 +362,7 @@ const generatePdf = () => {
             leave-to-class="opacity-0 translate-y-4"
         >
             <div v-if="showLyrics && activeLine" class="absolute bottom-12 left-0 right-0 px-12 text-center pointer-events-none z-20">
-                <p class="inline-block bg-black/80 backdrop-blur-md text-white text-3xl font-black px-8 py-4 rounded-2xl shadow-2xl tracking-tight leading-tight max-w-4xl">
+                <p class="inline-block bg-black/80 backdrop-blur-md text-white text-4xl sm:text-5xl font-black px-8 py-5 rounded-2xl shadow-2xl tracking-tight leading-tight max-w-4xl">
                     {{ activeLine }}
                 </p>
             </div>
@@ -428,8 +428,8 @@ const generatePdf = () => {
             leave-from-class="opacity-100 translate-y-0"
             leave-to-class="opacity-0 -translate-y-2"
         >
-            <div v-if="showLyrics && activeLine" class="mb-4 bg-black text-white px-4 py-3 rounded-xl shadow-lg sticky top-0 z-10 flex flex-col justify-center min-h-[4rem]">
-                <p class="text-sm font-black leading-tight text-center">{{ activeLine }}</p>
+            <div v-if="showLyrics && activeLine" class="mb-4 bg-black text-white px-4 py-4 rounded-xl shadow-lg sticky top-0 z-10 flex flex-col justify-center min-h-[4rem]">
+                <p class="text-xl font-black leading-tight text-center">{{ activeLine }}</p>
             </div>
         </Transition>
 
