@@ -11,6 +11,8 @@ services:
       - "3100"
     volumes:
       - db_data:/app/src/data
+      - uploads_data:/app/public/uploads
 
 volumes:
   db_data:
+  uploads_data:
