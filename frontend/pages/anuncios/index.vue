@@ -28,7 +28,11 @@ const isLoading = ref(true)
 const history = ref<any[]>([])
 const showMobileHistory = ref(false)
 const transcriptionScrollRef = ref<HTMLElement | null>(null)
-const transcriptionHistory = ref('')
+const MAX_TRANSCRIPTION_LENGTH = 5000
+const transcriptionHistory = computed(() => {
+  const text = transcription.value.final || ''
+  return text.length > MAX_TRANSCRIPTION_LENGTH ? text.slice(-MAX_TRANSCRIPTION_LENGTH) : text
+})
 const showFullHistory = ref(false)
 const showHelp = ref(false)
 const showMediaManager = ref(false)
@@ -89,13 +93,6 @@ const deleteMediaItem = async (id: string) => {
   }
 }
 
-// Accumulate transcription history
-watch(() => transcription.value.final, (newFinal) => {
-  if (newFinal) {
-    const space = transcriptionHistory.value && !transcriptionHistory.value.endsWith(' ') ? ' ' : ''
-    transcriptionHistory.value += space + newFinal
-  }
-})
 
 // Words only for the interim stream
 const interimWords = computed(() => {
