@@ -13,8 +13,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
-# Pre-download the model into the Docker image so it doesn't download on every startup
+# Pre-download models into the image so startup is instant (no network on deploy)
 RUN python -c "from transformers import pipeline; pipeline('token-classification', model='oliverguhr/fullstop-punctuation-multilingual-sonar-base')"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-small')"
 
 COPY . .
 

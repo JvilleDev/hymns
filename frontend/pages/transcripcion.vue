@@ -109,10 +109,11 @@ const getMicrophones = async (opts?: { skipPermissionRequest?: boolean }) => {
   }
 }
 
-const TRANSITION_WORDS = [
-  'Ahora', 'Miren', 'Escuchen', 'Pero', 'Entonces', 'Dice', 
-  'Finalmente', 'Así que', 'O sea', 'Por ejemplo', 'En fin'
-]
+// LEGACY: reemplazado por segmentación semántica
+// const TRANSITION_WORDS = [
+//   'Ahora', 'Miren', 'Escuchen', 'Pero', 'Entonces', 'Dice', 
+//   'Finalmente', 'Así que', 'O sea', 'Por ejemplo', 'En fin'
+// ]
 
 const isSomeoneElseTranscribing = computed(() => transcription.value.producing && !isLocalProducer.value)
 
@@ -127,7 +128,7 @@ const lastActiveTime = ref(Date.now())
 // Puntos para saltos de línea
 const PUNCTUATION_PAUSE = 5000 
 const SILENCE_THRESHOLD = 0.05 
-const MAX_PARAGRAPH_LENGTH = 160 // Mucho más corto para legibilidad en móviles
+const MAX_PARAGRAPH_LENGTH = 400 // Safety net — la segmentación semántica es el mecanismo principal
 const INACTIVITY_FLUSH = 10000 
 
 const resetInactivityTimer = () => {
@@ -177,6 +178,28 @@ const requestPunctuation = async (text: string) => {
     return data?.text || text
   } catch (e) {
     return text
+  }
+}
+
+const requestSegmentation = async (sentences: string[], useJudge = false): Promise<{
+  paragraphs: Array<{
+    id: string
+    text: string
+    paragraphIndex: number
+    confidenceScore: number
+  }>
+}> => {
+  try {
+    const documentId = clientId.value || 'default'
+    const data = await useApi().post<any>('/api/segment', {
+      sentences,
+      documentId,
+      useJudge
+    })
+    return data
+  } catch (e) {
+    console.error('[Segment] Error:', e)
+    return { paragraphs: [] }
   }
 }
 
@@ -249,42 +272,38 @@ const initRecognition = () => {
 
         activeParagraphPunctuated.value = processed
         
-        // 3. Lógica de Salto de Párrafo Híbrida y PROACTIVA
-        // Dividimos el buffer en oraciones para ver si podemos "soltar" párrafos ya terminados
-        const sentences = activeParagraphPunctuated.value.match(/[^.!?]+[.!?](\s+|$)/g) || []
-        
-        if (sentences.length > 1) {
-          let currentParagraphSize = 0
-          let splitIndex = -1
+        // 3. Segmentación Semántica (nuevo pipeline)
+        const sentences = activeParagraphPunctuated.value
+          .split(/(?<=[.!?])\s+/)
+          .map(s => s.trim())
+          .filter(Boolean)
 
-          for (let i = 0; i < sentences.length; i++) {
-            currentParagraphSize += sentences[i].length
-            // Si este conjunto de oraciones ya es suficientemente largo, o hay una pausa natural
-            if (currentParagraphSize > MAX_PARAGRAPH_LENGTH || silenceGap > 1500) {
-              splitIndex = i
-              break
+        // Solo segmentar cuando hay suficientes oraciones para formar ventanas
+        if (sentences.length >= 3) {
+          // Llamada asíncrona al pipeline — no bloquea el display
+          requestSegmentation(sentences).then(result => {
+            if (result.paragraphs.length > 1) {
+              // Hay un punto de corte: el primer párrafo se consolida, el resto sigue activo
+              const firstParagraph = result.paragraphs[0]
+              const remainingParagraphs = result.paragraphs.slice(1)
+              
+              consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + firstParagraph.text
+              
+              // El último párrafo incompleto sigue como activo
+              const lastParagraph = remainingParagraphs[remainingParagraphs.length - 1]
+              activeParagraphRaw.value = lastParagraph.text
+              activeParagraphPunctuated.value = lastParagraph.text
             }
-          }
-
-          // Si encontramos un punto de corte (no al final del todo)
-          if (splitIndex !== -1 && splitIndex < sentences.length - 1) {
-            const head = sentences.slice(0, splitIndex + 1).join('').trim()
-            const tail = sentences.slice(splitIndex + 1).join('').trim()
-            
-            consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + head
-            activeParagraphRaw.value = tail // El resto vuelve a ser el buffer crudo
-            activeParagraphPunctuated.value = tail
-          }
+            // Si solo hay 1 párrafo → MERGE, no hacer nada
+          })
         }
 
-        // 4. Verificación final (por si el orador se calla o el buffer es corto pero termina)
-        const isLongEnough = activeParagraphPunctuated.value.length > MAX_PARAGRAPH_LENGTH
+        // 4. Fallback: salto por silencio prolongado o largo extremo (mantener como safety net)
+        const isVeryLong = activeParagraphPunctuated.value.length > 400
         const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
-        const startOfNew = trimmedNew.charAt(0).toUpperCase() + trimmedNew.slice(1)
-        const startsWithTransition = TRANSITION_WORDS.some(word => startOfNew.startsWith(word))
-        const isNaturalPause = silenceGap > 1500 
+        const isVeryLongPause = silenceGap > 4000
 
-        if ((isLongEnough && endsInDot) || (isNaturalPause && endsInDot) || (startsWithTransition && sentences.length > 1)) {
+        if ((isVeryLong && endsInDot) || isVeryLongPause) {
           consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
@@ -639,7 +658,7 @@ definePageMeta({
            </div>
            <div>
              <span class="block text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Registro en Tiempo Real</span>
-             <span class="block text-[9px] font-bold text-neutral-300">Puntuación automática activa</span>
+             <span class="block text-[9px] font-bold text-neutral-300">Segmentación semántica activa</span>
            </div>
         </div>
 

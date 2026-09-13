@@ -725,6 +725,228 @@ app.post("/api/punctuate", async (req, res) => {
   }
 });
 
+app.post("/api/segment", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { sentences, documentId, useJudge = false } = req.body;
+    const clientId = (req.headers["x-client-id"] as string) || "default";
+
+    if (!Array.isArray(sentences) || sentences.length === 0) {
+      res.status(400).json({ error: "sentences must be a non-empty array" });
+      return;
+    }
+    if (!documentId) {
+      res.status(400).json({ error: "documentId is required" });
+      return;
+    }
+
+    const rpunctUrl = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
+
+    // Step 1: Normalize joined text
+    let normalizedSentences: string[] = sentences;
+    try {
+      const normalizeRes = await fetch(`${rpunctUrl}/normalize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sentences.join(" ") }),
+      });
+      if (normalizeRes.ok) {
+        const normalizeData: any = await normalizeRes.json();
+        const normalizedText: string = normalizeData.text || sentences.join(" ");
+        // Step 2: Split normalized text into sentences by punctuation
+        normalizedSentences = normalizedText
+          .split(/(?<=[.!?])\s+/)
+          .map((s: string) => s.trim())
+          .filter((s: string) => s.length > 0);
+      }
+    } catch (e) {
+      console.warn("Normalize step failed, using raw sentences:", e);
+    }
+
+    if (normalizedSentences.length === 0) {
+      normalizedSentences = sentences;
+    }
+
+    // Step 3: Segment — iterate over pairs of adjacent windows
+    // window_A = [s[i-1], s[i]], window_B = [s[i+1], s[i+2]]
+    // A "break" happens AFTER sentence i (between i and i+1)
+    interface SegmentDecision {
+      afterIndex: number; // break after this sentence index
+      decision: string;
+      breakScore: number;
+    }
+    const decisions: SegmentDecision[] = [];
+
+    for (let i = 0; i < normalizedSentences.length - 1; i++) {
+      const windowA: string[] = [
+        normalizedSentences[i - 1] ?? "",
+        normalizedSentences[i],
+      ].filter(Boolean);
+      const windowB: string[] = [
+        normalizedSentences[i + 1],
+        normalizedSentences[i + 2] ?? "",
+      ].filter(Boolean);
+
+      let decision = "CONTINUE";
+      let breakScore = 0;
+
+      try {
+        const segRes = await fetch(`${rpunctUrl}/segment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ window_a: windowA, window_b: windowB }),
+        });
+        if (segRes.ok) {
+          const segData: any = await segRes.json();
+          decision = segData.decision ?? "CONTINUE";
+          breakScore = segData.break_score ?? 0;
+
+          // Step 3b: If AMBIGUOUS and useJudge, call judge
+          if (decision === "AMBIGUOUS" && useJudge) {
+            try {
+              const judgeRes = await fetch(`${rpunctUrl}/judge`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  window_a: windowA.join(" "),
+                  window_b: windowB.join(" "),
+                }),
+              });
+              if (judgeRes.ok) {
+                const judgeData: any = await judgeRes.json();
+                decision = judgeData.decision ?? decision;
+                breakScore = judgeData.break_score ?? breakScore;
+              }
+            } catch (e) {
+              console.warn(`Judge call failed at index ${i}:`, e);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`Segment call failed at index ${i}:`, e);
+      }
+
+      decisions.push({ afterIndex: i, decision, breakScore });
+    }
+
+    // Step 4: Build paragraphs from BREAK decisions
+    interface ParagraphAccumulator {
+      sentenceIndices: number[];
+      breakScores: number[];
+    }
+    const paragraphAccumulators: ParagraphAccumulator[] = [];
+    let current: ParagraphAccumulator = { sentenceIndices: [0], breakScores: [] };
+
+    for (let i = 0; i < normalizedSentences.length - 1; i++) {
+      const dec = decisions.find((d) => d.afterIndex === i);
+      if (dec && dec.decision === "BREAK") {
+        current.breakScores.push(dec.breakScore);
+        paragraphAccumulators.push(current);
+        current = { sentenceIndices: [i + 1], breakScores: [] };
+      } else {
+        current.sentenceIndices.push(i + 1);
+        if (dec) current.breakScores.push(dec.breakScore);
+      }
+    }
+    paragraphAccumulators.push(current);
+
+    // Step 5: Build, persist, and return paragraphs
+    const createdAt = Date.now();
+    const paragraphs = paragraphAccumulators.map((acc, paragraphIndex) => {
+      const text = acc.sentenceIndices
+        .map((si) => normalizedSentences[si])
+        .join(" ");
+      const words = text.split(" ").filter(Boolean);
+      const tokenCount = Math.round(words.length * 1.3);
+      const startSentenceId = String(acc.sentenceIndices[0]);
+      const endSentenceId = String(acc.sentenceIndices[acc.sentenceIndices.length - 1]);
+
+      // confidenceScore: average of (1 - breakScore) for this paragraph's transitions
+      // If single sentence, score = 1.0
+      let confidenceScore = 1.0;
+      if (acc.breakScores.length > 0) {
+        const avg =
+          acc.breakScores.reduce((sum, s) => sum + (1 - s), 0) /
+          acc.breakScores.length;
+        confidenceScore = Math.round(avg * 1000) / 1000;
+      }
+
+      const id = uuid();
+
+      // Persist to DB
+      try {
+        db.query(
+          `INSERT INTO processed_paragraphs
+            (id, documentId, clientId, paragraphIndex, text, tokenCount, embedding, startSentenceId, endSentenceId, hasSpeakerChange, confidenceScore, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, ?)`
+        ).run(id, documentId, clientId, paragraphIndex, text, tokenCount, startSentenceId, endSentenceId, confidenceScore, createdAt);
+      } catch (e) {
+        console.error(`Error saving paragraph ${paragraphIndex}:`, e);
+      }
+
+      return {
+        id,
+        documentId,
+        paragraphIndex,
+        text,
+        tokenCount,
+        confidenceScore,
+        metadata: {
+          startSentenceId,
+          endSentenceId,
+          hasSpeakerChange: false,
+        },
+      };
+    });
+
+    res.json({
+      paragraphs,
+      totalSentences: normalizedSentences.length,
+      processingTimeMs: Date.now() - startTime,
+    });
+  } catch (error: any) {
+    console.error("Error in /api/segment:", error);
+    res.status(500).json({ error: "Segmentation failed", message: error.message });
+  }
+});
+
+app.get("/api/paragraphs", (req, res) => {
+  try {
+    const documentId = req.query.documentId as string;
+    const clientId = (req.query.clientId as string) || (req.headers["x-client-id"] as string) || "default";
+
+    if (!documentId) {
+      res.status(400).json({ error: "documentId query param is required" });
+      return;
+    }
+
+    const rows = db
+      .query(
+        "SELECT * FROM processed_paragraphs WHERE documentId = ? AND clientId = ? ORDER BY paragraphIndex ASC"
+      )
+      .all(documentId, clientId) as any[];
+
+    const paragraphs = rows.map((row) => ({
+      id: row.id,
+      documentId: row.documentId,
+      clientId: row.clientId,
+      paragraphIndex: row.paragraphIndex,
+      text: row.text,
+      tokenCount: row.tokenCount,
+      confidenceScore: row.confidenceScore,
+      metadata: {
+        startSentenceId: row.startSentenceId,
+        endSentenceId: row.endSentenceId,
+        hasSpeakerChange: !!row.hasSpeakerChange,
+      },
+    }));
+
+    res.json(paragraphs);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // -- Helpers & DB --
 
 async function setupFuse() {
@@ -926,6 +1148,26 @@ async function prepareDb() {
         lastTranscriptionUpdate INTEGER,
         lastAnnouncementUpdate INTEGER
       )`,
+    );
+
+    db.run(
+      `CREATE TABLE IF NOT EXISTS processed_paragraphs (
+        id TEXT PRIMARY KEY,
+        documentId TEXT NOT NULL,
+        clientId TEXT NOT NULL,
+        paragraphIndex INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        tokenCount INTEGER NOT NULL,
+        embedding TEXT,
+        startSentenceId TEXT,
+        endSentenceId TEXT,
+        hasSpeakerChange INTEGER DEFAULT 0,
+        confidenceScore REAL DEFAULT 1.0,
+        createdAt INTEGER NOT NULL
+      )`
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_paragraphs_document ON processed_paragraphs(documentId, clientId)"
     );
 
     // Migrations
