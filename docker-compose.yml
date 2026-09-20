@@ -19,7 +19,6 @@ services:
   rpunct:
     build:
       context: ./rpunct_service
-    container_name: hymns-rpunct
     restart: unless-stopped
     environment:
       - OLLAMA_URL=http://ollama:11434
