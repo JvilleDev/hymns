@@ -12,8 +12,52 @@ const {
 } = useRealtime()
 const { clientId, isManualConnectionTrigger } = useApi()
 
+// ponytail: cola de reenvío — los updateTranscription durante un corte WS se pierden (sendEvent los descarta)
+const pendingQueue = ref<Array<{ final: string, interim: string, attempts: number }>>([])
+let flushingQueue = false
+const sendOrEnqueue = (payload: { final: string, interim: string }) => {
+  if (!isConnected.value) {
+    pendingQueue.value.push({ ...payload, attempts: 0 })
+    return
+  }
+  try {
+    rawUpdateTranscription(payload)
+  } catch {
+    pendingQueue.value.push({ ...payload, attempts: 0 })
+  }
+}
 // Evitamos saturar el WebSocket enviando un máximo de ~10 mensajes por segundo
-const updateTranscription = useThrottleFn(rawUpdateTranscription, 100)
+const updateTranscription = useThrottleFn(sendOrEnqueue, 100)
+
+// Al reconectar drena en FIFO con límite de 5 intentos; si falla, queda en cola y para
+watch(isConnected, (connected) => {
+  if (!connected || flushingQueue || pendingQueue.value.length === 0) return
+  flushingQueue = true
+  try {
+    while (pendingQueue.value.length > 0) {
+      const head = pendingQueue.value[0]
+      // ponytail: dedupe — colapsa intermedios viejos, solo importa el estado más reciente no confirmado
+      const isStale = pendingQueue.value.length > 1
+      const confirmed = head.final === transcription.value.final && head.interim === transcription.value.interim
+      pendingQueue.value.shift()
+      if (isStale || confirmed) continue
+      if (head.attempts >= 5) continue
+      if (!isConnected.value) {
+        pendingQueue.value.unshift(head)
+        break
+      }
+      try {
+        rawUpdateTranscription({ final: head.final, interim: head.interim })
+      } catch {
+        pendingQueue.value.unshift({ ...head, attempts: head.attempts + 1 })
+        // ponytail: backoff simple — reintenta en el próximo reconnect, no en loop
+        break
+      }
+    }
+  } finally {
+    flushingQueue = false
+  }
+})
 
 const isSupportedBrowser = ref(false)
 const isTranscribing = ref(false)
