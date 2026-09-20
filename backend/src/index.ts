@@ -790,6 +790,11 @@ app.post("/api/segment", async (req, res) => {
       let decision = "CONTINUE";
       let breakScore = 0;
 
+      // ponytail: liturgical break anchors force cut without service call
+      if (/pueden tomar asiento|abran sus biblias|amén|aleluya|gloria a dios|oremos/i.test(normalizedSentences[i + 1] ?? "")) {
+        decision = "BREAK";
+        breakScore = 1;
+      } else
       try {
         const segRes = await fetch(`${rpunctUrl}/segment`, {
           method: "POST",

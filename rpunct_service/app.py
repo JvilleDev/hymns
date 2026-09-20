@@ -125,7 +125,7 @@ def punctuate_text(request: TextRequest):
 
         punctuated = get_punctuated_text(request.text)
         duration_ms = round((time.time() - start_time) * 1000, 2)
-        print(f"[{duration_ms}ms] Punctuated: {punctuated}")
+        print(f"[{duration_ms}ms] Punctuated ({len(request.text)} chars): {punctuated[:120]}")
         return {"text": punctuated, "time_ms": duration_ms}
     except Exception as e:
         print(f"Error restoring punctuation: {e}")

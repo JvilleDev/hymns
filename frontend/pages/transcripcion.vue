@@ -281,7 +281,7 @@ const initRecognition = () => {
         // Solo segmentar cuando hay suficientes oraciones para formar ventanas
         if (sentences.length >= 3) {
           // Llamada asíncrona al pipeline — no bloquea el display
-          requestSegmentation(sentences).then(result => {
+          requestSegmentation(sentences, true).then(result => {
             if (result.paragraphs.length > 1) {
               // Hay un punto de corte: el primer párrafo se consolida, el resto sigue activo
               const firstParagraph = result.paragraphs[0]
@@ -299,7 +299,7 @@ const initRecognition = () => {
         }
 
         // 4. Fallback: salto por silencio prolongado o largo extremo (mantener como safety net)
-        const isVeryLong = activeParagraphPunctuated.value.length > 400
+        const isVeryLong = activeParagraphPunctuated.value.length > 250
         const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
         const isVeryLongPause = silenceGap > 4000
 
