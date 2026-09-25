@@ -728,7 +728,7 @@ app.post("/api/punctuate", async (req, res) => {
 app.post("/api/segment", async (req, res) => {
   const startTime = Date.now();
   try {
-    const { sentences, documentId, useJudge = false } = req.body;
+    const { sentences, documentId } = req.body;
     const clientId = (req.headers["x-client-id"] as string) || "default";
 
     if (!Array.isArray(sentences) || sentences.length === 0) {
@@ -805,27 +805,6 @@ app.post("/api/segment", async (req, res) => {
           const segData: any = await segRes.json();
           decision = segData.decision ?? "CONTINUE";
           breakScore = segData.break_score ?? 0;
-
-          // Step 3b: If AMBIGUOUS and useJudge, call judge
-          if (decision === "AMBIGUOUS" && useJudge) {
-            try {
-              const judgeRes = await fetch(`${rpunctUrl}/judge`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  window_a: windowA.join(" "),
-                  window_b: windowB.join(" "),
-                }),
-              });
-              if (judgeRes.ok) {
-                const judgeData: any = await judgeRes.json();
-                decision = judgeData.decision ?? decision;
-                breakScore = judgeData.break_score ?? breakScore;
-              }
-            } catch (e) {
-              console.warn(`Judge call failed at index ${i}:`, e);
-            }
-          }
         }
       } catch (e) {
         console.warn(`Segment call failed at index ${i}:`, e);

@@ -1,9 +1,6 @@
-import os
 import re
-import json
 import time
 import torch
-import httpx
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,12 +62,6 @@ except Exception as e:
     embed_model = None
 
 # ---------------------------------------------------------------------------
-# Ollama config (FASE 4)
-# ---------------------------------------------------------------------------
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-
-# ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
 class TextRequest(BaseModel):
@@ -80,11 +71,6 @@ class TextRequest(BaseModel):
 class SegmentRequest(BaseModel):
     window_a: List[str]
     window_b: List[str]
-
-
-class JudgeRequest(BaseModel):
-    window_a: str
-    window_b: str
 
 
 # ---------------------------------------------------------------------------
@@ -348,75 +334,6 @@ def segment_endpoint(request: SegmentRequest):
 
 
 # ---------------------------------------------------------------------------
-# FASE 4 — /judge  (Ollama micro-LLM, async)
-# ---------------------------------------------------------------------------
-
-JUDGE_PROMPT_TEMPLATE = (
-    "Tu tarea es decidir si dos fragmentos de una transcripción pertenecen al mismo párrafo.\n"
-    "Criterios:\n"
-    "- Unir si mantienen la misma línea de pensamiento o desarrollo de idea.\n"
-    "- Separar si hay cambio claro de tema, lectura de cita, o cambio de dirección discursiva.\n\n"
-    'Fragmento A: "{window_a}"\n'
-    'Fragmento B: "{window_b}"\n\n'
-    'Responde ÚNICAMENTE con JSON: {{"decision": "MERGE"}} o {{"decision": "BREAK"}}'
-)
-
-
-@app.post("/judge")
-async def judge_endpoint(request: JudgeRequest):
-    start_time = time.time()
-
-    prompt = JUDGE_PROMPT_TEMPLATE.format(
-        window_a=request.window_a,
-        window_b=request.window_b,
-    )
-
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(OLLAMA_URL, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            raw_text = data.get("response", "")
-    except Exception as e:
-        print(f"Ollama unavailable or error: {e}")
-        time_ms = round((time.time() - start_time) * 1000, 2)
-        return {"decision": "MERGE", "confidence": "fallback", "time_ms": time_ms}
-
-    # Parse LLM JSON response
-    decision = "MERGE"
-    confidence = "fallback"
-    try:
-        # Extract JSON object from response text (model may add extra prose)
-        json_match = re.search(r'\{[^}]*"decision"\s*:\s*"(MERGE|BREAK)"[^}]*\}', raw_text)
-        if json_match:
-            parsed = json.loads(json_match.group(0))
-            decision = parsed.get("decision", "MERGE")
-            if decision not in ("MERGE", "BREAK"):
-                decision = "MERGE"
-            confidence = "high"
-        else:
-            # Fallback: look for bare keyword
-            upper = raw_text.upper()
-            if "BREAK" in upper and "MERGE" not in upper:
-                decision = "BREAK"
-                confidence = "high"
-            elif "MERGE" in upper:
-                decision = "MERGE"
-                confidence = "high"
-    except Exception as parse_err:
-        print(f"Failed to parse Ollama response: {parse_err} | raw: {raw_text}")
-
-    time_ms = round((time.time() - start_time) * 1000, 2)
-    return {"decision": decision, "confidence": confidence, "time_ms": time_ms}
-
-
-# ---------------------------------------------------------------------------
 # GET /health
 # ---------------------------------------------------------------------------
 @app.get("/health")
@@ -427,8 +344,6 @@ def health():
         "models": {
             "punctuation": "loaded" if punct_pipeline is not None else "unavailable",
             "embeddings": "loaded" if embed_model is not None else "unavailable",
-            "ollama_url": OLLAMA_URL,
-            "ollama_model": OLLAMA_MODEL,
         },
     }
 

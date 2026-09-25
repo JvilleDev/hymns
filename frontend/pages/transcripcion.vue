@@ -225,7 +225,7 @@ const requestPunctuation = async (text: string) => {
   }
 }
 
-const requestSegmentation = async (sentences: string[], useJudge = false): Promise<{
+const requestSegmentation = async (sentences: string[]): Promise<{
   paragraphs: Array<{
     id: string
     text: string
@@ -237,8 +237,7 @@ const requestSegmentation = async (sentences: string[], useJudge = false): Promi
     const documentId = clientId.value || 'default'
     const data = await useApi().post<any>('/api/segment', {
       sentences,
-      documentId,
-      useJudge
+      documentId
     })
     return data
   } catch (e) {
@@ -325,7 +324,7 @@ const initRecognition = () => {
         // Solo segmentar cuando hay suficientes oraciones para formar ventanas
         if (sentences.length >= 3) {
           // Llamada asíncrona al pipeline — no bloquea el display
-          requestSegmentation(sentences, true).then(result => {
+          requestSegmentation(sentences).then(result => {
             if (result.paragraphs.length > 1) {
               // Hay un punto de corte: el primer párrafo se consolida, el resto sigue activo
               const firstParagraph = result.paragraphs[0]
