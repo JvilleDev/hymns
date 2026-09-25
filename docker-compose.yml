@@ -5,29 +5,13 @@ services:
       dockerfile: Dockerfile
     container_name: hymns-backend
     restart: unless-stopped
-    depends_on:
-      rpunct:
-        condition: service_healthy
     environment:
-      - RPUNCT_URL=http://rpunct:8000
+      # rpunct corre como servicio aparte; ajusta la URL según tu despliegue
+      - RPUNCT_URL=${RPUNCT_URL:-http://127.0.0.1:8000}
     volumes:
       - db_data:/app/src/data
       - uploads_data:/app/public/uploads
 
-  rpunct:
-    build:
-      context: ./rpunct_service
-    restart: unless-stopped
-    volumes:
-      - model_cache:/root/.cache/huggingface
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
 volumes:
   db_data:
   uploads_data:
-  model_cache:
