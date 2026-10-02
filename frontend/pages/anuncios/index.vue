@@ -681,21 +681,20 @@ onMounted(() => {
             >
               Copiar al editor
             </button>
-            <button
-              @click="setTranscriptionActive(!transcription.active)"
-              class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors"
-              :class="transcription.active ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-primary/10 text-primary hover:bg-primary/20'"
-              :title="transcription.active ? 'Ocultar de pantalla' : 'Mostrar en pantalla'"
-            >
-              <span v-if="transcription.active" class="relative flex size-1.5">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-                <span class="relative inline-flex rounded-full size-1.5 bg-red-500"></span>
-              </span>
-              <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-3" />
-              {{ transcription.active ? 'En pantalla' : 'Mostrar en pantalla' }}
-            </button>
           </div>
         </div>
+        <button
+          @click="setTranscriptionActive(!transcription.active)"
+          class="w-full inline-flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest px-4 py-3 rounded-xl transition-colors mb-6"
+          :class="transcription.active ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-primary text-primary-foreground hover:opacity-90'"
+        >
+          <span v-if="transcription.active" class="relative flex size-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+            <span class="relative inline-flex rounded-full size-2 bg-white"></span>
+          </span>
+          <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-4" />
+          {{ transcription.active ? 'Transcripción en pantalla' : 'Mostrar transcripción en pantalla' }}
+        </button>
       </div>
 
       <div 
