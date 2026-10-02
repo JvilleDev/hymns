@@ -2,10 +2,10 @@ FROM oven/bun:alpine AS base
 
 WORKDIR /app
 
-COPY frontend/package.json frontend/bun.lock* ./
+COPY package.json bun.lock* ./
 RUN bun install
 
-COPY frontend/ .
+COPY . .
 ARG NUXT_PUBLIC_COMMIT_HASH=unknown
 ENV NUXT_PUBLIC_COMMIT_HASH=$NUXT_PUBLIC_COMMIT_HASH
 RUN bun run build
