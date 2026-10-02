@@ -672,14 +672,29 @@ onMounted(() => {
             </div>
             <h2 class="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground">Traducción en vivo</h2>
           </div>
-          <button 
-            v-if="transcriptionHistory"
-            @click="appendToEditor(transcriptionHistory.split('\n').filter(p => p.trim()).pop() || '')"
-            class="text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors bg-muted px-3 py-1.5 rounded-full"
-            title="Copiar último fragmento"
-          >
-            Copiar al editor
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="transcriptionHistory"
+              @click="appendToEditor(transcriptionHistory.split('\n').filter(p => p.trim()).pop() || '')"
+              class="text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors bg-muted px-3 py-1.5 rounded-full"
+              title="Copiar último fragmento"
+            >
+              Copiar al editor
+            </button>
+            <button
+              @click="setTranscriptionActive(!transcription.active)"
+              class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors"
+              :class="transcription.active ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-primary/10 text-primary hover:bg-primary/20'"
+              :title="transcription.active ? 'Ocultar de pantalla' : 'Mostrar en pantalla'"
+            >
+              <span v-if="transcription.active" class="relative flex size-1.5">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                <span class="relative inline-flex rounded-full size-1.5 bg-red-500"></span>
+              </span>
+              <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-3" />
+              {{ transcription.active ? 'En pantalla' : 'Mostrar en pantalla' }}
+            </button>
+          </div>
         </div>
       </div>
 
