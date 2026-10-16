@@ -127,8 +127,8 @@ def _punct_predict(text: str) -> List[dict]:
         if not m or tok in special:
             continue
         label = punct_id2label.get(int(p), "0")
-        if tok.startswith("▁"):
-            words.append([tok[1:], label])  # new word
+        if tok.startswith("▁") or tok.startswith("Ġ"):
+            words.append([tok, label])  # new word, keep prefix for assembler
         elif tok.startswith("##"):
             if words:
                 words[-1][0] += tok[2:]  # keep first-subword label
