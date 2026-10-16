@@ -737,7 +737,8 @@ app.post("/api/punctuate", async (req, res) => {
 app.post("/api/segment", async (req, res) => {
   const startTime = Date.now();
   try {
-    const { sentences, documentId } = req.body;
+    const { sentences, documentId, gaps } = req.body;
+    const gapList: Array<number | null> = Array.isArray(gaps) ? gaps : [];
     const clientId = (req.headers["x-client-id"] as string) || "default";
 
     if (!Array.isArray(sentences) || sentences.length === 0) {
@@ -788,17 +789,20 @@ app.post("/api/segment", async (req, res) => {
     const decisions: SegmentDecision[] = [];
     // ponytail: liturgical break anchors force cut without service call
     const liturgicalRe = /pueden tomar asiento|abran sus biblias|amén|aleluya|gloria a dios|oremos/i;
-    const pendingWindows: { afterIndex: number; window_a: string[]; window_b: string[] }[] = [];
+    const pendingWindows: { afterIndex: number; window_a: string[]; window_b: string[]; gapMs: number | null }[] = [];
 
     for (let i = 0; i < normalizedSentences.length - 1; i++) {
       if (liturgicalRe.test(normalizedSentences[i + 1] ?? "")) {
         decisions.push({ afterIndex: i, decision: "BREAK", breakScore: 1 });
         continue;
       }
+      // gaps[j] = silencio previo a la oración j (frontend: ts_actual - ts_anterior por final)
+      const g = gapList[i + 1];
       pendingWindows.push({
         afterIndex: i,
         window_a: [normalizedSentences[i - 1] ?? "", normalizedSentences[i]].filter(Boolean),
         window_b: [normalizedSentences[i + 1], normalizedSentences[i + 2] ?? ""].filter(Boolean),
+        gapMs: typeof g === "number" ? g : null,
       });
     }
 
@@ -845,7 +849,7 @@ app.post("/api/segment", async (req, res) => {
         const segRes = await fetch(`${rpunctUrl}/segment`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ window_a: w.window_a, window_b: w.window_b }),
+          body: JSON.stringify({ window_a: w.window_a, window_b: w.window_b, gapMs: w.gapMs }),
           signal: AbortSignal.timeout(5000),
         });
         if (segRes.ok) {
@@ -861,30 +865,63 @@ app.post("/api/segment", async (req, res) => {
     }
 
     // Step 4: Build paragraphs from BREAK decisions
+    // Brain #3/#7: sesgo por longitud acumulada + zona gris AMBIGUOUS
+    // (<25 unir, >90 cortar; AMBIGUOUS→MERGE si <40 palabras, si no BREAK)
     interface ParagraphAccumulator {
       sentenceIndices: number[];
       breakScores: number[];
     }
+    const wordsOf = (idxs: number[]) =>
+      idxs.reduce((n, si) => n + normalizedSentences[si].split(/\s+/).filter(Boolean).length, 0);
     const paragraphAccumulators: ParagraphAccumulator[] = [];
     let current: ParagraphAccumulator = { sentenceIndices: [0], breakScores: [] };
+    let currentWords = wordsOf(current.sentenceIndices);
 
     const decisionByIndex = new Map(decisions.map((d) => [d.afterIndex, d]));
     for (let i = 0; i < normalizedSentences.length - 1; i++) {
       const dec = decisionByIndex.get(i);
-      if (dec && dec.decision === "BREAK") {
-        current.breakScores.push(dec.breakScore);
+      let score = dec?.breakScore ?? 0;
+      if (currentWords < 25) score -= 0.10;
+      else if (currentWords > 90) score += 0.10;
+      score = Math.min(1, Math.max(0, Math.round(score * 10000) / 10000));
+      const raw = dec?.decision;
+      const isBreak = raw === "BREAK" || (raw === "AMBIGUOUS" && currentWords >= 40);
+      if (isBreak) {
+        current.breakScores.push(score);
         paragraphAccumulators.push(current);
         current = { sentenceIndices: [i + 1], breakScores: [] };
+        currentWords = wordsOf(current.sentenceIndices);
       } else {
         current.sentenceIndices.push(i + 1);
-        if (dec) current.breakScores.push(dec.breakScore);
+        if (dec) current.breakScores.push(score);
+        currentWords = wordsOf(current.sentenceIndices);
       }
     }
     paragraphAccumulators.push(current);
 
+    // Brain #3: corte duro >140 palabras en el gap interno de mayor score
+    const hardSplit: ParagraphAccumulator[] = [];
+    for (const acc of paragraphAccumulators) {
+      const internal = acc.breakScores.slice(0, acc.sentenceIndices.length - 1);
+      if (wordsOf(acc.sentenceIndices) > 140 && internal.length > 0) {
+        let bi = 0;
+        for (let k = 1; k < internal.length; k++) if (internal[k] > internal[bi]) bi = k;
+        const left = acc.sentenceIndices.slice(0, bi + 1);
+        const right = acc.sentenceIndices.slice(bi + 1);
+        if (left.length > 0 && right.length > 0) {
+          hardSplit.push(
+            { sentenceIndices: left, breakScores: internal.slice(0, bi + 1) },
+            { sentenceIndices: right, breakScores: [...internal.slice(bi + 1), ...acc.breakScores.slice(internal.length)] },
+          );
+          continue;
+        }
+      }
+      hardSplit.push(acc);
+    }
+
     // Step 5: Build, persist, and return paragraphs
     const createdAt = Date.now();
-    const paragraphs = paragraphAccumulators.map((acc, paragraphIndex) => {
+    const paragraphs = hardSplit.map((acc, paragraphIndex) => {
       const text = acc.sentenceIndices
         .map((si) => normalizedSentences[si])
         .join(" ");

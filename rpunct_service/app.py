@@ -5,6 +5,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "2")
 import json
 import re
 import time
+import unicodedata
 from collections import OrderedDict
 from threading import Lock
 
@@ -14,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from transformers import AutoTokenizer
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 app = FastAPI()
 
@@ -231,12 +232,14 @@ class TextRequest(BaseModel):
 class SegmentRequest(BaseModel):
     window_a: List[str]
     window_b: List[str]
+    gapMs: Optional[float] = None
 
 
 class SegmentWindow(BaseModel):
     afterIndex: int
     window_a: List[str]
     window_b: List[str]
+    gapMs: Optional[float] = None
 
 
 class SegmentBatchRequest(BaseModel):
@@ -446,11 +449,16 @@ def normalize_text(text: str):
             merged_lines.append(current)
             i += 1
 
-    # --- Rule 2: Micro-fragments (<=3 words, no verb) ---
+    # --- Rule 2: Micro-fragments (<=12 words, no verb; liturgical anchors never merge) ---
     final_lines: list[str] = []
     for line in merged_lines:
         words = line.split()
-        if len(words) <= 3 and not _has_verb(line) and final_lines:
+        if (
+            len(words) <= 12
+            and not _has_verb(line)
+            and not _BREAK_ANCHOR_RE.search(line)
+            and final_lines
+        ):
             prev = final_lines[-1]
             merged = prev.rstrip() + " " + line.lstrip()
             changes.append({
@@ -503,7 +511,59 @@ def _decide(break_score: float) -> str:
     return "AMBIGUOUS"
 
 
-def _score_pairs(pairs: List[tuple]) -> List[dict]:
+# Brain #2/#5/#6 — priors aditivos sobre break_score (agrupan, no reescriben texto)
+_CONTINUATION_SINGLES = {"y", "pero", "porque", "ademas", "tambien", "ese", "esto", "eso"}
+_CONTINUATION_MULTI = ("por eso", "es decir")
+_TOPIC_MULTI = ("pasemos a", "quiero hablarles")
+_TOPIC_SINGLES = {"hoy", "ahora"}
+_GAP_MERGE_MS = 1500.0
+_GAP_BREAK_MS = 3000.0
+
+
+def _strip_accents(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
+def _window_start_class(window_b: List[str]) -> tuple:
+    """(clase, primera_palabra): continuation | topic | other."""
+    text = " ".join(window_b).strip()
+    first = re.split(r"\s+", text, maxsplit=1)[0].lower().strip(".,;:\"'¿?¡!") if text else ""
+    norm_text = _strip_accents(text.lower())
+    norm_first = _strip_accents(first)
+    if norm_text.startswith(_CONTINUATION_MULTI) or norm_first in _CONTINUATION_SINGLES:
+        return "continuation", first
+    if norm_text.startswith(_TOPIC_MULTI) or norm_first in _TOPIC_SINGLES:
+        return "topic", first
+    return "other", first
+
+
+def _apply_priors(raw_break: float, window_b: List[str], gap_ms) -> tuple:
+    """Suma sesgos #2/#5/#6; devuelve (final_score, priors, clase, primera_palabra)."""
+    bias, applied = 0.0, []
+    cls, first = _window_start_class(window_b)
+    if cls == "continuation":
+        bias -= 0.15
+        applied.append("continuation-0.15")
+    elif cls == "topic":
+        bias += 0.15
+        applied.append("topic+0.15")
+    g = None
+    if gap_ms is not None:
+        try:
+            g = float(gap_ms)
+        except (TypeError, ValueError):
+            g = None
+    if g is not None:
+        if g < _GAP_MERGE_MS:
+            bias -= 0.10
+            applied.append(f"gap{g:.0f}ms-0.10")
+        elif g > _GAP_BREAK_MS:
+            bias += 0.10
+            applied.append(f"gap{g:.0f}ms+0.10")
+    return min(1.0, max(0.0, round(raw_break + bias, 4))), applied, cls, first
+
+
+def _score_pairs(pairs: List[tuple], gaps: List = None) -> List[dict]:
     """Dedupe textos de ventana, un solo _embed_texts, cosenos numpy."""
     texts_a = ["query: " + " ".join(a) for a, _ in pairs]
     texts_b = ["query: " + " ".join(b) for _, b in pairs]
@@ -515,10 +575,21 @@ def _score_pairs(pairs: List[tuple]) -> List[dict]:
             uniq.append(t)
     embeddings = _embed_texts(uniq)
     out = []
-    for ta, tb in zip(texts_a, texts_b):
+    for idx, (ta, tb) in enumerate(zip(texts_a, texts_b)):
         similarity = round(float(np.dot(embeddings[idx[ta]], embeddings[idx[tb]])), 4)
-        break_score = round(1.0 - similarity, 4)
-        out.append({"break_score": break_score, "similarity": similarity, "decision": _decide(break_score)})
+        raw_break = round(1.0 - similarity, 4)
+        wb = pairs[idx][1]
+        gap = gaps[idx] if gaps is not None and idx < len(gaps) else None
+        final, applied, cls, first = _apply_priors(raw_break, wb, gap)
+        out.append({
+            "break_score": final,
+            "raw_break": raw_break,
+            "similarity": similarity,
+            "decision": _decide(final),
+            "priors": applied,
+            "start_class": cls,
+            "start_word": first,
+        })
     return out
 
 
@@ -529,11 +600,17 @@ def segment_endpoint(request: SegmentRequest):
 
     start_time = time.time()
 
-    scored = _score_pairs([(request.window_a, request.window_b)])[0]
+    scored = _score_pairs(
+        [(request.window_a, request.window_b)], [request.gapMs]
+    )[0]
 
     time_ms = round((time.time() - start_time) * 1000, 2)
-    in_chars = len(" ".join(request.window_a)) + len(" ".join(request.window_b))
-    print(f"[segment {time_ms}ms] windows=1 in={in_chars}chars decision={scored['decision']} score={scored['break_score']}")
+    wa_n = len(" ".join(request.window_a).split())
+    wb_n = len(" ".join(request.window_b).split())
+    print(f"[segment {time_ms}ms] cos={scored['similarity']:.3f} raw={scored['raw_break']:.3f} "
+          f"score={scored['break_score']:.3f} wa_words={wa_n} wb_words={wb_n} "
+          f"start='{scored['start_word']}' cls={scored['start_class']} priors={scored['priors']} "
+          f"decision={scored['decision']} gapMs={request.gapMs}")
     return {
         "break_score": scored["break_score"],
         "decision": scored["decision"],
@@ -552,7 +629,10 @@ def segment_batch_endpoint(request: SegmentBatchRequest):
     if not request.windows:
         return {"decisions": [], "time_ms": 0}
 
-    scored = _score_pairs([(w.window_a, w.window_b) for w in request.windows])
+    scored = _score_pairs(
+        [(w.window_a, w.window_b) for w in request.windows],
+        [w.gapMs for w in request.windows],
+    )
     decisions = [
         {
             "afterIndex": w.afterIndex,
@@ -565,8 +645,14 @@ def segment_batch_endpoint(request: SegmentBatchRequest):
 
     time_ms = round((time.time() - start_time) * 1000, 2)
     counts = {"BREAK": 0, "MERGE": 0, "AMBIGUOUS": 0}
-    for d in decisions:
+    for w, s, d in zip(request.windows, scored, decisions):
         counts[d["decision"]] = counts.get(d["decision"], 0) + 1
+        wa_n = len(" ".join(w.window_a).split())
+        wb_n = len(" ".join(w.window_b).split())
+        print(f"[segment gap after={w.afterIndex}] cos={s['similarity']:.3f} raw={s['raw_break']:.3f} "
+              f"score={s['break_score']:.3f} wa_words={wa_n} wb_words={wb_n} "
+              f"start='{s['start_word']}' cls={s['start_class']} priors={s['priors']} "
+              f"decision={s['decision']} gapMs={w.gapMs}")
     print(f"[segment_batch {time_ms}ms] windows={len(decisions)} BREAK={counts['BREAK']} MERGE={counts['MERGE']} AMBIGUOUS={counts['AMBIGUOUS']}")
     return {"decisions": decisions, "time_ms": time_ms}
 

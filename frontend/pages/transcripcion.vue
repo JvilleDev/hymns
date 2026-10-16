@@ -311,6 +311,8 @@ const scheduleSilenceFlush = (scheduledAt: number) => {
     activeParagraphRaw.value = ''
     activeParagraphPunctuated.value = ''
     punctuatedPrefix.value = ''
+    activeChunkGaps.value = []
+    activeChunkWords.value = []
     fullHistory.value = consolidatedText.value
     finalTranscript.value = fullHistory.value
     updateTranscription({ final: finalTranscript.value, interim: interimTranscript.value })
@@ -327,6 +329,8 @@ const commitInterim = () => {
     activeParagraphRaw.value = ''
     activeParagraphPunctuated.value = ''
     punctuatedPrefix.value = ''
+    activeChunkGaps.value = []
+    activeChunkWords.value = []
   }
 
   currentRawInterim.value = ''
@@ -349,7 +353,7 @@ const requestPunctuation = async (text: string) => {
   }
 }
 
-const requestSegmentation = async (sentences: string[]): Promise<{
+const requestSegmentation = async (sentences: string[], gaps?: (number | null)[]): Promise<{
   paragraphs: Array<{
     id: string
     text: string
@@ -361,12 +365,43 @@ const requestSegmentation = async (sentences: string[]): Promise<{
     const documentId = clientId.value || 'default'
     const data = await useApi().post<any>('/api/segment', {
       sentences,
-      documentId
+      documentId,
+      gaps: gaps ?? []
     })
     return data
   } catch (e) {
     console.error('[Segment] Error:', e)
     return { paragraphs: [] }
+  }
+}
+
+// Brain #6: silencio previo a cada final del párrafo activo (ts_actual - ts_anterior).
+// gapsForSentences mapea cada oración al chunk que la inicia (aprox. por offset de palabras;
+// puntuado vs crudo difieren levemente, pero el prior es sesgo, no regla).
+const activeChunkGaps = ref<number[]>([])
+const activeChunkWords = ref<number[]>([])
+const gapsForSentences = (sentences: string[]): (number | null)[] => {
+  const bounds: number[] = []
+  let off = 0
+  for (const w of activeChunkWords.value) { bounds.push(off); off += w }
+  let acc = 0
+  return sentences.map((s, j) => {
+    const start = acc
+    acc += s.split(/\s+/).filter(Boolean).length
+    if (j === 0) return 0
+    for (let k = bounds.length - 1; k >= 1; k--) {
+      if (bounds[k] <= start + 2) return activeChunkGaps.value[k] ?? null
+    }
+    return null
+  })
+}
+// Al consolidar el primer párrafo, descarta los chunks ya horneados
+const dropConsumedChunks = (consumedWords: number) => {
+  let rest = consumedWords
+  while (activeChunkWords.value.length > 1 && rest > 0) {
+    rest -= activeChunkWords.value[0]
+    activeChunkWords.value.shift()
+    activeChunkGaps.value.shift()
   }
 }
 
@@ -428,6 +463,8 @@ const initRecognition = () => {
       // 1. Acumulamos en el párrafo activo
       const trimmedNew = newFinal.trim()
       activeParagraphRaw.value += (activeParagraphRaw.value ? ' ' : '') + trimmedNew
+      activeChunkGaps.value.push(silenceGap)
+      activeChunkWords.value.push(trimmedNew.split(/\s+/).filter(Boolean).length)
 
       // 2. Q1 delta: puntuar solo contexto (~25 palabras) + cola nueva, no todo el párrafo
       const frozenPrefix = punctuatedPrefix.value
@@ -468,13 +505,15 @@ const initRecognition = () => {
         // Solo segmentar cuando hay suficientes oraciones para formar ventanas
         if (sentences.length >= 3) {
           // Llamada asíncrona al pipeline — no bloquea el display
-          requestSegmentation(sentences).then(result => {
+          const gaps = gapsForSentences(sentences)
+          requestSegmentation(sentences, gaps).then(result => {
             if (result.paragraphs.length > 1) {
               // Hay un punto de corte: el primer párrafo se consolida, el resto sigue activo
               const firstParagraph = result.paragraphs[0]
               const remainingParagraphs = result.paragraphs.slice(1)
-              
+
               bakeToConsolidated(firstParagraph.text)
+              dropConsumedChunks(firstParagraph.text.split(/\s+/).filter(Boolean).length)
               
               // El último párrafo incompleto sigue como activo
               const lastParagraph = remainingParagraphs[remainingParagraphs.length - 1]
@@ -496,6 +535,8 @@ const initRecognition = () => {
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
           punctuatedPrefix.value = ''
+          activeChunkGaps.value = []
+          activeChunkWords.value = []
         }
 
         // 5. Actualizar el estado global
@@ -712,6 +753,8 @@ const clearTranscript = async () => {
   activeParagraphRaw.value = ''
   activeParagraphPunctuated.value = ''
   punctuatedPrefix.value = ''
+  activeChunkGaps.value = []
+  activeChunkWords.value = []
   fullHistory.value = ''
   finalTranscript.value = ''
   interimTranscript.value = ''
