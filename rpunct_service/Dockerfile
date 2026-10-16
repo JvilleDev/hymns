@@ -1,28 +1,20 @@
 # syntax=docker/dockerfile:1
-
-# Stage 1: export punct model to ONNX (torch lives ONLY here)
-FROM python:3.11-slim AS exporter
-WORKDIR /app
-COPY scripts/export_punct_onnx.py scripts/export_punct_onnx.py
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-    "torch==2.5.1" "optimum[onnxruntime]>=1.24" "transformers==4.47.1" huggingface_hub
-RUN python scripts/export_punct_onnx.py
-
-# Stage 2: CPU-only ONNX runtime, zero torch
+# Runtime CPU-only, cero torch/optimum en build.
+# El ONNX de puntuación se exporta UNA vez en local:
+#   python rpunct_service/scripts/export_punct_onnx.py
+# y se vendea/monta en ./onnx/punct-sonar-base. Si falta, el servicio
+# arranca igual (punct degradado a texto original, ver /health).
 FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
-COPY --from=exporter /app/onnx ./onnx
+COPY app.py .
+COPY onnx ./onnx
 
-# Pre-bake e5-small ONNX (official onnx/ subfolder incl. tokenizer, O4 optimized;
-# huggingface_hub only, no torch/optimum)
+# Pre-bake e5-small ONNX oficial (solo onnx/* + tokenizer, sin torch/optimum)
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
-snapshot_download(repo_id='intfloat/multilingual-e5-small', local_dir='/app/onnx/e5', allow_patterns=['onnx/*'])"
-
-COPY app.py .
+snapshot_download(repo_id='intfloat/multilingual-e5-small', local_dir='/app/onnx/e5', allow_patterns=['onnx/*','tokenizer*','config.json','1_Pooling/*'])"
 
 EXPOSE 8000
 
