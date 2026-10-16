@@ -711,7 +711,7 @@ app.post("/api/punctuate", async (req, res) => {
     }
     
     // Call the local Python microservice
-    const rpunctUrl = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
+    const rpunctUrl = process.env.RPUNCT_URL || "http://rpunct:8000";
     const response = await fetch(`${rpunctUrl}/punctuate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -748,7 +748,7 @@ app.post("/api/segment", async (req, res) => {
       return;
     }
 
-    const rpunctUrl = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
+    const rpunctUrl = process.env.RPUNCT_URL || "http://rpunct:8000";
 
     // Step 1: Normalize joined text
     let normalizedSentences: string[] = sentences;
@@ -1265,7 +1265,7 @@ interface Canto {
 // -- Start Server --
 
 async function checkRpunct() {
-  const url = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
+  const url = process.env.RPUNCT_URL || "http://rpunct:8000";
   try {
     const res = await fetch(`${url}/punctuate`, {
       method: "POST",

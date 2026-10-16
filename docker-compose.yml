@@ -5,12 +5,22 @@ services:
       dockerfile: Dockerfile
     container_name: hymns-backend
     restart: unless-stopped
+    depends_on:
+      - rpunct
     environment:
-      # rpunct corre como servicio aparte; ajusta la URL según tu despliegue
-      - RPUNCT_URL=${RPUNCT_URL:-http://127.0.0.1:8000}
+      # dentro de compose se resuelve por nombre de servicio, no localhost
+      - RPUNCT_URL=${RPUNCT_URL:-http://rpunct:8000}
     volumes:
       - db_data:/app/src/data
       - uploads_data:/app/public/uploads
+  rpunct:
+    build:
+      context: ./rpunct_service
+      dockerfile: Dockerfile
+    container_name: hymns-rpunct
+    restart: unless-stopped
+    expose:
+      - "8000"
 
 volumes:
   db_data:
