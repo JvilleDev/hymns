@@ -2,16 +2,18 @@ import os
 
 os.environ.setdefault("OMP_NUM_THREADS", "2")
 
+import json
 import re
 import time
 from collections import OrderedDict
 from threading import Lock
 
 import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import AutoTokenizer, pipeline
+from transformers import AutoTokenizer
 from typing import Dict, List
 
 app = FastAPI()
@@ -29,6 +31,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 PUNCT_ONNX_DIR = os.environ.get("PUNCT_ONNX_DIR", "./onnx/punct-sonar-base")
 E5_MODEL_ID = os.environ.get("E5_MODEL_ID", "intfloat/multilingual-e5-small")
+E5_ONNX_DIR = os.environ.get("E5_ONNX_DIR", "./onnx/e5")
 E5_SUBFOLDER = "onnx"
 E5_FILE = "model_O4.onnx"
 
@@ -51,49 +54,95 @@ except Exception:
 print("Using provider: CPUExecutionProvider")
 
 # ---------------------------------------------------------------------------
-# FASE 1 — Punctuation model (ONNX)
+# FASE 1 — Punctuation model (ONNX, raw onnxruntime)
 # ---------------------------------------------------------------------------
-punct_pipeline = None
+punct_tokenizer = None
+punct_session = None
+punct_id2label: Dict[int, str] = {}
 try:
     print("Loading punctuation ONNX model...")
-    from optimum.onnxruntime import ORTModelForTokenClassification
-
-    _punct_kwargs = {"provider": "CPUExecutionProvider"}
-    if _ORT_SESSION_OPTIONS is not None:
-        _punct_kwargs["session_options"] = _ORT_SESSION_OPTIONS
-    _punct_model = ORTModelForTokenClassification.from_pretrained(
-        PUNCT_ONNX_DIR, **_punct_kwargs
+    punct_tokenizer = AutoTokenizer.from_pretrained(PUNCT_ONNX_DIR)
+    punct_session = ort.InferenceSession(
+        os.path.join(PUNCT_ONNX_DIR, "model.onnx"),
+        sess_options=_ORT_SESSION_OPTIONS,
+        providers=["CPUExecutionProvider"],
     )
-    _punct_tokenizer = AutoTokenizer.from_pretrained(PUNCT_ONNX_DIR)
-    punct_pipeline = pipeline(
-        "token-classification",
-        model=_punct_model,
-        tokenizer=_punct_tokenizer,
-        aggregation_strategy="simple",
-    )
+    with open(os.path.join(PUNCT_ONNX_DIR, "config.json"), encoding="utf-8") as _cfg_f:
+        _cfg = json.load(_cfg_f)
+    punct_id2label = {int(k): str(v) for k, v in _cfg.get("id2label", {}).items()}
     print("Punctuation ONNX model loaded successfully.")
 except Exception as e:
     print(f"Error loading punctuation ONNX model: {e}")
-    punct_pipeline = None
+    punct_tokenizer = None
+    punct_session = None
+
+
+def _punct_predict(text: str) -> List[dict]:
+    """Raw-ORT replacement for pipeline(aggregation_strategy="simple"):
+    argmax over logits + id2label, grouping subwords (▁/##) per word
+    (word label = first subword label)."""
+    enc = punct_tokenizer(text, truncation=True, max_length=512, return_tensors="np")
+    feed = {
+        k: np.asarray(enc[k], dtype=np.int64)
+        for k in ("input_ids", "attention_mask")
+        if k in enc
+    }
+    logits = punct_session.run(None, feed)[0]
+    pred = logits.argmax(axis=-1)[0]
+    ids = np.asarray(enc["input_ids"])[0]
+    mask = np.asarray(enc.get("attention_mask", np.ones_like(ids)))[0].astype(bool)
+    tokens = punct_tokenizer.convert_ids_to_tokens(ids)
+    special = set(punct_tokenizer.all_special_tokens)
+    words: List[list] = []
+    for tok, p, m in zip(tokens, pred.tolist(), mask.tolist()):
+        if not m or tok in special:
+            continue
+        label = punct_id2label.get(int(p), "0")
+        if tok.startswith("▁"):
+            words.append([tok[1:], label])  # new word
+        elif tok.startswith("##"):
+            if words:
+                words[-1][0] += tok[2:]  # keep first-subword label
+            else:
+                words.append([tok[2:], label])
+        elif words:
+            words[-1][0] += tok  # continuation piece: keep first-subword label
+        else:
+            words.append([tok, label])
+    return [{"word": w, "entity": lb} for w, lb in words]
 
 # ---------------------------------------------------------------------------
-# FASE 3 — Sentence-embeddings model (ONNX, e5-small)
+# FASE 3 — Sentence-embeddings model (ONNX e5-small, raw onnxruntime)
 # ---------------------------------------------------------------------------
 embed_tokenizer = None
 embed_model = None
 try:
     print("Loading e5-small ONNX model...")
-    from optimum.onnxruntime import ORTModelForFeatureExtraction
+    _e5_base = [E5_ONNX_DIR, "./onnx/e5", "/app/onnx/e5"]
+    _e5_dirs = [d for b in _e5_base if b for d in (b, os.path.join(b, "onnx"))]
+    _e5_file = next(
+        (os.path.join(d, E5_FILE) for d in _e5_dirs
+         if os.path.isfile(os.path.join(d, E5_FILE))),
+        None,
+    )
+    if _e5_file is None:  # fetch only the quantized onnx, no torch needed
+        from huggingface_hub import hf_hub_download
 
-    embed_tokenizer = AutoTokenizer.from_pretrained(E5_MODEL_ID, subfolder=E5_SUBFOLDER)
-    _embed_kwargs = {
-        "subfolder": E5_SUBFOLDER, "file_name": E5_FILE,
-        "provider": "CPUExecutionProvider",
-    }
-    if _ORT_SESSION_OPTIONS is not None:
-        _embed_kwargs["session_options"] = _ORT_SESSION_OPTIONS
-    embed_model = ORTModelForFeatureExtraction.from_pretrained(
-        E5_MODEL_ID, **_embed_kwargs
+        _e5_file = hf_hub_download(
+            E5_MODEL_ID, subfolder=E5_SUBFOLDER, filename=E5_FILE
+        )
+    _e5_tok_dir = next(
+        (d for d in _e5_dirs if os.path.isfile(os.path.join(d, "tokenizer.json"))),
+        None,
+    )
+    embed_tokenizer = AutoTokenizer.from_pretrained(
+        _e5_tok_dir if _e5_tok_dir is not None else E5_MODEL_ID,
+        **({} if _e5_tok_dir is not None else {"subfolder": E5_SUBFOLDER}),
+    )
+    embed_model = ort.InferenceSession(
+        _e5_file,
+        sess_options=_ORT_SESSION_OPTIONS,
+        providers=["CPUExecutionProvider"],
     )
     print("Embedding ONNX model loaded successfully.")
 except Exception as e:
@@ -122,8 +171,12 @@ def _embed_texts(texts: List[str]):
         encoded = embed_tokenizer(
             missing, padding=True, truncation=True, max_length=512, return_tensors="np"
         )
-        out = embed_model(**{k: v for k, v in encoded.items() if k in ("input_ids", "attention_mask")})
-        hidden = np.asarray(out.last_hidden_state)
+        feed = {
+            k: np.asarray(encoded[k], dtype=np.int64)
+            for k in ("input_ids", "attention_mask")
+            if k in encoded
+        }
+        hidden = np.asarray(embed_model.run(None, feed)[0])
         mask = np.asarray(encoded["attention_mask"], dtype=np.float32)[..., None]
         summed = (hidden * mask).sum(axis=1)
         counts = mask.sum(axis=1).clip(min=1e-9)
@@ -168,7 +221,7 @@ class SegmentBatchRequest(BaseModel):
 def punctuate_text(request: TextRequest):
     if not request.text.strip():
         return {"text": "", "time_ms": 0}
-    if punct_pipeline is None:
+    if punct_session is None or punct_tokenizer is None:
         return {"text": request.text, "time_ms": 0}
 
     start_time = time.time()
@@ -191,7 +244,7 @@ def punctuate_text(request: TextRequest):
             return out or [text]
 
         def get_punctuated_text(text):
-            output = punct_pipeline(text)
+            output = _punct_predict(text)
 
             result = ""
             last_label = "0"
@@ -496,7 +549,7 @@ def health():
         },
         "thresholds": {"merge_t": MERGE_T, "break_t": BREAK_T},
         "models": {
-            "punctuation": "loaded" if punct_pipeline is not None else "unavailable",
+            "punctuation": "loaded" if punct_session is not None else "unavailable",
             "embeddings": "loaded" if embed_model is not None else "unavailable",
         },
         "onnx_files": {
