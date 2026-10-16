@@ -3,7 +3,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hymns-backend
     restart: unless-stopped
     depends_on:
       - rpunct
@@ -17,7 +16,6 @@ services:
     build:
       context: ./rpunct_service
       dockerfile: Dockerfile
-    container_name: hymns-rpunct
     restart: unless-stopped
     expose:
       - "8000"
