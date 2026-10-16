@@ -298,11 +298,12 @@ def punctuate_text(request: TextRequest):
 
             return result.strip()
 
+        chunks = _chunks(request.text)
         punctuated = " ".join(
-            get_punctuated_text(c) for c in _chunks(request.text)
+            get_punctuated_text(c) for c in chunks
         )
         duration_ms = round((time.time() - start_time) * 1000, 2)
-        print(f"[{duration_ms}ms] Punctuated ({len(request.text)} chars): {punctuated[:120]}")
+        print(f"[punctuate {duration_ms}ms] in={len(request.text)}chars/{len(request.text.split())}words chunks={len(chunks)} out={len(punctuated)}chars preview={punctuated[:120]!r}")
         return {"text": punctuated, "time_ms": duration_ms}
     except Exception as e:
         print(f"Error restoring punctuation: {e}")
@@ -531,6 +532,8 @@ def segment_endpoint(request: SegmentRequest):
     scored = _score_pairs([(request.window_a, request.window_b)])[0]
 
     time_ms = round((time.time() - start_time) * 1000, 2)
+    in_chars = len(" ".join(request.window_a)) + len(" ".join(request.window_b))
+    print(f"[segment {time_ms}ms] windows=1 in={in_chars}chars decision={scored['decision']} score={scored['break_score']}")
     return {
         "break_score": scored["break_score"],
         "decision": scored["decision"],
@@ -561,6 +564,10 @@ def segment_batch_endpoint(request: SegmentBatchRequest):
     ]
 
     time_ms = round((time.time() - start_time) * 1000, 2)
+    counts = {"BREAK": 0, "MERGE": 0, "AMBIGUOUS": 0}
+    for d in decisions:
+        counts[d["decision"]] = counts.get(d["decision"], 0) + 1
+    print(f"[segment_batch {time_ms}ms] windows={len(decisions)} BREAK={counts['BREAK']} MERGE={counts['MERGE']} AMBIGUOUS={counts['AMBIGUOUS']}")
     return {"decisions": decisions, "time_ms": time_ms}
 
 
