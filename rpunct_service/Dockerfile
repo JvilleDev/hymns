@@ -5,7 +5,7 @@ FROM python:3.11-slim AS exporter
 WORKDIR /app
 COPY scripts/export_punct_onnx.py scripts/export_punct_onnx.py
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    pip install "torch==2.5.1" --extra-index-url https://download.pytorch.org/whl/cpu \
     "optimum[onnxruntime]>=1.24" "transformers==4.47.1" huggingface_hub
 RUN python scripts/export_punct_onnx.py
 
