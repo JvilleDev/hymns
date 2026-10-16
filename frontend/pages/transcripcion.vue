@@ -194,6 +194,31 @@ const lastPunctuatedWordCount = ref(0)
 const isPunctuatingInterim = ref(false)
 const isRestarting = ref(false)
 
+// Q2: interim crudo por defecto (gris, sin red); subir a true solo si se quiere puntuar interims
+const PUNCTUATE_INTERIM = false
+let interimRequestId = 0 // Q2: ignora respuestas obsoletas
+
+// Q1 delta: prefijo congelado — cada final solo re-puntúa contexto + cola nueva
+const punctuatedPrefix = ref('')
+const CONTEXT_WORDS = 25
+const SILENCE_FLUSH_MS = 4000 // Q9
+const lastWords = (text: string, n: number) => text.trim().split(/\s+/).filter(Boolean).slice(-n).join(' ')
+
+// Q9: cierra el párrafo solo si no llegó ningún final nuevo desde que se programó
+const scheduleSilenceFlush = (scheduledAt: number) => {
+  setTimeout(() => {
+    if (lastFinalTimestamp.value !== scheduledAt) return
+    if (!activeParagraphPunctuated.value.trim()) return
+    consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value.trim()
+    activeParagraphRaw.value = ''
+    activeParagraphPunctuated.value = ''
+    punctuatedPrefix.value = ''
+    fullHistory.value = consolidatedText.value
+    finalTranscript.value = fullHistory.value
+    updateTranscription({ final: finalTranscript.value, interim: interimTranscript.value })
+  }, SILENCE_FLUSH_MS)
+}
+
 const commitInterim = () => {
   // Al cerrar sesión o inactividad larga, horneamos lo que quede en el buffer
   if (activeParagraphPunctuated.value.trim()) {
@@ -203,6 +228,7 @@ const commitInterim = () => {
     
     activeParagraphRaw.value = ''
     activeParagraphPunctuated.value = ''
+    punctuatedPrefix.value = ''
   }
 
   currentRawInterim.value = ''
@@ -299,20 +325,39 @@ const initRecognition = () => {
       const now = Date.now()
       const silenceGap = now - lastFinalTimestamp.value
       lastFinalTimestamp.value = now
+      interimRequestId++ // invalida interims en vuelo
 
       // 1. Acumulamos en el párrafo activo
       const trimmedNew = newFinal.trim()
       activeParagraphRaw.value += (activeParagraphRaw.value ? ' ' : '') + trimmedNew
-      
-      // 2. Pedimos puntuación
-      const currentRaw = activeParagraphRaw.value
-      requestPunctuation(currentRaw).then(pFinal => {
-        if (currentRaw !== activeParagraphRaw.value) return 
 
-        let processed = pFinal.trim()
+      // 2. Q1 delta: puntuar solo contexto (~25 palabras) + cola nueva, no todo el párrafo
+      const frozenPrefix = punctuatedPrefix.value
+      const contextTail = lastWords(frozenPrefix, CONTEXT_WORDS)
+      const contextCount = contextTail ? contextTail.split(/\s+/).filter(Boolean).length : 0
+      const windowRaw = (contextTail ? contextTail + ' ' : '') + trimmedNew
+      const rawSnapshot = activeParagraphRaw.value
+      requestPunctuation(windowRaw).then(pWindow => {
+        if (rawSnapshot !== activeParagraphRaw.value) return
+
+        // La ventana devuelve contexto+cola; la cola son las palabras extra.
+        // Si falla, el fallback de requestPunctuation devuelve windowRaw en crudo → cola cruda como hoy.
+        const pWords = pWindow.trim().split(/\s+/).filter(Boolean)
+        let tail = pWords.length > contextCount ? pWords.slice(contextCount).join(' ') : trimmedNew
+        if (!tail) tail = trimmedNew
+
+        // Q1 costura: si el prefijo terminaba en punto pero el modelo ya no lo puntúa así, recortarlo
+        let prefix = frozenPrefix
+        const contextReturned = contextCount ? pWords.slice(0, contextCount).join(' ') : ''
+        if (/[.!?]$/.test(prefix.trim()) && contextReturned && !/[.!?]$/.test(contextReturned.trim())) {
+          prefix = prefix.trim().replace(/[.!?]+$/, '')
+        }
+
+        let processed = ((prefix ? prefix + ' ' : '') + tail).trim()
         processed = processed.replace(/([.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase())
         processed = processed.charAt(0).toUpperCase() + processed.slice(1)
 
+        punctuatedPrefix.value = processed
         activeParagraphPunctuated.value = processed
         
         // 3. Segmentación Semántica (nuevo pipeline)
@@ -336,6 +381,7 @@ const initRecognition = () => {
               const lastParagraph = remainingParagraphs[remainingParagraphs.length - 1]
               activeParagraphRaw.value = lastParagraph.text
               activeParagraphPunctuated.value = lastParagraph.text
+              punctuatedPrefix.value = lastParagraph.text
             }
             // Si solo hay 1 párrafo → MERGE, no hacer nada
           })
@@ -344,12 +390,13 @@ const initRecognition = () => {
         // 4. Fallback: salto por silencio prolongado o largo extremo (mantener como safety net)
         const isVeryLong = activeParagraphPunctuated.value.length > 250
         const endsInDot = /[.!?]$/.test(activeParagraphPunctuated.value)
-        const isVeryLongPause = silenceGap > 4000
+        const isVeryLongPause = silenceGap > SILENCE_FLUSH_MS
 
         if ((isVeryLong && endsInDot) || isVeryLongPause) {
           consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
+          punctuatedPrefix.value = ''
         }
 
         // 5. Actualizar el estado global
@@ -357,6 +404,9 @@ const initRecognition = () => {
         fullHistory.value = consolidatedText.value + (consolidatedText.value && currentActive ? '\n\n' : '') + currentActive
         finalTranscript.value = fullHistory.value
         updateTranscription({ final: finalTranscript.value, interim: interimTranscript.value })
+
+        // Q9: programa flush por silencio validado contra timestamp (no ciego)
+        scheduleSilenceFlush(now)
       })
 
       // Reset interim tracking
@@ -385,8 +435,9 @@ const initRecognition = () => {
     }
   }
 
-  // Debounced interim punctuation
+  // Q2: interim crudo por defecto (sin red); solo puntúa si PUNCTUATE_INTERIM=true
   watchDebounced(currentRawInterim, (newVal) => {
+    if (!PUNCTUATE_INTERIM) return
     if (!newVal.trim() || isPunctuatingInterim.value) return
     
     const rawWords = newVal.trim().split(/\s+/).filter(Boolean)
@@ -396,8 +447,10 @@ const initRecognition = () => {
     if (wordCount > lastPunctuatedWordCount.value) {
       isPunctuatingInterim.value = true
       const countAtRequest = wordCount
-      
+      const myId = ++interimRequestId
+
       requestPunctuation(newVal).then(punctuated => {
+        if (myId !== interimRequestId) return // Q2: ignora respuestas obsoletas
         punctuatedInterim.value = punctuated
         lastPunctuatedWordCount.value = countAtRequest
         isPunctuatingInterim.value = false
@@ -412,7 +465,7 @@ const initRecognition = () => {
         updateTranscription({ final: finalTranscript.value, interim: newDisplay })
       })
     }
-  }, { debounce: 300 })
+  }, { debounce: 900 })
 
   recognition.value.onerror = (event: any) => {
     console.error('[STT] Error:', event.error)

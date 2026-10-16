@@ -1,30 +1,29 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim
 
+# Stage 1: export punct model to ONNX (torch lives ONLY here)
+FROM python:3.11-slim AS exporter
 WORKDIR /app
-
-# System deps needed to compile some Python packages
-RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-
-# Install CPU-only torch WITHOUT torchvision/torchaudio — this service is NLP-only.
-# torchvision conflicts with transformers on cpu builds (torchvision::nms kernel missing).
+COPY scripts/export_punct_onnx.py scripts/export_punct_onnx.py
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+    pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    "optimum[onnxruntime]>=1.24" "transformers==4.47.1" huggingface_hub
+RUN python scripts/export_punct_onnx.py
 
+# Stage 2: CPU-only ONNX runtime, zero torch
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
+COPY --from=exporter /app/onnx ./onnx
 
-# Pre-bake models into the image layer — zero network required at runtime/deploy
+# Pre-bake e5-small ONNX (official onnx/ subfolder, O4 optimized)
 RUN python -c "\
-from transformers import pipeline; \
-pipeline('token-classification', model='oliverguhr/fullstop-punctuation-multilingual-sonar-base')"
+from optimum.onnxruntime import ORTModelForFeatureExtraction; \
+from transformers import AutoTokenizer; \
+AutoTokenizer.from_pretrained('intfloat/multilingual-e5-small', subfolder='onnx'); \
+ORTModelForFeatureExtraction.from_pretrained('intfloat/multilingual-e5-small', subfolder='onnx', file_name='model_O4.onnx', provider='CPUExecutionProvider')"
 
-RUN python -c "\
-from sentence_transformers import SentenceTransformer; \
-SentenceTransformer('intfloat/multilingual-e5-small')"
-
-COPY . .
+COPY app.py .
 
 EXPOSE 8000
 

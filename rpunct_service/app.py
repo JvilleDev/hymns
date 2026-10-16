@@ -1,12 +1,18 @@
+import os
+
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+
 import re
 import time
-import torch
+from collections import OrderedDict
+from threading import Lock
 
+import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import pipeline
-from typing import List
+from transformers import AutoTokenizer, pipeline
+from typing import Dict, List
 
 app = FastAPI()
 
@@ -19,47 +25,119 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Device detection
+# ONNX CPU-only models (no torch, no sentence-transformers)
 # ---------------------------------------------------------------------------
-if torch.backends.mps.is_available():
-    device = "mps"
-elif torch.cuda.is_available():
-    device = "cuda"
-else:
-    device = "cpu"
+PUNCT_ONNX_DIR = os.environ.get("PUNCT_ONNX_DIR", "./onnx/punct-sonar-base")
+E5_MODEL_ID = os.environ.get("E5_MODEL_ID", "intfloat/multilingual-e5-small")
+E5_SUBFOLDER = "onnx"
+E5_FILE = "model_O4.onnx"
 
-print(f"Using device: {device}")
+# Q7: thresholds configurables por env
+MERGE_T = float(os.environ.get("MERGE_T", "0.20"))
+BREAK_T = float(os.environ.get("BREAK_T", "0.55"))
 
-# ---------------------------------------------------------------------------
-# FASE 1 — Punctuation model (lazy load)
-# ---------------------------------------------------------------------------
+# E1: limita threads ORT para no bloquear el loop (endpoints sync -> threadpool)
+_ORT_THREADS = int(os.environ.get("OMP_NUM_THREADS", "2") or 2)
 try:
-    print("Loading Robust Punctuation Model...")
+    from onnxruntime import SessionOptions as _OrtSessionOptions
+
+    _ORT_SESSION_OPTIONS = _OrtSessionOptions()
+    _ORT_SESSION_OPTIONS.intra_op_num_threads = _ORT_THREADS
+except Exception:
+    _ORT_SESSION_OPTIONS = None
+
+# shortcut: punct queda en fp32 sin cuantizar (E2 pospuesto con eval).
+
+print("Using provider: CPUExecutionProvider")
+
+# ---------------------------------------------------------------------------
+# FASE 1 — Punctuation model (ONNX)
+# ---------------------------------------------------------------------------
+punct_pipeline = None
+try:
+    print("Loading punctuation ONNX model...")
+    from optimum.onnxruntime import ORTModelForTokenClassification
+
+    _punct_kwargs = {"provider": "CPUExecutionProvider"}
+    if _ORT_SESSION_OPTIONS is not None:
+        _punct_kwargs["session_options"] = _ORT_SESSION_OPTIONS
+    _punct_model = ORTModelForTokenClassification.from_pretrained(
+        PUNCT_ONNX_DIR, **_punct_kwargs
+    )
+    _punct_tokenizer = AutoTokenizer.from_pretrained(PUNCT_ONNX_DIR)
     punct_pipeline = pipeline(
         "token-classification",
-        model="oliverguhr/fullstop-punctuation-multilingual-sonar-base",
-        device=device,
+        model=_punct_model,
+        tokenizer=_punct_tokenizer,
+        aggregation_strategy="simple",
     )
-    print("Model loaded successfully.")
+    print("Punctuation ONNX model loaded successfully.")
 except Exception as e:
-    print(f"Error loading punctuation model: {e}")
+    print(f"Error loading punctuation ONNX model: {e}")
     punct_pipeline = None
 
 # ---------------------------------------------------------------------------
-# FASE 3 — Sentence-embeddings model (lazy load)
+# FASE 3 — Sentence-embeddings model (ONNX, e5-small)
 # ---------------------------------------------------------------------------
+embed_tokenizer = None
 embed_model = None
 try:
-    print("Loading sentence-transformers model (multilingual-e5-small)...")
-    from sentence_transformers import SentenceTransformer
-    import numpy as np
+    print("Loading e5-small ONNX model...")
+    from optimum.onnxruntime import ORTModelForFeatureExtraction
 
-    _st_device = "cpu" if device == "mps" else device  # sentence-transformers MPS can be unstable
-    embed_model = SentenceTransformer("intfloat/multilingual-e5-small", device=_st_device)
-    print("Embedding model loaded successfully.")
+    embed_tokenizer = AutoTokenizer.from_pretrained(E5_MODEL_ID, subfolder=E5_SUBFOLDER)
+    _embed_kwargs = {
+        "subfolder": E5_SUBFOLDER, "file_name": E5_FILE,
+        "provider": "CPUExecutionProvider",
+    }
+    if _ORT_SESSION_OPTIONS is not None:
+        _embed_kwargs["session_options"] = _ORT_SESSION_OPTIONS
+    embed_model = ORTModelForFeatureExtraction.from_pretrained(
+        E5_MODEL_ID, **_embed_kwargs
+    )
+    print("Embedding ONNX model loaded successfully.")
 except Exception as e:
-    print(f"Error loading embedding model: {e}")
+    print(f"Error loading embedding ONNX model: {e}")
+    embed_tokenizer = None
     embed_model = None
+
+
+# Q6: LRU texto -> vector (max 2000) para no re-embeder oraciones repetidas
+_EMBED_CACHE: "OrderedDict[str, np.ndarray]" = OrderedDict()
+_EMBED_CACHE_MAX = 2000
+_EMBED_CACHE_LOCK = Lock()
+
+
+def _embed_texts(texts: List[str]):
+    if not texts:
+        return np.zeros((0, 0), dtype=np.float32)
+    missing: List[str] = []
+    seen_missing = set()
+    with _EMBED_CACHE_LOCK:
+        for t in texts:
+            if t not in _EMBED_CACHE and t not in seen_missing:
+                seen_missing.add(t)
+                missing.append(t)
+    if missing:
+        encoded = embed_tokenizer(
+            missing, padding=True, truncation=True, max_length=512, return_tensors="np"
+        )
+        out = embed_model(**{k: v for k, v in encoded.items() if k in ("input_ids", "attention_mask")})
+        hidden = np.asarray(out.last_hidden_state)
+        mask = np.asarray(encoded["attention_mask"], dtype=np.float32)[..., None]
+        summed = (hidden * mask).sum(axis=1)
+        counts = mask.sum(axis=1).clip(min=1e-9)
+        mean = summed / counts
+        norms = np.linalg.norm(mean, axis=1, keepdims=True).clip(min=1e-10)
+        vecs = mean / norms
+        with _EMBED_CACHE_LOCK:
+            for t, v in zip(missing, vecs):
+                _EMBED_CACHE[t] = v.astype(np.float32)
+                _EMBED_CACHE.move_to_end(t)
+                while len(_EMBED_CACHE) > _EMBED_CACHE_MAX:
+                    _EMBED_CACHE.popitem(last=False)
+    with _EMBED_CACHE_LOCK:
+        return np.stack([np.asarray(_EMBED_CACHE[t]) for t in texts])
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -73,6 +151,16 @@ class SegmentRequest(BaseModel):
     window_b: List[str]
 
 
+class SegmentWindow(BaseModel):
+    afterIndex: int
+    window_a: List[str]
+    window_b: List[str]
+
+
+class SegmentBatchRequest(BaseModel):
+    windows: List[SegmentWindow]
+
+
 # ---------------------------------------------------------------------------
 # FASE 1 — /punctuate  (preserved exactly as original)
 # ---------------------------------------------------------------------------
@@ -80,9 +168,28 @@ class SegmentRequest(BaseModel):
 def punctuate_text(request: TextRequest):
     if not request.text.strip():
         return {"text": "", "time_ms": 0}
+    if punct_pipeline is None:
+        return {"text": request.text, "time_ms": 0}
 
     start_time = time.time()
     try:
+        def _chunks(text: str):
+            words = text.split()
+            if len(words) <= 400:  # avoids truncating past 512 tokens
+                return [text]
+            parts = re.split(r"(?<=[.!?])\s+", text)
+            out, cur = [], ""
+            for p in parts:
+                if len((cur + " " + p).split()) > 400:
+                    if cur:
+                        out.append(cur)
+                    cur = p
+                else:
+                    cur = (cur + " " + p).strip()
+            if cur:
+                out.append(cur)
+            return out or [text]
+
         def get_punctuated_text(text):
             output = punct_pipeline(text)
 
@@ -109,7 +216,9 @@ def punctuate_text(request: TextRequest):
 
             return result.strip()
 
-        punctuated = get_punctuated_text(request.text)
+        punctuated = " ".join(
+            get_punctuated_text(c) for c in _chunks(request.text)
+        )
         duration_ms = round((time.time() - start_time) * 1000, 2)
         print(f"[{duration_ms}ms] Punctuated ({len(request.text)} chars): {punctuated[:120]}")
         return {"text": punctuated, "time_ms": duration_ms}
@@ -173,6 +282,10 @@ _BREAK_ANCHOR_PATTERNS = [
     r"oremos",
     r"sigamos",
     r"continuemos",
+    r"abramos nuestras biblias en",
+    r"vamos a orar",
+    r"inclinemos",
+    r"lectura de la palabra",
 ]
 _BREAK_ANCHOR_RE = re.compile(
     r"(?<![a-záéíóúüñ])(" + "|".join(_BREAK_ANCHOR_PATTERNS) + r")(?![a-záéíóúüñ])",
@@ -296,41 +409,77 @@ def normalize_endpoint(request: TextRequest):
 # ---------------------------------------------------------------------------
 
 def _cosine_similarity(a, b) -> float:
-    import numpy as np
-    a = a / (np.linalg.norm(a) + 1e-10)
-    b = b / (np.linalg.norm(b) + 1e-10)
     return float(np.dot(a, b))
+
+
+def _decide(break_score: float) -> str:
+    if break_score < MERGE_T:
+        return "MERGE"
+    if break_score > BREAK_T:
+        return "BREAK"
+    return "AMBIGUOUS"
+
+
+def _score_pairs(pairs: List[tuple]) -> List[dict]:
+    """Dedupe textos de ventana, un solo _embed_texts, cosenos numpy."""
+    texts_a = ["query: " + " ".join(a) for a, _ in pairs]
+    texts_b = ["query: " + " ".join(b) for _, b in pairs]
+    uniq: List[str] = []
+    idx: Dict[str, int] = {}
+    for t in texts_a + texts_b:
+        if t not in idx:
+            idx[t] = len(uniq)
+            uniq.append(t)
+    embeddings = _embed_texts(uniq)
+    out = []
+    for ta, tb in zip(texts_a, texts_b):
+        similarity = round(float(np.dot(embeddings[idx[ta]], embeddings[idx[tb]])), 4)
+        break_score = round(1.0 - similarity, 4)
+        out.append({"break_score": break_score, "similarity": similarity, "decision": _decide(break_score)})
+    return out
 
 
 @app.post("/segment")
 def segment_endpoint(request: SegmentRequest):
-    if embed_model is None:
+    if embed_model is None or embed_tokenizer is None:
         raise HTTPException(status_code=503, detail="Embedding model not loaded")
 
     start_time = time.time()
 
-    text_a = "query: " + " ".join(request.window_a)
-    text_b = "query: " + " ".join(request.window_b)
-
-    embeddings = embed_model.encode([text_a, text_b], normalize_embeddings=False)
-    similarity = _cosine_similarity(embeddings[0], embeddings[1])
-    break_score = round(1.0 - similarity, 4)
-    similarity = round(float(similarity), 4)
-
-    if break_score < 0.20:
-        decision = "MERGE"
-    elif break_score > 0.55:
-        decision = "BREAK"
-    else:
-        decision = "AMBIGUOUS"
+    scored = _score_pairs([(request.window_a, request.window_b)])[0]
 
     time_ms = round((time.time() - start_time) * 1000, 2)
     return {
-        "break_score": break_score,
-        "decision": decision,
-        "similarity": similarity,
+        "break_score": scored["break_score"],
+        "decision": scored["decision"],
+        "similarity": scored["similarity"],
         "time_ms": time_ms,
     }
+
+
+@app.post("/segment_batch")
+def segment_batch_endpoint(request: SegmentBatchRequest):
+    if embed_model is None or embed_tokenizer is None:
+        raise HTTPException(status_code=503, detail="Embedding model not loaded")
+
+    start_time = time.time()
+
+    if not request.windows:
+        return {"decisions": [], "time_ms": 0}
+
+    scored = _score_pairs([(w.window_a, w.window_b) for w in request.windows])
+    decisions = [
+        {
+            "afterIndex": w.afterIndex,
+            "break_score": s["break_score"],
+            "similarity": s["similarity"],
+            "decision": s["decision"],
+        }
+        for w, s in zip(request.windows, scored)
+    ]
+
+    time_ms = round((time.time() - start_time) * 1000, 2)
+    return {"decisions": decisions, "time_ms": time_ms}
 
 
 # ---------------------------------------------------------------------------
@@ -340,10 +489,19 @@ def segment_endpoint(request: SegmentRequest):
 def health():
     return {
         "status": "ok",
-        "device": device,
+        "provider": "CPUExecutionProvider",
+        "threads": {
+            "omp_num_threads": os.environ.get("OMP_NUM_THREADS", "2"),
+            "intra_op_num_threads": _ORT_THREADS,
+        },
+        "thresholds": {"merge_t": MERGE_T, "break_t": BREAK_T},
         "models": {
             "punctuation": "loaded" if punct_pipeline is not None else "unavailable",
             "embeddings": "loaded" if embed_model is not None else "unavailable",
+        },
+        "onnx_files": {
+            "punct_dir": os.path.isdir(PUNCT_ONNX_DIR),
+            "punct_model": os.path.isfile(os.path.join(PUNCT_ONNX_DIR, "model.onnx")),
         },
     }
 

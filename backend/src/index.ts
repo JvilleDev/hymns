@@ -11,6 +11,12 @@ import Fuse from "fuse.js";
 import multer from "multer";
 import path from "path";
 const db = new Database("./src/data/database.db");
+db.run("PRAGMA journal_mode=WAL;");
+db.run("PRAGMA synchronous=NORMAL;");
+
+const MERGE_THRESHOLD = Number(process.env.MERGE_THRESHOLD ?? 0.2);
+const BREAK_THRESHOLD = Number(process.env.BREAK_THRESHOLD ?? 0.55);
+const DEBUG = !!process.env.DEBUG;
 
 const app = express();
 const server = http.createServer(app);
@@ -355,7 +361,8 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
       break;
   }
 
-  saveClientState(clientId, state);
+  // ponytail: interim (~10/s) no persiste; solo finales, con debounce 1500ms
+  if (type !== "transcriptionUpdate" || !data?.interim) saveClientState(clientId, state);
 }
 
 // -- HTTP POST fallback (kept for backwards compat) --
@@ -693,11 +700,11 @@ app.get("/search", async (req, res) => {
 });
 
 app.post("/api/punctuate", async (req, res) => {
-  console.log("=== TEST ===")
-  console.log("PUNCTUATION REQUESTED")
+  if (DEBUG) console.log("=== TEST ===")
+  if (DEBUG) console.log("PUNCTUATION REQUESTED")
   try {
     const { text } = req.body;
-    console.log("TEXT:", text)
+    if (DEBUG) console.log("TEXT:", text)
     if (!text) {
       res.json({ text: "" });
       return;
@@ -709,14 +716,15 @@ app.post("/api/punctuate", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(3000),
     });
     
     if (response.ok) {
       const data = await response.json();
-      console.log("RPUNCT RES:", data)
+      if (DEBUG) console.log("RPUNCT RES:", data)
       res.json(data);
     } else {
-      console.warn("Python service returned error status", response.status);
+      if (DEBUG) console.warn("Python service returned error status", response.status);
       res.json({ text }); // Fallback
     }
   } catch (error) {
@@ -749,6 +757,7 @@ app.post("/api/segment", async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: sentences.join(" ") }),
+        signal: AbortSignal.timeout(5000),
       });
       if (normalizeRes.ok) {
         const normalizeData: any = await normalizeRes.json();
@@ -760,7 +769,7 @@ app.post("/api/segment", async (req, res) => {
           .filter((s: string) => s.length > 0);
       }
     } catch (e) {
-      console.warn("Normalize step failed, using raw sentences:", e);
+      if (DEBUG) console.warn("Normalize step failed, using raw sentences:", e);
     }
 
     if (normalizedSentences.length === 0) {
@@ -776,41 +785,78 @@ app.post("/api/segment", async (req, res) => {
       breakScore: number;
     }
     const decisions: SegmentDecision[] = [];
+    // ponytail: liturgical break anchors force cut without service call
+    const liturgicalRe = /pueden tomar asiento|abran sus biblias|amén|aleluya|gloria a dios|oremos/i;
+    const pendingWindows: { afterIndex: number; window_a: string[]; window_b: string[] }[] = [];
 
     for (let i = 0; i < normalizedSentences.length - 1; i++) {
-      const windowA: string[] = [
-        normalizedSentences[i - 1] ?? "",
-        normalizedSentences[i],
-      ].filter(Boolean);
-      const windowB: string[] = [
-        normalizedSentences[i + 1],
-        normalizedSentences[i + 2] ?? "",
-      ].filter(Boolean);
+      if (liturgicalRe.test(normalizedSentences[i + 1] ?? "")) {
+        decisions.push({ afterIndex: i, decision: "BREAK", breakScore: 1 });
+        continue;
+      }
+      pendingWindows.push({
+        afterIndex: i,
+        window_a: [normalizedSentences[i - 1] ?? "", normalizedSentences[i]].filter(Boolean),
+        window_b: [normalizedSentences[i + 1], normalizedSentences[i + 2] ?? ""].filter(Boolean),
+      });
+    }
 
+    // Q5: batch en 1 roundtrip; fallback a loop secuencial si 404/503 o error
+    const batchByIndex = new Map<number, SegmentDecision>();
+    if (pendingWindows.length > 0) {
+      try {
+        const batchRes = await fetch(`${rpunctUrl}/segment_batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ windows: pendingWindows }),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (batchRes.ok) {
+          const batchData: any = await batchRes.json();
+          const arr: any[] = Array.isArray(batchData) ? batchData : (batchData.decisions ?? batchData.results ?? []);
+          arr.forEach((entry: any, idx: number) => {
+            const s = entry.break_score ?? entry.breakScore ?? 0;
+            const afterIndex = entry.afterIndex ?? entry.after_index ?? pendingWindows[idx]?.afterIndex;
+            if (afterIndex == null) return;
+            batchByIndex.set(afterIndex, {
+              afterIndex,
+              decision: entry.decision ?? (s >= BREAK_THRESHOLD ? "BREAK" : "CONTINUE"),
+              breakScore: s,
+            });
+          });
+        } else if (DEBUG) {
+          console.warn(`segment_batch returned ${batchRes.status}, falling back to sequential`);
+        }
+      } catch (e) {
+        if (DEBUG) console.warn("segment_batch failed, falling back to sequential:", e);
+      }
+      for (const w of pendingWindows) {
+        const hit = batchByIndex.get(w.afterIndex);
+        if (hit) decisions.push(hit);
+      }
+    }
+
+    // Fallback secuencial solo para ventanas sin resultado batch
+    for (const w of pendingWindows.filter((p) => !batchByIndex.has(p.afterIndex))) {
       let decision = "CONTINUE";
       let breakScore = 0;
-
-      // ponytail: liturgical break anchors force cut without service call
-      if (/pueden tomar asiento|abran sus biblias|amén|aleluya|gloria a dios|oremos/i.test(normalizedSentences[i + 1] ?? "")) {
-        decision = "BREAK";
-        breakScore = 1;
-      } else
       try {
         const segRes = await fetch(`${rpunctUrl}/segment`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ window_a: windowA, window_b: windowB }),
+          body: JSON.stringify({ window_a: w.window_a, window_b: w.window_b }),
+          signal: AbortSignal.timeout(5000),
         });
         if (segRes.ok) {
           const segData: any = await segRes.json();
-          decision = segData.decision ?? "CONTINUE";
           breakScore = segData.break_score ?? 0;
+          decision = segData.decision ?? (breakScore >= BREAK_THRESHOLD ? "BREAK" : "CONTINUE");
         }
       } catch (e) {
-        console.warn(`Segment call failed at index ${i}:`, e);
+        if (DEBUG) console.warn(`Segment call failed at index ${w.afterIndex}:`, e);
       }
 
-      decisions.push({ afterIndex: i, decision, breakScore });
+      decisions.push({ afterIndex: w.afterIndex, decision, breakScore });
     }
 
     // Step 4: Build paragraphs from BREAK decisions
@@ -821,8 +867,9 @@ app.post("/api/segment", async (req, res) => {
     const paragraphAccumulators: ParagraphAccumulator[] = [];
     let current: ParagraphAccumulator = { sentenceIndices: [0], breakScores: [] };
 
+    const decisionByIndex = new Map(decisions.map((d) => [d.afterIndex, d]));
     for (let i = 0; i < normalizedSentences.length - 1; i++) {
-      const dec = decisions.find((d) => d.afterIndex === i);
+      const dec = decisionByIndex.get(i);
       if (dec && dec.decision === "BREAK") {
         current.breakScores.push(dec.breakScore);
         paragraphAccumulators.push(current);
@@ -845,12 +892,12 @@ app.post("/api/segment", async (req, res) => {
       const startSentenceId = String(acc.sentenceIndices[0]);
       const endSentenceId = String(acc.sentenceIndices[acc.sentenceIndices.length - 1]);
 
-      // confidenceScore: average of (1 - breakScore) for this paragraph's transitions
-      // If single sentence, score = 1.0
+      // confidenceScore: promedio de aporte por transición; score<=MERGE es merge
+      // seguro (aporta 1), score>=BREAK es corte seguro (aporta 0)
       let confidenceScore = 1.0;
       if (acc.breakScores.length > 0) {
         const avg =
-          acc.breakScores.reduce((sum, s) => sum + (1 - s), 0) /
+          acc.breakScores.reduce((sum, s) => sum + (s <= MERGE_THRESHOLD ? 1 : s >= BREAK_THRESHOLD ? 0 : 1 - s), 0) /
           acc.breakScores.length;
         confidenceScore = Math.round(avg * 1000) / 1000;
       }
@@ -1077,7 +1124,18 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
   return newState;
 }
 
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 function saveClientState(clientId: string, state: InitialInfo) {
+  // ponytail: debounce 1500ms — transcriptionUpdate llega ~10/s
+  const prev = saveTimers.get(clientId);
+  if (prev) clearTimeout(prev);
+  saveTimers.set(clientId, setTimeout(() => {
+    saveTimers.delete(clientId);
+    persistClientState(clientId, state);
+  }, 1500));
+}
+
+function persistClientState(clientId: string, state: InitialInfo) {
   try {
     const query = db.query(`
       INSERT OR REPLACE INTO client_states (
