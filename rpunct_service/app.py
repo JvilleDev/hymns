@@ -29,7 +29,11 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # ONNX CPU-only models (no torch, no sentence-transformers)
 # ---------------------------------------------------------------------------
-PUNCT_ONNX_DIR = os.environ.get("PUNCT_ONNX_DIR", "./onnx/punct-sonar-base")
+PUNCT_REPO = os.environ.get("PUNCT_REPO", "onnx-community/punctuate-all-ONNX")
+PUNCT_SUBFOLDER = os.environ.get("PUNCT_SUBFOLDER", "onnx")
+PUNCT_FILE = os.environ.get("PUNCT_FILE", "model_quantized.onnx")
+PUNCT_TOK = os.environ.get("PUNCT_TOK", "kredor/punctuate-all")
+PUNCT_ONNX_DIR = os.environ.get("PUNCT_ONNX_DIR", "./onnx/punct")
 E5_MODEL_ID = os.environ.get("E5_MODEL_ID", "intfloat/multilingual-e5-small")
 E5_ONNX_DIR = os.environ.get("E5_ONNX_DIR", "./onnx/e5")
 E5_SUBFOLDER = "onnx"
@@ -49,7 +53,7 @@ try:
 except Exception:
     _ORT_SESSION_OPTIONS = None
 
-# shortcut: punct queda en fp32 sin cuantizar (E2 pospuesto con eval).
+# shortcut: punct usa int8 oficial (model_quantized.onnx, ~279MB).
 
 print("Using provider: CPUExecutionProvider")
 
@@ -58,18 +62,43 @@ print("Using provider: CPUExecutionProvider")
 # ---------------------------------------------------------------------------
 punct_tokenizer = None
 punct_session = None
-punct_id2label: Dict[int, str] = {}
+punct_id2label: Dict[int, str] = {0: "0", 1: ".", 2: ",", 3: "?", 4: "-", 5: ":"}
 try:
     print("Loading punctuation ONNX model...")
-    punct_tokenizer = AutoTokenizer.from_pretrained(PUNCT_ONNX_DIR)
+    _punct_base = [PUNCT_ONNX_DIR, "./onnx/punct", "/app/onnx/punct"]
+    _punct_dirs = [d for b in _punct_base if b for d in (b, os.path.join(b, "onnx"))]
+    _punct_file = next(
+        (os.path.join(d, PUNCT_FILE) for d in _punct_dirs
+         if os.path.isfile(os.path.join(d, PUNCT_FILE))),
+        None,
+    )
+    if _punct_file is None:  # fetch only the quantized onnx, no torch needed
+        from huggingface_hub import hf_hub_download
+
+        _punct_file = hf_hub_download(
+            PUNCT_REPO, subfolder=PUNCT_SUBFOLDER, filename=PUNCT_FILE
+        )
+    _punct_tok_dirs = _punct_dirs + ["./onnx/punct-tok", "/app/onnx/punct-tok"]
+    _punct_tok_dir = next(
+        (d for d in _punct_tok_dirs if os.path.isfile(os.path.join(d, "tokenizer.json"))),
+        None,
+    )
+    punct_tokenizer = AutoTokenizer.from_pretrained(
+        _punct_tok_dir if _punct_tok_dir is not None else PUNCT_TOK
+    )
     punct_session = ort.InferenceSession(
-        os.path.join(PUNCT_ONNX_DIR, "model.onnx"),
+        _punct_file,
         sess_options=_ORT_SESSION_OPTIONS,
         providers=["CPUExecutionProvider"],
     )
-    with open(os.path.join(PUNCT_ONNX_DIR, "config.json"), encoding="utf-8") as _cfg_f:
-        _cfg = json.load(_cfg_f)
-    punct_id2label = {int(k): str(v) for k, v in _cfg.get("id2label", {}).items()}
+    for _cfg_d in _punct_dirs:  # config local manda si existe
+        _cfg_p = os.path.join(_cfg_d, "config.json")
+        if os.path.isfile(_cfg_p):
+            with open(_cfg_p, encoding="utf-8") as _cfg_f:
+                _cfg = json.load(_cfg_f)
+            if _cfg.get("id2label"):
+                punct_id2label = {int(k): str(v) for k, v in _cfg["id2label"].items()}
+            break
     print("Punctuation ONNX model loaded successfully.")
 except Exception as e:
     print(f"Error loading punctuation ONNX model: {e}")
@@ -554,7 +583,8 @@ def health():
         },
         "onnx_files": {
             "punct_dir": os.path.isdir(PUNCT_ONNX_DIR),
-            "punct_model": os.path.isfile(os.path.join(PUNCT_ONNX_DIR, "model.onnx")),
+            "punct_model": os.path.isfile(os.path.join(PUNCT_ONNX_DIR, PUNCT_FILE))
+            or os.path.isfile(os.path.join(PUNCT_ONNX_DIR, "onnx", PUNCT_FILE)),
         },
     }
 
