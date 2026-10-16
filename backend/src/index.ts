@@ -17,6 +17,7 @@ db.run("PRAGMA synchronous=NORMAL;");
 const MERGE_THRESHOLD = Number(process.env.MERGE_THRESHOLD ?? 0.2);
 const BREAK_THRESHOLD = Number(process.env.BREAK_THRESHOLD ?? 0.55);
 const DEBUG = !!process.env.DEBUG;
+const TRANSCRIBE_PIN = process.env.TRANSCRIBE_PIN || "";
 
 const app = express();
 const server = http.createServer(app);
@@ -978,6 +979,78 @@ app.get("/api/paragraphs", (req, res) => {
   }
 });
 
+// -- Transcription persistence (F1) + PIN ownership (F2) --
+
+const sessionIdOf = (req: any): string =>
+  ((req.query.clientId as string) || (req.headers["x-client-id"] as string) || "default");
+
+app.post("/api/transcription/claim", async (req, res) => {
+  try {
+    const sessionId = (req.body?.clientId as string) || (req.headers["x-client-id"] as string) || "default";
+    const producerId = (req.body?.clientId as string) || sessionId;
+    const pin = (req.body?.pin as string) || "";
+    if (TRANSCRIBE_PIN && pin !== TRANSCRIBE_PIN) {
+      res.status(403).json({ error: "PIN incorrecto" });
+      return;
+    }
+    const state = await getClientState(sessionId);
+    if (
+      state.transcription.producing &&
+      state.transcriptionProducer &&
+      state.transcriptionProducer !== producerId
+    ) {
+      res.status(409).json({ error: "Otro productor activo" });
+      return;
+    }
+    state.transcriptionProducer = producerId;
+    state.transcription.producing = true;
+    state.lastTranscriptionUpdate = Date.now();
+    persistClientState(sessionId, state);
+    broadcast(sessionId, { type: "transcriptionState", data: state.transcription });
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/transcription/state", (req, res) => {
+  try {
+    const sessionId = sessionIdOf(req);
+    const rows = db
+      .query("SELECT ts, text FROM transcript_lines WHERE session_id = ? ORDER BY ts ASC")
+      .all(sessionId) as Array<{ ts: number; text: string }>;
+    res.json({ lines: rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/transcription/append", (req, res) => {
+  try {
+    const sessionId = (req.body?.clientId as string) || (req.headers["x-client-id"] as string) || "default";
+    const { text, ts } = req.body || {};
+    if (!text || !String(text).trim()) {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+    db.query("INSERT INTO transcript_lines (session_id, ts, text) VALUES (?, ?, ?)")
+      .run(sessionId, Number(ts) || Date.now(), String(text));
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete("/api/transcription/state", (req, res) => {
+  try {
+    const sessionId = sessionIdOf(req);
+    db.query("DELETE FROM transcript_lines WHERE session_id = ?").run(sessionId);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // -- Helpers & DB --
 
 async function setupFuse() {
@@ -1059,6 +1132,7 @@ interface InitialInfo {
     topic: string;
   };
   transcription: { active: boolean; producing: boolean; final: string; interim: string };
+  transcriptionProducer: string;
   lastTranscriptionUpdate: number;
   lastAnnouncementUpdate: number;
 }
@@ -1075,6 +1149,7 @@ const defaultInitialInfo = (): InitialInfo => ({
     topic: getColombianDate(),
   },
   transcription: { active: false, producing: false, final: "", interim: "" },
+  transcriptionProducer: "",
   lastTranscriptionUpdate: Date.now(),
   lastAnnouncementUpdate: Date.now(),
 });
@@ -1100,6 +1175,7 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.announcement.topic = row.announcementTopic || "ANUNCIO";
       state.transcription.active = !!row.transcriptionActive;
       state.transcription.producing = !!row.transcriptionProducing;
+      state.transcriptionProducer = (row as any).transcriptionProducer || "";
       state.lastTranscriptionUpdate = row.lastTranscriptionUpdate || Date.now();
       state.lastAnnouncementUpdate = row.lastAnnouncementUpdate || Date.now();
 
@@ -1142,8 +1218,9 @@ function persistClientState(clientId: string, state: InitialInfo) {
         clientId, viewerActive, activeLine, activeCantoId, activeIndex, 
         announcementText, announcementActive, 
         announcementTopic, transcriptionActive, transcriptionProducing,
+        transcriptionProducer,
         lastTranscriptionUpdate, lastAnnouncementUpdate
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     query.run(
       clientId,
@@ -1156,6 +1233,7 @@ function persistClientState(clientId: string, state: InitialInfo) {
       state.announcement.topic,
       state.transcription.active ? 1 : 0,
       state.transcription.producing ? 1 : 0,
+      state.transcriptionProducer || "",
       state.lastTranscriptionUpdate,
       state.lastAnnouncementUpdate
     );
@@ -1211,10 +1289,19 @@ async function prepareDb() {
     db.run(
       "CREATE INDEX IF NOT EXISTS idx_paragraphs_document ON processed_paragraphs(documentId, clientId)"
     );
+    db.run(
+      "CREATE TABLE IF NOT EXISTS transcript_lines (session_id TEXT NOT NULL, ts INTEGER NOT NULL, text TEXT NOT NULL)"
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript_lines(session_id, ts)"
+    );
 
     // Migrations
     try {
       db.run("ALTER TABLE client_states ADD COLUMN transcriptionProducing INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN transcriptionProducer TEXT");
     } catch (e) {}
     try {
       db.run("ALTER TABLE client_states ADD COLUMN lastTranscriptionUpdate INTEGER");

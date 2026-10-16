@@ -73,6 +73,102 @@ const maxErrors = 10
 const isLocalProducer = ref(false)
 const lastFinalTimestamp = ref(Date.now())
 
+// F12: post-corrección determinista tras puntuación (solo reemplazo exacto)
+const BIBLICAL_TERMS: Record<string, string> = {
+  efesios: 'Efesios',
+  habacuc: 'Habacuc',
+  melquisedec: 'Melquisedec',
+  deuteronomio: 'Deuteronomio',
+  apocalipsis: 'Apocalipsis'
+}
+const applyBiblicalTerms = (text: string) => {
+  let out = text
+  for (const [wrong, right] of Object.entries(BIBLICAL_TERMS)) {
+    out = out.replace(new RegExp(`\\b${wrong}\\b`, 'gi'), right)
+  }
+  return out
+}
+
+// F1/F8: líneas horneadas con timestamp (vista en vivo sin hora; export la antepone)
+interface TranscriptLine { ts: number; text: string }
+const transcriptLines = ref<TranscriptLine[]>([])
+const persistLine = (text: string, ts: number) => {
+  try {
+    void useApi().post('/api/transcription/append', { clientId: clientId.value, text, ts })
+  } catch {}
+}
+const bakeToConsolidated = (text: string) => {
+  const t = text.trim()
+  if (!t) return
+  const ts = Date.now()
+  consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + t
+  transcriptLines.value.push({ ts, text: t })
+  persistLine(t, ts)
+}
+
+// F7: pausa (detiene recognition sin soltar ownership) + heartbeat para el timeout de 10s del backend
+const paused = ref(false)
+let pausedHeartbeat: ReturnType<typeof setInterval> | null = null
+const startPausedHeartbeat = () => {
+  stopPausedHeartbeat()
+  pausedHeartbeat = setInterval(() => setTranscriptionProducing(true), 5000)
+}
+const stopPausedHeartbeat = () => {
+  if (pausedHeartbeat) clearInterval(pausedHeartbeat)
+  pausedHeartbeat = null
+}
+
+// F2: PIN de productor (se guarda en localStorage una vez)
+const transcribePin = ref('')
+const pinError = ref('')
+if (import.meta.client) {
+  transcribePin.value = localStorage.getItem('transcripcion:pin') || ''
+}
+const claimProducing = async (): Promise<boolean> => {
+  pinError.value = ''
+  try {
+    await useApi().post('/api/transcription/claim', { clientId: clientId.value, pin: transcribePin.value || '' })
+    if (import.meta.client && transcribePin.value) localStorage.setItem('transcripcion:pin', transcribePin.value)
+    return true
+  } catch (e: any) {
+    if (e?.status === 403 || e?.response?.status === 403 || e?.statusCode === 403) {
+      pinError.value = 'PIN incorrecto'
+    } else if (e?.status === 409 || e?.response?.status === 409 || e?.statusCode === 409) {
+      pinError.value = 'Otro productor activo'
+    } else {
+      pinError.value = 'No se pudo tomar el micrófono'
+    }
+    return false
+  }
+}
+
+// F3: copiar + descargar .txt (sin título, usa fecha)
+const copyTranscript = async () => {
+  try {
+    await navigator.clipboard.writeText(fullHistory.value)
+    toast.success('Copiado')
+  } catch {
+    toast.error('No se pudo copiar')
+  }
+}
+const formatTs = (ts: number) => {
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+const downloadTranscript = () => {
+  const body = transcriptLines.value.length
+    ? transcriptLines.value.map(l => `[${formatTs(l.ts)}] ${l.text}`).join('\n\n')
+    : fullHistory.value
+  const fecha = new Date().toISOString().slice(0, 10)
+  const blob = new Blob([body], { type: 'text/plain;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `servicio-${fecha}.txt`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
 const availableMicrophones = ref<MediaDeviceInfo[]>([])
 const selectedMicrophoneId = ref<string>('')
 
@@ -177,6 +273,7 @@ const INACTIVITY_FLUSH = 10000
 
 const resetInactivityTimer = () => {
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  if (paused.value) return // F7: INACTIVITY_FLUSH ignorado en pausa
   if (isTranscribing.value) {
     inactivityTimer.value = setTimeout(() => {
       console.log('[STT] Inactividad prolongada detectada. Cerrando párrafo...')
@@ -208,8 +305,9 @@ const lastWords = (text: string, n: number) => text.trim().split(/\s+/).filter(B
 const scheduleSilenceFlush = (scheduledAt: number) => {
   setTimeout(() => {
     if (lastFinalTimestamp.value !== scheduledAt) return
+    if (paused.value) return // F7: no hornear por silencio en pausa
     if (!activeParagraphPunctuated.value.trim()) return
-    consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value.trim()
+    bakeToConsolidated(activeParagraphPunctuated.value)
     activeParagraphRaw.value = ''
     activeParagraphPunctuated.value = ''
     punctuatedPrefix.value = ''
@@ -224,7 +322,7 @@ const commitInterim = () => {
   if (activeParagraphPunctuated.value.trim()) {
     const p = activeParagraphPunctuated.value.trim()
     const capitalized = p.charAt(0).toUpperCase() + p.slice(1)
-    consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + capitalized
+    bakeToConsolidated(applyBiblicalTerms(capitalized))
     
     activeParagraphRaw.value = ''
     activeParagraphPunctuated.value = ''
@@ -245,9 +343,9 @@ const requestPunctuation = async (text: string) => {
   if (!text.trim()) return ''
   try {
     const data = await useApi().post<{text: string}>('/api/punctuate', { text })
-    return data?.text || text
+    return applyBiblicalTerms(data?.text || text)
   } catch (e) {
-    return text
+    return applyBiblicalTerms(text)
   }
 }
 
@@ -356,6 +454,7 @@ const initRecognition = () => {
         let processed = ((prefix ? prefix + ' ' : '') + tail).trim()
         processed = processed.replace(/([.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase())
         processed = processed.charAt(0).toUpperCase() + processed.slice(1)
+        processed = applyBiblicalTerms(processed)
 
         punctuatedPrefix.value = processed
         activeParagraphPunctuated.value = processed
@@ -375,7 +474,7 @@ const initRecognition = () => {
               const firstParagraph = result.paragraphs[0]
               const remainingParagraphs = result.paragraphs.slice(1)
               
-              consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + firstParagraph.text
+              bakeToConsolidated(firstParagraph.text)
               
               // El último párrafo incompleto sigue como activo
               const lastParagraph = remainingParagraphs[remainingParagraphs.length - 1]
@@ -393,7 +492,7 @@ const initRecognition = () => {
         const isVeryLongPause = silenceGap > SILENCE_FLUSH_MS
 
         if ((isVeryLong && endsInDot) || isVeryLongPause) {
-          consolidatedText.value += (consolidatedText.value ? '\n\n' : '') + activeParagraphPunctuated.value
+          bakeToConsolidated(activeParagraphPunctuated.value)
           activeParagraphRaw.value = ''
           activeParagraphPunctuated.value = ''
           punctuatedPrefix.value = ''
@@ -469,6 +568,7 @@ const initRecognition = () => {
 
   recognition.value.onerror = (event: any) => {
     console.error('[STT] Error:', event.error)
+    if (paused.value) return // F7: en pausa no soltar ownership ni reintentar
     isTranscribing.value = false
     setTranscriptionProducing(false)
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
@@ -480,6 +580,10 @@ const initRecognition = () => {
   }
 
   recognition.value.onend = () => {
+    if (paused.value) { // F7: pausa detiene recognition sin soltar ownership
+      isTranscribing.value = false
+      return
+    }
     isTranscribing.value = false
     isLocalProducer.value = false
     isRestarting.value = false // Permitir nuevos resultados al terminar la sesión
@@ -559,21 +663,63 @@ const stopAudioAnalysis = () => {
   currentVolume.value = 0
 }
 
-const toggleTranscription = () => {
+const toggleTranscription = async () => {
   if (isSomeoneElseTranscribing.value) return
 
   if (isTranscribing.value) {
     isUserActive.value = false
+    paused.value = false
+    stopPausedHeartbeat()
     recognition.value?.stop()
     isLocalProducer.value = false
     setTranscriptionProducing(false)
     stopAudioAnalysis()
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   } else {
+    // F2: claim con PIN antes de tomar el mic
+    if (!(await claimProducing())) {
+      toast.error(pinError.value || 'PIN incorrecto')
+      return
+    }
+    paused.value = false
     void getMicrophones()
     startRecognition()
     startAudioAnalysis()
   }
+}
+
+// F7: Pausar/Reanudar sin soltar ownership (producing sigue true)
+const togglePause = () => {
+  if (!isLocalProducer.value) return
+  if (paused.value) {
+    paused.value = false
+    stopPausedHeartbeat()
+    startRecognition()
+  } else {
+    paused.value = true
+    try { recognition.value?.stop() } catch {}
+    isTranscribing.value = false
+    setTranscriptionProducing(true) // mantener ownership
+    startPausedHeartbeat()
+    if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  }
+}
+
+// F7: Limpiar (vacía local, broadcast final vacío, borra líneas de la sesión)
+const clearTranscript = async () => {
+  if (!confirm('¿Borrar toda la transcripción de esta sesión?')) return
+  consolidatedText.value = ''
+  activeParagraphRaw.value = ''
+  activeParagraphPunctuated.value = ''
+  punctuatedPrefix.value = ''
+  fullHistory.value = ''
+  finalTranscript.value = ''
+  interimTranscript.value = ''
+  transcriptLines.value = []
+  updateTranscription({ final: '', interim: '' })
+  try {
+    await useApi().delete(`/api/transcription/state?clientId=${encodeURIComponent(clientId.value)}`)
+  } catch {}
 }
 
 watch(selectedMicrophoneId, () => {
@@ -602,6 +748,26 @@ onMounted(() => {
   connect()
   initRecognition()
 
+  // F1: cargar líneas persistidas ya-procesadas (sin re-puntuar/re-segmentar)
+  void (async () => {
+    try {
+      const data = await useApi().get<{ lines: Array<{ ts: number; text: string }> }>(
+        `/api/transcription/state?clientId=${encodeURIComponent(clientId.value)}`
+      )
+      const lines = Array.isArray(data?.lines) ? data.lines : []
+      if (lines.length) {
+        transcriptLines.value = lines
+        consolidatedText.value = lines.map(l => l.text).join('\n\n')
+        fullHistory.value = consolidatedText.value
+        finalTranscript.value = fullHistory.value
+      }
+    } catch {}
+    // F2: reclaim — mismo clientId recupera ownership automáticamente
+    if (transcribePin.value) {
+      try { await claimProducing().catch(() => false) } catch {}
+    }
+  })()
+
   onDeviceInputsChanged = () => {
     void getMicrophones()
   }
@@ -624,6 +790,7 @@ watch(transcription, (newVal) => {
 
 onUnmounted(() => {
   recognition.value?.stop()
+  stopPausedHeartbeat()
   setTranscriptionProducing(false)
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   stopAudioAnalysis()
@@ -707,6 +874,18 @@ definePageMeta({
 
         <!-- Actions -->
         <div class="grid grid-cols-1 gap-3">
+          <!-- F2: PIN productor -->
+          <div class="flex items-center gap-2 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
+            <Icon name="tabler:lock" class="size-4 text-neutral-400 ml-2 shrink-0" />
+            <input
+              v-model="transcribePin"
+              type="password"
+              placeholder="PIN productor"
+              autocomplete="off"
+              class="w-full bg-transparent border-none py-1 text-[12px] font-medium text-neutral-700 focus:ring-0 outline-none"
+            />
+          </div>
+          <p v-if="pinError" class="text-[11px] font-bold text-red-500 px-1">{{ pinError }}</p>
           <!-- Audio/Transcription Toggle -->
           <button 
             @click="toggleTranscription"
@@ -736,6 +915,26 @@ definePageMeta({
             </div>
             <Icon v-else name="tabler:arrow-right" class="size-4 opacity-0 group-hover:opacity-100 transition-all" />
           </button>
+          <!-- F7: Pausar/Reanudar -->
+          <button
+            v-if="isLocalProducer"
+            @click="togglePause"
+            class="flex items-center justify-between px-6 py-4 rounded-[1.5rem] border-2 transition-all font-black uppercase tracking-widest text-xs border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300"
+          >
+            <div class="flex items-center gap-4">
+              <Icon :name="paused ? 'tabler:player-play' : 'tabler:player-pause'" class="size-5" />
+              <div class="text-left">
+                <div class="leading-none">{{ paused ? 'Reanudar' : 'Pausar' }}</div>
+                <div class="text-[9px] font-bold opacity-60 mt-1">{{ paused ? 'En pausa, ownership retenido' : 'Pausa sin soltar ownership' }}</div>
+              </div>
+            </div>
+          </button>
+          <!-- F3 copiar/exportar + F7 limpiar -->
+          <div class="grid grid-cols-3 gap-2">
+            <button @click="copyTranscript" class="px-3 py-3 rounded-2xl border border-neutral-200 bg-white text-[10px] font-black uppercase tracking-widest text-neutral-500 hover:border-neutral-300">Copiar</button>
+            <button @click="downloadTranscript" class="px-3 py-3 rounded-2xl border border-neutral-200 bg-white text-[10px] font-black uppercase tracking-widest text-neutral-500 hover:border-neutral-300">Descargar</button>
+            <button @click="clearTranscript" class="px-3 py-3 rounded-2xl border border-red-200 bg-white text-[10px] font-black uppercase tracking-widest text-red-500 hover:border-red-300">Limpiar</button>
+          </div>
         </div>
 
         <div v-if="isSomeoneElseTranscribing" class="p-4 bg-orange-50 border border-orange-100 rounded-2xl text-center">
