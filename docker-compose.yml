@@ -19,7 +19,16 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    environment:
+      - HF_HUB_CACHE=/root/.cache/huggingface
+      - PUNCT_ONNX_DIR=/app/onnx/punct
+      - E5_ONNX_DIR=/app/onnx/e5
+    volumes:
+      - rpunct_onnx:/app/onnx
+      - hf_cache:/root/.cache/huggingface
 
 volumes:
   db_data:
   uploads_data:
+  rpunct_onnx:
+  hf_cache:
