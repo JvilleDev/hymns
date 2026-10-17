@@ -6,6 +6,7 @@ const {
   viewerActive,
   announcement,
   transcription,
+  session,
   connect,
   disconnect,
   activeSong,
@@ -46,6 +47,8 @@ onUnmounted(() => {
 
 <template>
   <main class="relative h-svh w-svw overflow-hidden flex flex-col transition-all duration-500 ease-in-out will-change-[transform,opacity]">
+    <!-- Sin sesión viva: pantalla vacía (transparente en OBS), sin restos -->
+    <template v-if="session.live">
 
     <!-- Lyric Content Layer -->
     <div class="flex-1 w-full flex items-end justify-center transition-all duration-500 ease-in-out" :class="[
@@ -80,6 +83,7 @@ onUnmounted(() => {
       <LowerTranscription v-if="(transcription.active || queries.live) && !queries.slide" :final="transcription.final"
         :interim="transcription.interim" />
     </Transition>
+    </template>
   </main>
 </template>
 

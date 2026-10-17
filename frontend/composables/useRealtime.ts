@@ -9,6 +9,12 @@ export interface ParsedSong {
     quickActions: { text: string; index: number }[];
 }
 
+export interface SessionState {
+    live: boolean;
+    openedAt: number;
+    lastActivity: number;
+}
+
 // Single instance of connections for the application
 let sharedWS: WebSocket | null = null
 let reconnectAttempt = 0
@@ -42,6 +48,7 @@ export const useRealtime = () => {
   const lastAnnouncementUpdate = useState('realtime:lastAnnouncementUpdate', () => 0)
   /** Incrementa cada vez que el server pide refrescar historial. */
   const historyRefreshVersion = useState('realtime:historyRefreshVersion', () => 0)
+  const session = useState<SessionState>('realtime:session', () => ({ live: false, openedAt: 0, lastActivity: 0 }))
 
   const handleMessage = (payload: string) => {
     try {
@@ -63,6 +70,7 @@ export const useRealtime = () => {
           activeSong.value = data.activeSong || null
           announcement.value = data.announcement || { text: '', active: false }
           transcription.value = data.transcription || { active: false, producing: false, final: '', interim: '' }
+          if (data.session) session.value = data.session
           lastAnnouncementUpdate.value =
             typeof data.lastAnnouncementUpdate === 'number' && !Number.isNaN(data.lastAnnouncementUpdate)
               ? data.lastAnnouncementUpdate
@@ -120,6 +128,10 @@ export const useRealtime = () => {
 
         case 'historyRefresh':
           historyRefreshVersion.value++
+          break
+
+        case 'sessionState':
+          session.value = data
           break
       }
     } catch (e) {
@@ -275,6 +287,7 @@ export const useRealtime = () => {
     activeSong,
     announcement,
     transcription,
+    session,
     lastAnnouncementUpdate,
     historyRefreshVersion,
     connect,

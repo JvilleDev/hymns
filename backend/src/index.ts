@@ -112,9 +112,12 @@ wss.on("connection", async (ws, request) => {
 
   colorprint.NOTICE(`[WS Connected] Client: ${clientId}, Conn: ${connectionId}`);
 
-  // Send initial state immediately
+  // Send initial state immediately (FASE 2: perfil slim para gran-diamante)
   const state = await getClientState(clientId);
-  ws.send(JSON.stringify({ type: "initial", data: { ...state, connectionId, serverInstanceId } }));
+  const initialData = clientId === "gran-diamante"
+    ? { session: state.session, announcement: state.announcement, transcription: state.transcription, lastAnnouncementUpdate: state.lastAnnouncementUpdate, connectionId, serverInstanceId }
+    : { ...state, connectionId, serverInstanceId };
+  ws.send(JSON.stringify({ type: "initial", data: initialData }));
 
   ws.on("close", () => {
     colorprint.DEBUG(`[WS Disconnected] Client: ${clientId}`);
@@ -161,22 +164,22 @@ const inactivityInterval = setInterval(async () => {
   const twoHours = 2 * 60 * 60 * 1000;
 
   for (const [clientId, state] of clientStates.entries()) {
-    let changed = false;
+    // FASE 1: cierre unificado por session.lastActivity (2h); sin session viva no hay limpieza
+    if (!state.session.live || (now - state.session.lastActivity <= twoHours)) continue;
+    let changed = true;
 
     // Check transcription inactivity
-    if (state.lastTranscriptionUpdate && (now - state.lastTranscriptionUpdate > twoHours)) {
-      if (state.transcription.final || state.transcription.interim || state.transcription.active) {
-        state.transcription = { active: false, producing: false, final: "", interim: "" };
-        state.lastTranscriptionUpdate = now;
-        broadcast(clientId, { type: "transcriptionState", data: state.transcription });
-        broadcast(clientId, { type: "transcriptionUpdate", data: { final: "", interim: "" } });
-        changed = true;
-        colorprint.NOTICE(`[Cleanup] Cleared transcription for ${clientId} due to inactivity`);
-      }
+    if (state.transcription.final || state.transcription.interim || state.transcription.active) {
+      state.transcription = { active: false, producing: false, final: "", interim: "" };
+      state.lastTranscriptionUpdate = now;
+      broadcast(clientId, { type: "transcriptionState", data: state.transcription });
+      broadcast(clientId, { type: "transcriptionUpdate", data: { final: "", interim: "" } });
+      changed = true;
+      colorprint.NOTICE(`[Cleanup] Cleared transcription for ${clientId} due to inactivity`);
     }
 
     // Check announcement inactivity
-    if (state.lastAnnouncementUpdate && (now - state.lastAnnouncementUpdate > twoHours)) {
+    {
       const defaultTopic = getColombianDate();
       if (state.announcement.text || state.announcement.active || state.announcement.topic !== defaultTopic) {
         state.announcement = {
@@ -203,6 +206,16 @@ const inactivityInterval = setInterval(async () => {
         colorprint.NOTICE(`[Cleanup] Cleared announcements for ${clientId} due to inactivity`);
       }
     }
+
+    // FASE 1: cierre de session + limpieza de transcript_lines (session_id = clientId)
+    state.session.live = false;
+    try {
+      db.query("DELETE FROM transcript_lines WHERE session_id = ?").run(clientId);
+    } catch (e) {
+      console.error(`Error clearing transcript_lines for ${clientId}:`, e);
+    }
+    broadcast(clientId, { type: "sessionState", data: state.session });
+    colorprint.NOTICE(`[Cleanup] Closed session for ${clientId} due to inactivity`);
 
     if (changed) {
       saveClientState(clientId, state);
@@ -232,12 +245,35 @@ setInterval(async () => {
 }, 5000);
 
 function broadcast(clientId: string, data: any) {
+  // FASE 2: gran-diamante no recibe eventos de letras
+  if (clientId === "gran-diamante" && (data?.type === "line" || data?.type === "activeSong" || data?.type === "index" || data?.type === "viewerActive")) return;
   const wsMsg = JSON.stringify(data);
   wss.clients.forEach((ws: any) => {
     if (ws.readyState === 1 && ws.clientId === clientId) {
       ws.send(wsMsg);
     }
   });
+}
+
+// FASE 1: session como fuente de verdad (helpers mínimos)
+function touchSession(state: InitialInfo) {
+  state.session.lastActivity = Date.now();
+}
+function openSession(clientId: string, state: InitialInfo) {
+  const now = Date.now();
+  state.session.lastActivity = now;
+  if (!state.session.live) {
+    state.session.live = true;
+    state.session.openedAt = now;
+    broadcast(clientId, { type: "sessionState", data: state.session });
+  }
+}
+async function touchSessionById(clientId: string) {
+  try {
+    const st = await getClientState(clientId);
+    touchSession(st);
+    saveClientState(clientId, st);
+  } catch {}
 }
 
 // SSE removed in favor of WebSockets
@@ -299,6 +335,9 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
         topic: data.topic ?? state.announcement.topic ?? getColombianDate(),
       };
       state.lastAnnouncementUpdate = Date.now();
+      // FASE 1: abre solo con active=true y texto no vacío; si no, mantiene
+      if (data.active && String(data.text ?? "").trim()) openSession(clientId, state);
+      else touchSession(state);
       broadcast(clientId, {
         type: "announcement",
         data: state.announcement,
@@ -342,6 +381,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
     case "setTranscriptionProducing":
       state.transcription.producing = !!data;
       state.lastTranscriptionUpdate = Date.now();
+      if (data) touchSession(state); // FASE 1: heartbeat/productor mantiene (sin broadcast de session)
       broadcast(clientId, {
         type: "transcriptionState",
         data: state.transcription,
@@ -353,6 +393,9 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
       state.transcription.final = data.final;
       state.transcription.interim = data.interim;
       state.lastTranscriptionUpdate = Date.now();
+      // FASE 1: red de seguridad — abre si hay texto; si no, mantiene
+      if (String(data?.final ?? "").trim() || String(data?.interim ?? "").trim()) openSession(clientId, state);
+      else touchSession(state);
       broadcast(clientId, { type: "transcriptionUpdate", data, from, to });
       break;
 
@@ -573,6 +616,7 @@ app.post("/api/anuncios", (req, res) => {
     );
     insert.run(id, text, topic || null, createdAt, clientId);
     broadcast(clientId, { type: "historyRefresh", data: true });
+    void touchSessionById(clientId); // FASE 1: mutación anuncios mantiene
     res.json({ id, text, topic: topic || null, createdAt, clientId });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -585,6 +629,7 @@ app.delete("/api/anuncios/:id", (req, res) => {
     const query = db.query("DELETE FROM anuncios WHERE id = ? AND clientId = ?");
     query.run(req.params.id, clientId);
     broadcast(clientId, { type: "historyRefresh", data: true });
+    void touchSessionById(clientId); // FASE 1: mutación anuncios mantiene
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -597,6 +642,7 @@ app.delete("/api/anuncios", (req, res) => {
     const query = db.query("DELETE FROM anuncios WHERE clientId = ?");
     query.run(clientId);
     broadcast(clientId, { type: "historyRefresh", data: true });
+    void touchSessionById(clientId); // FASE 1: mutación anuncios mantiene
     res.json({ success: true, message: "All announcements deleted for this client" });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -618,6 +664,7 @@ app.post("/api/anuncios/delete-selected", (req, res) => {
       }
     })();
     broadcast(clientId, { type: "historyRefresh", data: true });
+    void touchSessionById(clientId); // FASE 1: mutación anuncios mantiene
     res.json({ success: true, count: ids.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1042,6 +1089,7 @@ app.post("/api/transcription/claim", async (req, res) => {
     state.transcriptionProducer = producerId;
     state.transcription.producing = true;
     state.lastTranscriptionUpdate = Date.now();
+    openSession(sessionId, state); // FASE 1: claim exitoso abre (y mantiene)
     persistClientState(sessionId, state);
     broadcast(sessionId, { type: "transcriptionState", data: state.transcription });
     res.json({ ok: true });
@@ -1072,6 +1120,7 @@ app.post("/api/transcription/append", (req, res) => {
     }
     db.query("INSERT INTO transcript_lines (session_id, ts, text) VALUES (?, ?, ?)")
       .run(sessionId, Number(ts) || Date.now(), String(text));
+    void touchSessionById(sessionId); // FASE 1: append mantiene
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -1172,6 +1221,7 @@ interface InitialInfo {
   transcriptionProducer: string;
   lastTranscriptionUpdate: number;
   lastAnnouncementUpdate: number;
+  session: { live: boolean; openedAt: number; lastActivity: number }; // FASE 1
 }
 
 const defaultInitialInfo = (): InitialInfo => ({
@@ -1189,6 +1239,7 @@ const defaultInitialInfo = (): InitialInfo => ({
   transcriptionProducer: "",
   lastTranscriptionUpdate: Date.now(),
   lastAnnouncementUpdate: Date.now(),
+  session: { live: false, openedAt: 0, lastActivity: 0 },
 });
 
 const clientStates = new Map<string, InitialInfo>();
@@ -1215,9 +1266,13 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.transcriptionProducer = (row as any).transcriptionProducer || "";
       state.lastTranscriptionUpdate = row.lastTranscriptionUpdate || Date.now();
       state.lastAnnouncementUpdate = row.lastAnnouncementUpdate || Date.now();
+      // FASE 1: session persiste en client_states (columnas nuevas; filas viejas → cerrada)
+      state.session.live = !!(row as any).sessionLive;
+      state.session.openedAt = (row as any).sessionOpenedAt || 0;
+      state.session.lastActivity = (row as any).sessionLastActivity || 0;
 
-      // Load song if activeCantoId exists
-      if (state.activeCantoId) {
+      // Load song if activeCantoId exists (FASE 2: gran-diamante ni lo intenta)
+      if (state.activeCantoId && clientId !== "gran-diamante") {
         const songs = await getCantos(state.activeCantoId);
         if (songs[0]) {
           state.activeSong = parseSong(songs[0]);
@@ -1256,8 +1311,9 @@ function persistClientState(clientId: string, state: InitialInfo) {
         announcementText, announcementActive, 
         announcementTopic, transcriptionActive, transcriptionProducing,
         transcriptionProducer,
-        lastTranscriptionUpdate, lastAnnouncementUpdate
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        lastTranscriptionUpdate, lastAnnouncementUpdate,
+        sessionLive, sessionOpenedAt, sessionLastActivity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     query.run(
       clientId,
@@ -1272,7 +1328,10 @@ function persistClientState(clientId: string, state: InitialInfo) {
       state.transcription.producing ? 1 : 0,
       state.transcriptionProducer || "",
       state.lastTranscriptionUpdate,
-      state.lastAnnouncementUpdate
+      state.lastAnnouncementUpdate,
+      state.session.live ? 1 : 0,
+      state.session.openedAt,
+      state.session.lastActivity
     );
   } catch (e) {
     console.error(`Error saving state for ${clientId}:`, e);
@@ -1303,7 +1362,10 @@ async function prepareDb() {
         transcriptionActive INTEGER,
         transcriptionProducing INTEGER,
         lastTranscriptionUpdate INTEGER,
-        lastAnnouncementUpdate INTEGER
+        lastAnnouncementUpdate INTEGER,
+        sessionLive INTEGER,
+        sessionOpenedAt INTEGER,
+        sessionLastActivity INTEGER
       )`,
     );
 
@@ -1345,6 +1407,15 @@ async function prepareDb() {
     } catch (e) {}
     try {
       db.run("ALTER TABLE client_states ADD COLUMN lastAnnouncementUpdate INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN sessionLive INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN sessionOpenedAt INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN sessionLastActivity INTEGER");
     } catch (e) {}
   } catch (error) {
     console.error("Error preparing database:", error);
