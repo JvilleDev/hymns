@@ -112,11 +112,9 @@ wss.on("connection", async (ws, request) => {
 
   colorprint.NOTICE(`[WS Connected] Client: ${clientId}, Conn: ${connectionId}`);
 
-  // Send initial state immediately (FASE 2: perfil slim para gran-diamante)
+  // Send initial state immediately
   const state = await getClientState(clientId);
-  const initialData = clientId === "gran-diamante"
-    ? { session: state.session, announcement: state.announcement, transcription: state.transcription, lastAnnouncementUpdate: state.lastAnnouncementUpdate, connectionId, serverInstanceId }
-    : { ...state, connectionId, serverInstanceId };
+  const initialData = { ...state, connectionId, serverInstanceId };
   ws.send(JSON.stringify({ type: "initial", data: initialData }));
 
   ws.on("close", () => {
@@ -245,8 +243,6 @@ setInterval(async () => {
 }, 5000);
 
 function broadcast(clientId: string, data: any) {
-  // FASE 2: gran-diamante no recibe eventos de letras
-  if (clientId === "gran-diamante" && (data?.type === "line" || data?.type === "activeSong" || data?.type === "index" || data?.type === "viewerActive")) return;
   const wsMsg = JSON.stringify(data);
   wss.clients.forEach((ws: any) => {
     if (ws.readyState === 1 && ws.clientId === clientId) {
@@ -1275,8 +1271,8 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.session.openedAt = (row as any).sessionOpenedAt || 0;
       state.session.lastActivity = (row as any).sessionLastActivity || 0;
 
-      // Load song if activeCantoId exists (FASE 2: gran-diamante ni lo intenta)
-      if (state.activeCantoId && clientId !== "gran-diamante") {
+      // Load song if activeCantoId exists
+      if (state.activeCantoId) {
         const songs = await getCantos(state.activeCantoId);
         if (songs[0]) {
           state.activeSong = parseSong(songs[0]);
