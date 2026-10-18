@@ -590,7 +590,10 @@ app.delete("/api/canto/:id", authAdmin, async (req, res) => {
 
 app.get("/api/anuncios", (req, res) => {
   try {
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId =
+      (req.query.clientId as string) ||
+      (req.headers["x-client-id"] as string) ||
+      "gran-diamante";
     const query = db.query(
       "SELECT * FROM anuncios WHERE clientId = ? ORDER BY createdAt DESC",
     );
