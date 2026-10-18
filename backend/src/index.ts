@@ -286,6 +286,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
   switch (type) {
     case "newLine":
       state.activeLine = data;
+      openSession(clientId, state);
       broadcast(clientId, { type: "line", data, from, to });
       break;
 
@@ -298,6 +299,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
         if (rawSong) {
           const parsed = parseSong(rawSong);
           state.activeSong = parsed;
+          openSession(clientId, state);
           broadcast(clientId, { type: "activeSong", data: parsed, from, to });
           if (parsed.lines.length > 0) {
             state.activeLine = parsed.lines[0];
@@ -325,6 +327,8 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
 
     case "view":
       state.viewerActive = data;
+      if (data) openSession(clientId, state);
+      else touchSession(state);
       broadcast(clientId, { type: "viewerActive", data, from, to });
       break;
     case "setAnnouncement":

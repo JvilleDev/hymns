@@ -7,6 +7,7 @@ useHead({ title: 'Anuncios' })
 
 const { 
   announcement, 
+  session,
   setAnnouncement, 
   transcription, 
   setTranscriptionActive, 
@@ -500,6 +501,7 @@ onMounted(() => {
               <Icon :name="announcement.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-3.5 transition-all duration-300" />
               <span class="whitespace-nowrap">{{ announcement.active ? 'Ocultar' : (autoSendToAir ? 'Mostrar en Pantalla' : 'Guardar') }}</span>
             </button>
+            <span v-if="announcement.active && !session.live" class="bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg whitespace-nowrap">Sesión inactiva — /ver en negro</span>
           </div>
         </div>
       </div>

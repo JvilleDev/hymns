@@ -10,6 +10,7 @@ definePageMeta({
 const { getAnnouncements, clientId } = useApi()
 const {
   announcement,
+  session,
   transcription,
   isConnected,
   historyRefreshVersion,
@@ -279,7 +280,7 @@ const generatePdf = () => {
             :class="[
               selectedHistoryId === item.id
                 ? 'bg-amber-50 border border-amber-200'
-                : announcement.active && announcement.text === item.text
+                : announcement.active && session.live && announcement.text === item.text
                   ? 'bg-blue-50 border border-blue-100'
                   : 'hover:bg-neutral-50 border border-transparent'
             ]"
@@ -292,7 +293,7 @@ const generatePdf = () => {
                     class="text-[8px] font-black text-amber-600 uppercase tracking-[0.2em] bg-amber-100 px-1.5 py-0.5 rounded">
                 Mostrando
               </span>
-              <span v-else-if="announcement.active && announcement.text === item.text"
+              <span v-else-if="announcement.active && session.live && announcement.text === item.text"
                     class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
                 Ahora
               </span>
@@ -317,7 +318,7 @@ const generatePdf = () => {
           {{ displayTopic }}
         </h1>
         <div class="flex items-center gap-3">
-          <div v-if="announcement.active" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse">
+          <div v-if="announcement.active && session.live" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse">
             <div class="size-1.5 bg-blue-600 rounded-full"></div>
             <span class="text-[9px] font-black uppercase tracking-wider">En vivo</span>
           </div>
@@ -417,7 +418,7 @@ const generatePdf = () => {
             :key="item.id"
             class="w-full text-left px-3 py-3 rounded-xl transition-all"
             :class="[
-              announcement.active && announcement.text === item.text
+              announcement.active && session.live && announcement.text === item.text
                 ? 'bg-blue-50 border border-blue-200 shadow-sm'
                 : idx === 0 && !announcement.active
                   ? 'bg-neutral-50 border border-neutral-100'
@@ -428,7 +429,7 @@ const generatePdf = () => {
               <span class="text-[9px] font-bold text-neutral-300 uppercase tracking-widest">
                 {{ formatTimeAgo(new Date(item.createdAt)) }}
               </span>
-              <span v-if="announcement.active && announcement.text === item.text"
+              <span v-if="announcement.active && session.live && announcement.text === item.text"
                     class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
                 Ahora
               </span>
