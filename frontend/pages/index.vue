@@ -13,7 +13,7 @@ interface Song {
 
 const api = useApi()
 const { 
-  activeIndex, activeLine, viewerActive, 
+  activeIndex, activeLine, viewerActive, isConnected,
   connect, disconnect, changeViewerState, 
   sendLine, sendIndex, sendCanto, activeSong
 } = useRealtime()
@@ -86,10 +86,28 @@ async function changeSong(id: string) {
 
   isChangingSong.value = true
   try {
+     // Contenido desde lista local (API); sendCanto solo sincroniza server/proyección.
+     // Se asigna DESPUÉS porque sendCanto resetea activeSong a null.
+     console.log('[Index] changeSong', id, 'ws connected:', isConnected.value)
+     const local = songs.value.find(s => s.id === id)
+     if (!local) {
+       console.warn('[Index] canto no encontrado en lista local:', id)
+       sendCanto(id)
+       currentIndex.value = 0
+       sheetOpen.value = false
+       return
+     }
      sendCanto(id)
-     // Wait for socket to update activeSong? 
-     // For now optimistic or just wait. 
-     // The UI will react when activeSong updates.
+     const prefix = local.type === 'Canto' && local.nh ? `${local.nh}` : 'ESPECIAL'
+     activeSong.value = {
+       id: local.id,
+       title: local.title,
+       type: local.type,
+       nh: local.nh,
+       lines: [`${prefix} - ${(local.title || '').toUpperCase()}`, ...local.content],
+       quickActions: [{ text: 'INICIO', index: 0 }],
+     } as any
+     // El eco del server (con quickActions completos) sobrescribe el local al llegar.
      currentIndex.value = 0
      sheetOpen.value = false
   } catch (error) {
