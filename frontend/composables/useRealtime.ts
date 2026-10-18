@@ -18,6 +18,7 @@ export interface SessionState {
 // Single instance of connections for the application
 let sharedWS: WebSocket | null = null
 let reconnectAttempt = 0
+let pending: { type: string; data: any; to?: string }[] = []
 // ID del arranque del backend; si cambia en localStorage el backend se reinició y hay que recargar
 const SERVER_INSTANCE_KEY = 'realtime:serverInstanceId'
 
@@ -161,6 +162,11 @@ export const useRealtime = () => {
             connectionStatus.value = 'connected'
             // ponytail: sin reload en reconnect — el mensaje 'initial' re-sincroniza todo el estado
             reconnectAttempt = 0
+            // vaciar cola pendiente
+            for (const p of pending) {
+              ws.send(JSON.stringify({ type: p.type, data: p.data, from: connectionId.value, to: p.to }))
+            }
+            pending = []
             resolve()
         }
 
@@ -217,10 +223,9 @@ export const useRealtime = () => {
     const msg = JSON.stringify({ type, data, from: connectionId.value, to })
     if (sharedWS?.readyState === WebSocket.OPEN) {
       sharedWS.send(msg)
+    } else {
+      pending.push({ type, data, to })
     }
-    // ponytail: sin fallback HTTP, si el WS no está conectado el evento se pierde
-    // y el reconnect re-sincroniza el estado via 'initial'. Más simple y correcto
-    // que un POST que puede llegar fuera de orden tras reconexión.
   }
 
   const sendLine = (line: string) => {

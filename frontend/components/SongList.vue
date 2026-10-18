@@ -117,7 +117,7 @@ function highlight(text: string, term: string) {
         <li v-for="(item, index) in (isLoading && filteredElements.length === 0) ? Array(10).fill({}) : filteredElements"
           :key="item.id || `skeleton-${index}`" :data-id="item.id" class="song-item" :class="[
             filteredElements.length > 0 && activeId === item.id ? 'active' : '',
-            isLoading ? 'opacity-50 pointer-events-none' : ''
+            isLoading ? 'opacity-50' : ''
           ]" @click="emit('changeSong', item.id)">
           
           <template v-if="item.id">

@@ -224,12 +224,18 @@ onUnmounted(() => {
 
 // Mobile Deck Prompt
 const showDeckPrompt = ref(false)
+const DECK_PROMPT_KEY = 'deck-prompt-dismissed'
 
 onMounted(() => {
-  if (window.innerWidth < 768) {
+  if (window.innerWidth < 768 && localStorage.getItem(DECK_PROMPT_KEY) !== '1') {
     showDeckPrompt.value = true
   }
 })
+
+function dismissDeckPrompt() {
+  localStorage.setItem(DECK_PROMPT_KEY, '1')
+  showDeckPrompt.value = false
+}
 
 function navigateToDeck() {
   navigateTo('/deck')
@@ -337,13 +343,18 @@ function navigateToDeck() {
             <GButton size="lg" class="w-full font-bold" @click="navigateToDeck">
               Sí, ir al Deck
             </GButton>
-            <GButton variant="ghost" size="lg" class="w-full" @click="showDeckPrompt = false">
+            <GButton variant="ghost" size="lg" class="w-full" @click="dismissDeckPrompt">
               No, quedarme aquí
             </GButton>
           </div>
         </div>
       </div>
     </Teleport>
+    <GSheet v-model="sheetOpen">
+      <div class="flex flex-col h-full bg-background p-4">
+        <SongList :elements="filteredSongs" :activeId="activeSong?.id || ''" :isSearching="isSearching" :searchTerm="searchTerm" :isLoading="isLoadingSongs || isChangingSong" @changeSong="changeSong" />
+      </div>
+    </GSheet>
   </div>
 </template>
 
