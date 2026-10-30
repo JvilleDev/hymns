@@ -5,6 +5,7 @@ export type SongFilter = 'Canto' | 'Especial' | 'Todos'
 
 export const useSongs = () => {
   const api = useApi()
+  const { confirmDialog } = useDialog()
   const songs = ref<Song[] | null>(null)
   const isLoading = ref(false)
   
@@ -109,7 +110,7 @@ export const useSongs = () => {
 
   async function deleteSong(id: string) {
     try {
-      if(!confirm("¿Estás seguro de que quieres eliminar este canto?")) return;
+      if (!(await confirmDialog("¿Estás seguro de que quieres eliminar este canto?"))) return;
       
       await api.deleteSong(id)
       toast.warning("Canto eliminado exitosamente.")

@@ -11,6 +11,7 @@ const {
   connectionId
 } = useRealtime()
 const { clientId, isManualConnectionTrigger } = useApi()
+const { confirmDialog } = useDialog()
 
 // ponytail: cola de reenvío — los updateTranscription durante un corte WS se pierden (sendEvent los descarta)
 const pendingQueue = ref<Array<{ final: string, interim: string, attempts: number }>>([])
@@ -748,7 +749,7 @@ const togglePause = () => {
 
 // F7: Limpiar (vacía local, broadcast final vacío, borra líneas de la sesión)
 const clearTranscript = async () => {
-  if (!confirm('¿Borrar toda la transcripción de esta sesión?')) return
+  if (!(await confirmDialog('¿Borrar toda la transcripción de esta sesión?'))) return
   consolidatedText.value = ''
   activeParagraphRaw.value = ''
   activeParagraphPunctuated.value = ''

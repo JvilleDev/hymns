@@ -16,6 +16,7 @@ const {
 } = useRealtime()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
+const { confirmDialog, promptDialog } = useDialog()
 
 const textInput = ref('')
 const DRAFT_KEY = 'anuncios:draft'
@@ -65,7 +66,7 @@ const handleFileUpload = async (e: Event) => {
   }
   isUploading.value = true
   try {
-    const name = prompt('Nombre corto para esta imagen (usado con /):', file.name.split('.')[0])
+    const name = await promptDialog('Nombre corto para esta imagen (usado con /):', file.name.split('.')[0])
     if (!name) {
       isUploading.value = false
       return
@@ -83,7 +84,7 @@ const handleFileUpload = async (e: Event) => {
 }
 
 const deleteMediaItem = async (id: string) => {
-  if (!confirm('¿Eliminar esta imagen?')) return
+  if (!(await confirmDialog('¿Eliminar esta imagen?'))) return
   try {
     await useApi().deleteMedia(id)
     fetchMediaList()
@@ -139,7 +140,7 @@ const deleteSelected = async () => {
 }
 
 const clearAll = async () => {
-  if (!confirm('¿Estás seguro de que quieres limpiar todo el historial?')) return
+  if (!(await confirmDialog('¿Estás seguro de que quieres limpiar todo el historial?'))) return
   isLoading.value = true
   try {
     await clearAnnouncements()
