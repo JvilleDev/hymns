@@ -121,16 +121,13 @@ function highlight(text: string, term: string) {
           ]" @click="emit('changeSong', item.id)">
           
           <template v-if="item.id">
-            <div class="flex justify-between items-start mb-1">
-              <span class="text-[9px] font-bold uppercase tracking-tighter opacity-50 flex items-center gap-1">
-                <Icon :name="item.type === 'Especial' ? 'tabler:star' : 'tabler:book'" class="size-3" />
-                {{ item.type || 'Canto' }}
-              </span>
-              <span class="text-[10px] font-mono font-bold text-primary/60">#{{ item.nh }}</span>
+            <div class="flex items-center gap-3">
+              <span v-if="item.type !== 'Especial' && item.nh" class="shrink-0 w-9 text-center text-xs font-mono font-bold text-primary/70">{{ item.nh }}</span>
+              <Icon v-else name="tabler:star" class="shrink-0 w-9 size-3.5 text-orange-400/80" />
+              <h3 class="font-bold text-sm leading-tight min-w-0">{{ item.title }}</h3>
             </div>
-            <h3 class="font-bold text-sm leading-tight group-hover:text-primary transition-colors">{{ item.title }}</h3>
             <p v-if="searchTerm.length > 1 && getSnippet(item.content, searchTerm)" 
-               class="text-[11px] mt-1.5 text-muted-foreground line-clamp-2 leading-relaxed bg-muted/30 p-1.5 rounded-md border border-border/5"
+               class="text-[11px] mt-1.5 ml-12 text-muted-foreground line-clamp-2 leading-relaxed bg-muted/30 p-1.5 rounded-md border border-border/5"
                v-html="highlight(getSnippet(item.content, searchTerm) || '', searchTerm)">
             </p>
           </template>
@@ -156,6 +153,8 @@ function highlight(text: string, term: string) {
 .song-item.active {
   @apply bg-primary text-primary-foreground border-primary shadow-md translate-x-1;
 }
+.song-item.active .text-primary\/70,
+.song-item.active .text-orange-400\/80,
 .song-item.active .text-primary\/60,
 .song-item.active .text-muted-foreground {
   @apply text-primary-foreground/80;

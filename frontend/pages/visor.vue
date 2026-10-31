@@ -64,9 +64,9 @@ watch(options, (newVal) => {
 
 <template>
   <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
-    <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
       <!-- Panel de Opciones -->
-      <aside class="w-80 border-r border-border bg-muted/5 flex flex-col p-6 gap-8 overflow-y-auto">
+      <aside class="order-2 md:order-1 w-full md:w-80 shrink-0 md:border-r border-t md:border-t-0 border-border bg-muted/5 flex flex-col p-4 md:p-6 gap-6 md:gap-8 md:overflow-y-auto">
         <div class="space-y-6">
           <div>
             <h3 class="text-[10px] font-bold text-primary tracking-widest uppercase mb-4 opacity-70">APARIENCIA</h3>
@@ -103,7 +103,7 @@ watch(options, (newVal) => {
           </div>
         </div>
 
-        <div class="mt-auto pt-6 border-t border-border/50 space-y-4">
+        <div class="md:mt-auto pt-6 border-t border-border/50 space-y-4">
           <div>
             <label class="text-[10px] font-bold text-muted-foreground tracking-widest uppercase mb-2 block">URL DEL VISOR</label>
             <div class="flex gap-2">
@@ -122,15 +122,15 @@ watch(options, (newVal) => {
       </aside>
 
       <!-- Panel de Vista Previa Realista -->
-      <main class="flex-1 bg-transparency flex flex-col relative overflow-hidden">
-        <div class="absolute top-4 left-4 z-10">
+      <main class="order-1 md:order-2 h-56 md:h-auto shrink-0 md:shrink md:flex-1 bg-transparency flex flex-col relative overflow-hidden">
+        <div class="absolute top-3 left-3 md:top-4 md:left-4 z-10">
           <span class="px-3 py-1 rounded-full bg-slate-800/80 backdrop-blur-md border border-slate-700/50 text-[10px] font-bold text-white uppercase tracking-widest shadow-sm">
             Vista Previa Real
           </span>
         </div>
 
-        <div class="flex-1 flex flex-col items-center justify-center p-6 md:p-12 transition-all duration-500 overflow-hidden" 
-          :class="[options.bg ? 'justify-end pb-12 md:pb-20' : '']">
+        <div class="flex-1 flex flex-col items-center justify-center p-4 md:p-12 transition-all duration-500 overflow-hidden" 
+          :class="[options.bg ? 'justify-end pb-6 md:pb-20' : '']">
           
           <div class="w-full flex justify-center items-center transition-all duration-500"
             :class="[

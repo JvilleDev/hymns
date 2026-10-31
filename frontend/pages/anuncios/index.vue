@@ -28,7 +28,6 @@ watch(textInput, (val) => {
 const currentTopic = ref(announcement.value.topic || '')
 const isLoading = ref(true)
 const history = ref<any[]>([])
-const showMobileHistory = ref(false)
 const transcriptionScrollRef = ref<HTMLElement | null>(null)
 const MAX_TRANSCRIPTION_LENGTH = 5000
 const transcriptionHistory = computed(() => {
@@ -452,7 +451,7 @@ onMounted(() => {
         <div class="w-full">
 
       <!-- EDITOR -->
-      <div class="px-6 md:px-10 pt-6 pb-4">
+      <div class="px-4 md:px-10 pt-6 pb-4">
         <div class="max-w-3xl mx-auto">
           <input 
             v-model="currentTopic" 
@@ -508,7 +507,7 @@ onMounted(() => {
       </div>
 
       <!-- OUTBOX: Pendientes de sincronizar -->
-      <div v-if="outbox.length" class="px-6 md:px-10 pb-4">
+      <div v-if="outbox.length" class="px-4 md:px-10 pb-4">
         <div class="max-w-3xl mx-auto">
           <div class="flex items-center justify-between mb-2">
             <h3 class="text-[10px] font-black uppercase tracking-[0.15em] text-amber-500/80">Pendientes de sincronizar</h3>
@@ -552,7 +551,7 @@ onMounted(() => {
       </div>
 
       <!-- HISTORY: Compact Rows -->
-      <div class="px-6 md:px-10 pb-6 flex-1">
+      <div class="px-4 md:px-10 pb-6 flex-1">
         <div class="max-w-3xl mx-auto">
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/60">Historial</h3>
@@ -750,45 +749,9 @@ onMounted(() => {
       </div>
     </aside>
 
-    <button @click="showMobileHistory = true"
-        class="lg:hidden fixed bottom-24 right-6 size-14 bg-primary text-primary-foreground rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-90 transition-transform shadow-primary/20"
-    >
-        <Icon name="tabler:history" class="size-6" />
-    </button>
-    
-    <!-- Mobile History Sheet -->
-    <GSheet v-model="showMobileHistory">
-        <div class="flex flex-col h-full bg-background p-6">
-          <div class="flex items-center justify-between mb-6">
-             <h2 class="text-lg font-black uppercase tracking-[0.2em]">Historial</h2>
-             <div class="flex items-center gap-4">
-                <button @click="clearAll" class="text-[10px] font-bold uppercase text-red-500 mr-8">Limpiar</button>
-             </div>
-          </div>
-          <div class="flex-1 overflow-y-auto space-y-2">
-             <div 
-               v-for="item in history" 
-               :key="item.id"
-               @click="resendFromHistory(item); showMobileHistory = false"
-               class="p-4 rounded-xl border border-border bg-muted/10 active:bg-primary/10 active:border-primary transition-all flex items-center gap-4"
-             >
-                <div class="flex-1 min-w-0">
-                   <div class="text-[13px] font-bold truncate text-foreground">
-                      {{ item.text.replace(/<[^>]+>/g, '') }}
-                   </div>
-                   <span class="text-[9px] font-black text-muted-foreground/40 uppercase mt-1 block">
-                      {{ new Date(item.createdAt).toLocaleTimeString() }}
-                   </span>
-                </div>
-                <Icon name="tabler:chevron-right" class="size-5 text-muted-foreground flex-none" />
-             </div>
-          </div>
-        </div>
-    </GSheet>
-
     <!-- Help Sheet -->
     <GSheet v-model="showHelp">
-        <div class="flex flex-col bg-background p-8">
+        <div class="flex flex-col bg-background">
           <div class="flex items-center justify-between mb-6">
              <h2 class="text-lg font-black uppercase tracking-[0.2em] pr-8">Comandos</h2>
           </div>

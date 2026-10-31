@@ -37,16 +37,16 @@ onMounted(() => {
 <template>
   <div class="h-svh w-screen flex flex-col overflow-hidden bg-background text-foreground selection:bg-primary/10 selection:text-primary">
     <!-- Navbar (Desktop & Tablet) -->
-    <header class="h-16 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 md:px-6 flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="size-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
+    <header class="h-14 md:h-16 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 md:px-6 flex items-center justify-between">
+      <div class="flex items-center gap-3 md:gap-4 min-w-0">
+        <div class="hidden md:flex size-9 rounded-xl bg-primary items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
           <Icon name="tabler:book" class="size-5 text-primary-foreground" />
         </div>
-        
+
         <!-- Dynamic Page Title -->
-        <div class="hidden sm:block">
-          <h1 class="font-bold text-base tracking-tight leading-none">{{ currentPage.title }}</h1>
-          <p v-if="currentPage.description" class="text-[10px] text-muted-foreground font-medium">{{ currentPage.description }}</p>
+        <div class="min-w-0">
+          <h1 class="font-bold text-lg md:text-base tracking-tight leading-none truncate">{{ currentPage.title }}</h1>
+          <p v-if="currentPage.description" class="hidden sm:block text-[10px] text-muted-foreground font-medium mt-1">{{ currentPage.description }}</p>
         </div>
       </div>
       
@@ -60,9 +60,6 @@ onMounted(() => {
       </nav>
 
       <div class="flex items-center gap-2 relative" ref="settingsRef">
-        <!-- Page Title (Mobile Only, next to gear) -->
-        <span class="sm:hidden text-[10px] font-bold uppercase tracking-widest text-muted-foreground mr-1">{{ currentPage.title }}</span>
-
         <!-- Unified Settings Toggle -->
         <GButton 
           variant="ghost" 
@@ -147,12 +144,13 @@ onMounted(() => {
     </main>
 
     <!-- Bottom Nav (Mobile Only) -->
-    <nav class="md:hidden h-20 shrink-0 border-t border-border bg-background/80 backdrop-blur-lg z-40 px-6 pb-2 flex items-center justify-around">
+    <nav class="md:hidden shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
       <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
-        class="flex flex-col items-center gap-1 transition-all duration-300 px-4 py-2 rounded-2xl"
-        :class="[route.path === item.value ? 'text-primary bg-primary/10 scale-110 font-bold' : 'text-muted-foreground']">
-        <Icon :name="item.icon" class="size-6" />
-        <span class="text-[10px] font-bold uppercase tracking-tighter">{{ item.title }}</span>
+        class="relative flex flex-col items-center justify-center gap-0.5 h-14 transition-colors"
+        :class="[route.path === item.value ? 'text-primary' : 'text-muted-foreground']">
+        <span v-if="route.path === item.value" class="absolute top-0 h-0.5 w-8 rounded-full bg-primary" />
+        <Icon :name="item.icon" class="size-5" />
+        <span class="text-[10px] font-bold uppercase tracking-tight">{{ item.title }}</span>
       </NuxtLink>
     </nav>
 

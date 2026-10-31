@@ -20,11 +20,11 @@ defineEmits<{
         <table class="w-full text-sm text-left border-collapse table-fixed">
           <thead class="text-xs text-muted-foreground font-medium border-b border-border/50 sticky top-0 bg-card z-10 shadow-sm">
             <tr>
-              <th scope="col" class="px-4 py-3 w-[80px] text-center font-normal">#</th>
-              <th scope="col" class="px-4 py-3 w-[30%] font-normal">Título</th>
+              <th scope="col" class="px-4 py-3 w-[56px] md:w-[80px] text-center font-normal">#</th>
+              <th scope="col" class="px-4 py-3 md:w-[30%] font-normal">Título</th>
               <th scope="col" class="px-4 py-3 w-[40%] font-normal text-muted-foreground hidden md:table-cell">Letra</th>
-              <th scope="col" class="px-4 py-3 w-[120px] font-normal">Categoría</th>
-              <th v-if="isAdmin" scope="col" class="px-4 py-3 w-[100px] text-right font-normal"></th>
+              <th scope="col" class="px-4 py-3 w-[120px] font-normal hidden md:table-cell">Categoría</th>
+              <th v-if="isAdmin" scope="col" class="px-4 py-3 w-[84px] md:w-[100px] text-right font-normal"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border/30">
@@ -33,7 +33,7 @@ defineEmits<{
                 @click.self="isAdmin && $emit('edit', song)"
               >
                 <!-- Number Column -->
-                <td class="px-4 py-3 text-center" @click="isAdmin && $emit('edit', song)">
+                <td class="px-2 md:px-4 py-3 text-center" @click="isAdmin && $emit('edit', song)">
                 <span v-if="song.type === 'Canto'" class="font-mono text-muted-foreground text-xs">
                   {{ song.nh }}
                 </span>
@@ -53,7 +53,7 @@ defineEmits<{
               </td>
 
               <!-- Category Column -->
-              <td class="px-4 py-3" @click="isAdmin && $emit('edit', song)">
+              <td class="px-4 py-3 hidden md:table-cell" @click="isAdmin && $emit('edit', song)">
                 <span 
                   class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium"
                   :class="song.type === 'Especial' 
@@ -66,7 +66,7 @@ defineEmits<{
 
               <!-- Actions Column -->
               <td v-if="isAdmin" class="px-4 py-3 text-right">
-                <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div class="flex items-center justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                   <button 
                     @click.stop="$emit('edit', song)" 
                     class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"

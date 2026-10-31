@@ -24,7 +24,7 @@ const internalSearch = computed({
 </script>
 
 <template>
-  <div class="flex flex-col sm:flex-row gap-4 mb-6">
+  <div class="flex flex-col sm:flex-row gap-3 md:gap-4 md:mb-6">
     <!-- Search -->
     <div class="relative flex-1">
       <GInput v-model="internalSearch" placeholder="Buscar por título o número..." class="pl-10 bg-background/50" />
@@ -32,7 +32,7 @@ const internalSearch = computed({
     </div>
 
     <!-- Filters -->
-    <div class="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 no-scrollbar">
+    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
       <template v-for="option in filterOptions" :key="option.value">
         <button 
           @click="$emit('update:activeFilter', option.value)"

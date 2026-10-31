@@ -29,8 +29,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="h-screen flex flex-col w-full bg-background">
-    <div class="px-6 pt-6 pb-4 shrink-0">
+  <main class="flex-1 min-h-0 flex flex-col w-full bg-background">
+    <div class="px-4 md:px-6 pt-4 md:pt-6 pb-2 md:pb-4 shrink-0">
       <!-- Barra de herramientas (Search & Filters) -->
       <SongToolbar 
         v-model:search-term="searchTerm"
@@ -39,7 +39,7 @@ onMounted(() => {
     </div>
 
     <!-- Lista tipo Tabla (Scrollable Area) -->
-    <div class="flex-1 min-h-0 w-full px-6 pb-6 overflow-y-auto">
+    <div class="flex-1 min-h-0 w-full px-4 md:px-6 pb-4 md:pb-6 overflow-y-auto">
       <SongList 
         :songs="filteredSongs" 
         :is-loading="isLoading" 
@@ -54,7 +54,7 @@ onMounted(() => {
     <GButton 
       v-if="isAdmin"
       size="lg" 
-      class="fixed bottom-8 right-8 rounded-full shadow-2xl p-0 w-14 h-14 bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:scale-105 z-50" 
+      class="fixed bottom-20 right-4 md:bottom-8 md:right-8 rounded-full shadow-2xl p-0 w-14 h-14 bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:scale-105 z-50" 
       @click="openCreatesSheet"
       tooltip="Añadir nuevo canto"
     >

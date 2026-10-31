@@ -12,7 +12,8 @@ interface Song {
 }
 
 const api = useApi()
-const { 
+const { isClientIdSet } = api
+const {
   activeIndex, activeLine, viewerActive, isConnected,
   connect, disconnect, changeViewerState, 
   sendLine, sendIndex, sendCanto, activeSong
@@ -245,7 +246,8 @@ const showDeckPrompt = ref(false)
 const DECK_PROMPT_KEY = 'deck-prompt-dismissed'
 
 onMounted(() => {
-  if (window.innerWidth < 768 && localStorage.getItem(DECK_PROMPT_KEY) !== '1') {
+  // No apilarlo sobre el diálogo de configuración inicial
+  if (window.innerWidth < 768 && isClientIdSet.value && localStorage.getItem(DECK_PROMPT_KEY) !== '1') {
     showDeckPrompt.value = true
   }
 })
@@ -263,20 +265,40 @@ function navigateToDeck() {
 <template>
   <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden">
     <!-- Buscador y acciones principales -->
-    <div class="w-full h-16 px-4 flex items-center gap-4 shrink-0 bg-background/50 border-b border-border">
+    <!-- Móvil: canto actual (abre la lista) + visor -->
+    <div class="md:hidden w-full h-14 px-3 flex items-center gap-2 shrink-0 bg-background/50 border-b border-border">
+      <button class="flex-1 min-w-0 h-10 px-3 flex items-center gap-2 rounded-lg border border-border bg-background text-left active:bg-muted/50"
+        @click="sheetOpen = true">
+        <Icon :name="activeSong?.id ? 'tabler:music' : 'tabler:search'" class="size-5 shrink-0 text-muted-foreground" />
+        <span v-if="activeSong?.id" class="flex-1 min-w-0 flex flex-col">
+          <span class="text-[9px] font-bold uppercase tracking-widest text-primary/70 leading-none mb-0.5">
+            {{ activeSong.type === 'Especial' ? 'Especial' : `#${activeSong.nh}` }}
+          </span>
+          <span class="font-bold text-sm truncate leading-none">{{ activeSong.title }}</span>
+        </span>
+        <span v-else class="flex-1 text-sm text-muted-foreground">Buscar canto...</span>
+        <span v-if="activeSong?.id" class="shrink-0 text-xs font-bold tabular-nums text-muted-foreground whitespace-nowrap">
+          {{ currentIndex + 1 }}/{{ activeSong.lines.length }}
+        </span>
+      </button>
+
+      <button class="size-10 shrink-0 rounded-lg border flex items-center justify-center transition-colors"
+        :class="viewerActive ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-border text-muted-foreground'"
+        :aria-label="viewerActive ? 'Ocultar visor externo' : 'Mostrar visor externo'"
+        @click="changeViewerState(!viewerActive)">
+        <Icon :name="viewerActive ? 'tabler:eye' : 'tabler:eye-off'" class="size-5" />
+      </button>
+    </div>
+
+    <!-- Escritorio: buscador y acciones principales -->
+    <div class="hidden md:flex w-full h-16 px-4 items-center gap-4 shrink-0 bg-background/50 border-b border-border">
       <div class="relative flex-1 group">
         <GInput id="search-desktop" v-model="searchTerm" placeholder="Buscar..." class="pl-10 h-10 text-sm"
           @keydown.enter="(searchTerm.length > 0 && filteredSongs.length > 0) ? changeSong(filteredSongs[0].id) : ''" />
         <Icon name="tabler:search" class="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
       </div>
 
-      <div class="flex items-center gap-4">
-        <GSwitch :modelValue="viewerActive" @update:modelValue="changeViewerState" label="Visor Externo" class="font-bold text-xs" />
-
-        <GButton variant="outline" size="icon" class="md:hidden" @click="sheetOpen = true">
-          <Icon name="tabler:music" class="size-6" />
-        </GButton>
-      </div>
+      <GSwitch :modelValue="viewerActive" @update:modelValue="changeViewerState" label="Visor Externo" class="font-bold text-xs" />
     </div>
 
     <!-- Contenido principal -->
@@ -312,7 +334,7 @@ function navigateToDeck() {
 
         <!-- Contenido -->
         <div v-if="activeSong?.id" class="flex-1 flex flex-col min-h-0">
-          <div class="flex justify-between items-center h-14 px-4 border-b border-border shrink-0 bg-muted/5">
+          <div class="hidden md:flex justify-between items-center h-14 px-4 border-b border-border shrink-0 bg-muted/5">
             <div class="flex flex-col min-w-0">
               <span class="text-[9px] font-bold uppercase tracking-widest text-primary/70 leading-none mb-0.5">
                 {{ activeSong.type === 'Especial' ? 'Canto Especial' : `Himno #${activeSong.nh}` }}
@@ -325,7 +347,7 @@ function navigateToDeck() {
           </div>
 
           <div class="flex-grow h-0 overflow-y-auto min-h-0 relative" id="line-container">
-            <div class="p-3 pb-32 space-y-1.5">
+            <div class="p-3 pb-8 md:pb-32 space-y-1">
               <div v-for="(line, index) in activeSong.lines" :key="`${activeSong.id}-${index}`"
                 tabindex="0"
                 @click="currentIndex = (index as number); sendLine(line); sendIndex(index as number)" 
@@ -368,8 +390,13 @@ function navigateToDeck() {
         </div>
       </div>
     </Teleport>
-    <GSheet v-model="sheetOpen">
-      <div class="flex flex-col h-full bg-background p-4">
+    <GSheet v-model="sheetOpen" title="Cantos" class="max-w-full md:max-w-md p-4 pt-5">
+      <div class="flex flex-col h-full gap-3">
+        <div class="relative shrink-0">
+          <GInput v-model="searchTerm" placeholder="Buscar por número, título o letra..." class="pl-10 h-10 text-sm" autofocus
+            @keydown.enter="(searchTerm.length > 0 && filteredSongs.length > 0) ? changeSong(filteredSongs[0].id) : ''" />
+          <Icon name="tabler:search" class="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+        </div>
         <SongList :elements="filteredSongs" :activeId="activeSong?.id || ''" :isSearching="isSearching" :searchTerm="searchTerm" :isLoading="isLoadingSongs || isChangingSong" @changeSong="changeSong" />
       </div>
     </GSheet>
@@ -378,7 +405,7 @@ function navigateToDeck() {
 
 <style scoped>
 .line-item {
-  @apply p-4 rounded-xl text-lg font-medium transition-all duration-300 cursor-pointer select-none border border-transparent hover:bg-muted/50 hover:translate-x-1;
+  @apply px-3 py-2.5 md:p-4 rounded-xl text-base md:text-lg font-medium transition-all duration-300 cursor-pointer select-none border border-transparent hover:bg-muted/50 hover:translate-x-1;
 }
 .line-item.active {
   @apply bg-primary/10 text-primary border-primary/20 font-bold translate-x-1 shadow-sm;

@@ -313,7 +313,7 @@ const generatePdf = () => {
     <!-- Spotlight (center, main) -->
     <div class="flex-1 flex flex-col min-w-0 min-h-0">
       <!-- Top bar -->
-      <div class="flex-none px-6 sm:px-10 pt-8 sm:pt-12 pb-6 border-b border-neutral-50 print:hidden z-10 space-y-3">
+      <div class="flex-none px-4 sm:px-10 pt-5 sm:pt-12 pb-4 sm:pb-6 border-b border-neutral-50 print:hidden z-10 space-y-3">
         <h1 class="text-lg sm:text-xl font-black tracking-tight text-neutral-900 uppercase">
           {{ displayTopic }}
         </h1>
@@ -343,7 +343,7 @@ const generatePdf = () => {
             class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 active:scale-95 transition-all"
           >
             <Icon name="tabler:file-type-pdf" class="size-4" />
-            <span class="hidden sm:inline">Exportar PDF</span>
+            <span>Exportar PDF</span>
           </button>
         </div>
       </div>
@@ -595,9 +595,9 @@ const generatePdf = () => {
       >
         <div
           v-if="isMobileExpanded"
-          class="fixed inset-0 z-[60] bg-black lg:hidden flex flex-col p-8 pb-12"
+          class="fixed inset-0 z-[60] bg-black lg:hidden flex flex-col p-5 pb-8 sm:p-8 sm:pb-12"
         >
-           <header class="flex items-center justify-between mb-8">
+           <header class="flex items-center justify-between mb-5 sm:mb-8">
               <div class="flex items-center gap-3">
                 <div class="relative flex size-2">
                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
@@ -622,14 +622,14 @@ const generatePdf = () => {
                   <p
                     v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
                     :key="i"
-                    class="text-2xl sm:text-4xl font-normal text-white/70 leading-relaxed"
+                    class="text-xl sm:text-4xl font-normal text-white/70 leading-relaxed"
                   >
                      {{ p }}
                   </p>
                </div>
 
                <div class="prose prose-invert max-w-none">
-                  <TransitionGroup name="word-stream" tag="p" class="text-2xl sm:text-4xl leading-none tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100">
+                  <TransitionGroup name="word-stream" tag="p" class="text-xl sm:text-4xl leading-snug tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100">
                     <span v-for="word in interimWords" :key="word.id" class="transition-colors">
                        {{ word.text }}
                     </span>
