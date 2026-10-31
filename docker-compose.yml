@@ -23,6 +23,8 @@ services:
       - HF_HUB_CACHE=/root/.cache/huggingface
       - PUNCT_ONNX_DIR=/app/onnx/punct
       - E5_ONNX_DIR=/app/onnx/e5
+      # modelos se cargan bajo demanda y se descargan tras N s sin uso (0 = nunca)
+      - IDLE_TTL=${RPUNCT_IDLE_TTL:-300}
     volumes:
       - rpunct_onnx:/app/onnx
       - hf_cache:/root/.cache/huggingface

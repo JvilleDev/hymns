@@ -28,3 +28,12 @@ cantos.json
 
 .venv/
 __pycache__/
+
+# Docs locales no versionadas
+backend/WEBSOCKET_ANUNCIOS.md
+
+# node_modules en cualquier nivel
+node_modules/
+
+# Datos locales (DB y similares)
+data/

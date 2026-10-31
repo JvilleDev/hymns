@@ -1,6 +1,5 @@
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
-transformers==4.47.1
 onnxruntime>=1.19,<2
 tokenizers>=0.21
 huggingface_hub>=0.27

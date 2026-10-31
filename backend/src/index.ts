@@ -750,6 +750,9 @@ app.get("/search", async (req, res) => {
   }
 });
 
+// El primer request tras un idle de rpunct carga el modelo (varios segundos).
+const RPUNCT_PUNCTUATE_TIMEOUT_MS = Number(process.env.RPUNCT_PUNCTUATE_TIMEOUT_MS) || 15000;
+
 app.post("/api/punctuate", async (req, res) => {
   if (DEBUG) console.log("=== TEST ===")
   if (DEBUG) console.log("PUNCTUATION REQUESTED")
@@ -767,7 +770,7 @@ app.post("/api/punctuate", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(RPUNCT_PUNCTUATE_TIMEOUT_MS),
     });
     
     if (response.ok) {
@@ -1465,11 +1468,8 @@ interface Canto {
 async function checkRpunct() {
   const url = process.env.RPUNCT_URL || "http://127.0.0.1:8000";
   try {
-    const res = await fetch(`${url}/punctuate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: "prueba de conexion con rpunct" }),
-    });
+    // /health no carga modelos: rpunct puede estar en idle (modelos descargados)
+    const res = await fetch(`${url}/health`);
     const data = await res.json();
     if (res.ok) {
       colorprint.INFO(`rpunct OK ${url} → ${JSON.stringify(data)}`);

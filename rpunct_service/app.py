@@ -2,19 +2,21 @@ import os
 
 os.environ.setdefault("OMP_NUM_THREADS", "2")
 
+import gc
 import json
 import re
 import time
 import unicodedata
 from collections import OrderedDict
-from threading import Lock
+from contextlib import contextmanager
+from threading import Lock, Thread
 
 import numpy as np
 import onnxruntime as ort
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import AutoTokenizer
+from tokenizers import Tokenizer
 from typing import Dict, List, Optional
 
 app = FastAPI()
@@ -46,88 +48,162 @@ BREAK_T = float(os.environ.get("BREAK_T", "0.55"))
 
 # E1: limita threads ORT para no bloquear el loop (endpoints sync -> threadpool)
 _ORT_THREADS = int(os.environ.get("OMP_NUM_THREADS", "2") or 2)
-try:
-    from onnxruntime import SessionOptions as _OrtSessionOptions
+# punct usa int8 oficial (model_quantized.onnx, ~279MB).
 
-    _ORT_SESSION_OPTIONS = _OrtSessionOptions()
-    _ORT_SESSION_OPTIONS.intra_op_num_threads = _ORT_THREADS
-except Exception:
-    _ORT_SESSION_OPTIONS = None
-
-# shortcut: punct usa int8 oficial (model_quantized.onnx, ~279MB).
+# Estado idle: los modelos se cargan en el primer uso y se descargan tras
+# IDLE_TTL segundos sin requests (0 = nunca descargar).
+IDLE_TTL = float(os.environ.get("IDLE_TTL", "300"))
+# Modelos a cargar al arrancar (coma-separado: punct,e5). Vacío = ninguno.
+PRELOAD = [m.strip() for m in os.environ.get("PRELOAD", "").split(",") if m.strip()]
 
 print("Using provider: CPUExecutionProvider")
+
+
+def _session_options():
+    """Sin arena/mem-pattern: con inputs de largo variable la arena crece y no
+    devuelve memoria al SO."""
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = _ORT_THREADS
+    opts.enable_cpu_mem_arena = False
+    opts.enable_mem_pattern = False
+    return opts
+
+
+def _malloc_trim():
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
+class LazyModel:
+    """Carga bajo demanda (primer use()) y descarga por inactividad."""
+
+    def __init__(self, name: str, loader):
+        self.name = name
+        self._loader = loader
+        self._lock = Lock()
+        self.value = None
+        self.state = "idle"  # idle | loading | loaded | error
+        self.error: Optional[str] = None
+        self.active = 0
+        self.last_used = 0.0
+
+    @contextmanager
+    def use(self):
+        with self._lock:
+            if self.value is None:
+                self.state = "loading"
+                t0 = time.time()
+                try:
+                    self.value = self._loader()
+                except Exception as e:
+                    self.state, self.error = "error", str(e)
+                    print(f"Error loading {self.name}: {e}")
+                    raise
+                self.error = None
+                print(f"[{self.name}] loaded in {time.time() - t0:.1f}s")
+            self.state = "loaded"
+            self.active += 1
+            self.last_used = time.monotonic()
+        try:
+            yield self.value
+        finally:
+            with self._lock:
+                self.active -= 1
+                self.last_used = time.monotonic()
+
+    def unload_if_idle(self, ttl: float) -> bool:
+        with self._lock:
+            if (
+                self.value is None
+                or self.active
+                or time.monotonic() - self.last_used < ttl
+            ):
+                return False
+            self.value = None
+            self.state = "idle"
+        print(f"[{self.name}] unloaded after {ttl:.0f}s idle")
+        return True
+
+
+def _hf_tokenizer(local_dirs, repo, subfolder=None, max_length=512):
+    path = next(
+        (os.path.join(d, "tokenizer.json") for d in local_dirs
+         if os.path.isfile(os.path.join(d, "tokenizer.json"))),
+        None,
+    )
+    if path is None:
+        from huggingface_hub import hf_hub_download
+
+        path = hf_hub_download(
+            repo, "tokenizer.json", **({"subfolder": subfolder} if subfolder else {})
+        )
+    tok = Tokenizer.from_file(path)
+    tok.enable_truncation(max_length=max_length)
+    return tok
+
 
 # ---------------------------------------------------------------------------
 # FASE 1 — Punctuation model (ONNX, raw onnxruntime)
 # ---------------------------------------------------------------------------
-punct_tokenizer = None
-punct_session = None
-punct_id2label: Dict[int, str] = {0: "0", 1: ".", 2: ",", 3: "?", 4: "-", 5: ":"}
-try:
-    print("Loading punctuation ONNX model...")
-    _punct_base = [PUNCT_ONNX_DIR, "./onnx/punct", "/app/onnx/punct"]
-    _punct_dirs = [d for b in _punct_base if b for d in (b, os.path.join(b, "onnx"))]
-    _punct_file = next(
-        (os.path.join(d, PUNCT_FILE) for d in _punct_dirs
+_PUNCT_ID2LABEL: Dict[int, str] = {0: "0", 1: ".", 2: ",", 3: "?", 4: "-", 5: ":"}
+
+
+def _load_punct():
+    base = [PUNCT_ONNX_DIR, "./onnx/punct", "/app/onnx/punct"]
+    dirs = [d for b in base if b for d in (b, os.path.join(b, "onnx"))]
+    model_file = next(
+        (os.path.join(d, PUNCT_FILE) for d in dirs
          if os.path.isfile(os.path.join(d, PUNCT_FILE))),
         None,
     )
-    if _punct_file is None:  # fetch only the quantized onnx, no torch needed
+    if model_file is None:  # fetch only the quantized onnx, no torch needed
         from huggingface_hub import hf_hub_download
 
-        _punct_file = hf_hub_download(
+        model_file = hf_hub_download(
             PUNCT_REPO, subfolder=PUNCT_SUBFOLDER, filename=PUNCT_FILE
         )
-    _punct_tok_dirs = _punct_dirs + ["./onnx/punct-tok", "/app/onnx/punct-tok"]
-    _punct_tok_dir = next(
-        (d for d in _punct_tok_dirs if os.path.isfile(os.path.join(d, "tokenizer.json"))),
-        None,
+    tok_dirs = dirs + ["./onnx/punct-tok", "/app/onnx/punct-tok"]
+    tokenizer = _hf_tokenizer(tok_dirs, PUNCT_TOK)
+    session = ort.InferenceSession(
+        model_file, sess_options=_session_options(), providers=["CPUExecutionProvider"]
     )
-    punct_tokenizer = AutoTokenizer.from_pretrained(
-        _punct_tok_dir if _punct_tok_dir is not None else PUNCT_TOK
-    )
-    punct_session = ort.InferenceSession(
-        _punct_file,
-        sess_options=_ORT_SESSION_OPTIONS,
-        providers=["CPUExecutionProvider"],
-    )
-    for _cfg_d in _punct_dirs:  # config local manda si existe
-        _cfg_p = os.path.join(_cfg_d, "config.json")
-        if os.path.isfile(_cfg_p):
-            with open(_cfg_p, encoding="utf-8") as _cfg_f:
-                _cfg = json.load(_cfg_f)
-            if _cfg.get("id2label"):
-                punct_id2label = {int(k): str(v) for k, v in _cfg["id2label"].items()}
+    id2label = dict(_PUNCT_ID2LABEL)
+    for d in dirs:  # config local manda si existe
+        p = os.path.join(d, "config.json")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as f:
+                cfg = json.load(f)
+            if cfg.get("id2label"):
+                id2label = {int(k): str(v) for k, v in cfg["id2label"].items()}
             break
-    print("Punctuation ONNX model loaded successfully.")
-except Exception as e:
-    print(f"Error loading punctuation ONNX model: {e}")
-    punct_tokenizer = None
-    punct_session = None
+    return tokenizer, session, id2label
 
 
-def _punct_predict(text: str) -> List[dict]:
+punct_model = LazyModel("punct", _load_punct)
+
+
+def _punct_predict(text: str, tokenizer, session, id2label) -> List[dict]:
     """Raw-ORT replacement for pipeline(aggregation_strategy="simple"):
     argmax over logits + id2label, grouping subwords (▁/##) per word
     (word label = first subword label)."""
-    enc = punct_tokenizer(text, truncation=True, max_length=512, return_tensors="np")
+    enc = tokenizer.encode(text)
     feed = {
-        k: np.asarray(enc[k], dtype=np.int64)
-        for k in ("input_ids", "attention_mask")
-        if k in enc
+        "input_ids": np.asarray([enc.ids], dtype=np.int64),
+        "attention_mask": np.asarray([enc.attention_mask], dtype=np.int64),
     }
-    logits = punct_session.run(None, feed)[0]
+    logits = session.run(None, feed)[0]
     pred = logits.argmax(axis=-1)[0]
-    ids = np.asarray(enc["input_ids"])[0]
-    mask = np.asarray(enc.get("attention_mask", np.ones_like(ids)))[0].astype(bool)
-    tokens = punct_tokenizer.convert_ids_to_tokens(ids)
-    special = set(punct_tokenizer.all_special_tokens)
     words: List[list] = []
-    for tok, p, m in zip(tokens, pred.tolist(), mask.tolist()):
-        if not m or tok in special:
+    for tok, p, m, sp in zip(
+        enc.tokens, pred.tolist(), enc.attention_mask, enc.special_tokens_mask
+    ):
+        if not m or sp:
             continue
-        label = punct_id2label.get(int(p), "0")
+        label = id2label.get(int(p), "0")
         if tok.startswith("▁") or tok.startswith("Ġ"):
             words.append([tok, label])  # new word, keep prefix for assembler
         elif tok.startswith("##"):
@@ -144,41 +220,64 @@ def _punct_predict(text: str) -> List[dict]:
 # ---------------------------------------------------------------------------
 # FASE 3 — Sentence-embeddings model (ONNX e5-small, raw onnxruntime)
 # ---------------------------------------------------------------------------
-embed_tokenizer = None
-embed_model = None
-try:
-    print("Loading e5-small ONNX model...")
-    _e5_base = [E5_ONNX_DIR, "./onnx/e5", "/app/onnx/e5"]
-    _e5_dirs = [d for b in _e5_base if b for d in (b, os.path.join(b, "onnx"))]
-    _e5_file = next(
-        (os.path.join(d, E5_FILE) for d in _e5_dirs
+def _load_e5():
+    base = [E5_ONNX_DIR, "./onnx/e5", "/app/onnx/e5"]
+    dirs = [d for b in base if b for d in (b, os.path.join(b, "onnx"))]
+    model_file = next(
+        (os.path.join(d, E5_FILE) for d in dirs
          if os.path.isfile(os.path.join(d, E5_FILE))),
         None,
     )
-    if _e5_file is None:  # fetch only the quantized onnx, no torch needed
+    if model_file is None:  # fetch only the quantized onnx, no torch needed
         from huggingface_hub import hf_hub_download
 
-        _e5_file = hf_hub_download(
+        model_file = hf_hub_download(
             E5_MODEL_ID, subfolder=E5_SUBFOLDER, filename=E5_FILE
         )
-    _e5_tok_dir = next(
-        (d for d in _e5_dirs if os.path.isfile(os.path.join(d, "tokenizer.json"))),
-        None,
+    tokenizer = _hf_tokenizer(dirs, E5_MODEL_ID, subfolder=E5_SUBFOLDER)
+    pad_id = tokenizer.token_to_id("<pad>")
+    tokenizer.enable_padding(
+        pad_id=pad_id if pad_id is not None else 1, pad_token="<pad>"
     )
-    embed_tokenizer = AutoTokenizer.from_pretrained(
-        _e5_tok_dir if _e5_tok_dir is not None else E5_MODEL_ID,
-        **({} if _e5_tok_dir is not None else {"subfolder": E5_SUBFOLDER}),
+    session = ort.InferenceSession(
+        model_file, sess_options=_session_options(), providers=["CPUExecutionProvider"]
     )
-    embed_model = ort.InferenceSession(
-        _e5_file,
-        sess_options=_ORT_SESSION_OPTIONS,
-        providers=["CPUExecutionProvider"],
-    )
-    print("Embedding ONNX model loaded successfully.")
-except Exception as e:
-    print(f"Error loading embedding ONNX model: {e}")
-    embed_tokenizer = None
-    embed_model = None
+    return tokenizer, session
+
+
+embed_model = LazyModel("e5", _load_e5)
+
+
+def _idle_reaper():
+    interval = max(5.0, min(30.0, IDLE_TTL / 2))
+    while True:
+        time.sleep(interval)
+        freed = False
+        for m in (punct_model, embed_model):
+            freed = m.unload_if_idle(IDLE_TTL) or freed
+        if freed:
+            with _EMBED_CACHE_LOCK:
+                _EMBED_CACHE.clear()
+            gc.collect()
+            _malloc_trim()
+
+
+def _warm_start():
+    for name, m in (("punct", punct_model), ("e5", embed_model)):
+        if name in PRELOAD:
+            try:
+                with m.use():
+                    pass
+            except Exception:
+                pass
+
+
+@app.on_event("startup")
+def _startup():
+    if IDLE_TTL > 0:
+        Thread(target=_idle_reaper, daemon=True, name="idle-reaper").start()
+    if PRELOAD:
+        Thread(target=_warm_start, daemon=True, name="preload").start()
 
 
 # Q6: LRU texto -> vector (max 2000) para no re-embeder oraciones repetidas
@@ -190,37 +289,40 @@ _EMBED_CACHE_LOCK = Lock()
 def _embed_texts(texts: List[str]):
     if not texts:
         return np.zeros((0, 0), dtype=np.float32)
+    found: Dict[str, np.ndarray] = {}
     missing: List[str] = []
-    seen_missing = set()
     with _EMBED_CACHE_LOCK:
         for t in texts:
-            if t not in _EMBED_CACHE and t not in seen_missing:
-                seen_missing.add(t)
+            if t in found or t in missing:
+                continue
+            if t in _EMBED_CACHE:
+                found[t] = _EMBED_CACHE[t]
+            else:
                 missing.append(t)
     if missing:
-        encoded = embed_tokenizer(
-            missing, padding=True, truncation=True, max_length=512, return_tensors="np"
-        )
-        feed = {
-            k: np.asarray(encoded[k], dtype=np.int64)
-            for k in ("input_ids", "attention_mask")
-            if k in encoded
-        }
-        hidden = np.asarray(embed_model.run(None, feed)[0])
-        mask = np.asarray(encoded["attention_mask"], dtype=np.float32)[..., None]
+        with embed_model.use() as (tokenizer, session):
+            encodings = tokenizer.encode_batch(missing)
+            feed = {
+                "input_ids": np.asarray([e.ids for e in encodings], dtype=np.int64),
+                "attention_mask": np.asarray(
+                    [e.attention_mask for e in encodings], dtype=np.int64
+                ),
+            }
+            hidden = np.asarray(session.run(None, feed)[0])
+        mask = feed["attention_mask"].astype(np.float32)[..., None]
         summed = (hidden * mask).sum(axis=1)
         counts = mask.sum(axis=1).clip(min=1e-9)
         mean = summed / counts
         norms = np.linalg.norm(mean, axis=1, keepdims=True).clip(min=1e-10)
-        vecs = mean / norms
+        vecs = (mean / norms).astype(np.float32)
         with _EMBED_CACHE_LOCK:
             for t, v in zip(missing, vecs):
-                _EMBED_CACHE[t] = v.astype(np.float32)
+                found[t] = v
+                _EMBED_CACHE[t] = v
                 _EMBED_CACHE.move_to_end(t)
                 while len(_EMBED_CACHE) > _EMBED_CACHE_MAX:
                     _EMBED_CACHE.popitem(last=False)
-    with _EMBED_CACHE_LOCK:
-        return np.stack([np.asarray(_EMBED_CACHE[t]) for t in texts])
+    return np.stack([found[t] for t in texts])
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -253,8 +355,6 @@ class SegmentBatchRequest(BaseModel):
 def punctuate_text(request: TextRequest):
     if not request.text.strip():
         return {"text": "", "time_ms": 0}
-    if punct_session is None or punct_tokenizer is None:
-        return {"text": request.text, "time_ms": 0}
 
     start_time = time.time()
     try:
@@ -276,7 +376,7 @@ def punctuate_text(request: TextRequest):
             return out or [text]
 
         def get_punctuated_text(text):
-            output = _punct_predict(text)
+            output = _punct_predict(text, *punct_handles)
 
             result = ""
             last_label = "0"
@@ -302,9 +402,10 @@ def punctuate_text(request: TextRequest):
             return result.strip()
 
         chunks = _chunks(request.text)
-        punctuated = " ".join(
-            get_punctuated_text(c) for c in chunks
-        )
+        with punct_model.use() as punct_handles:
+            punctuated = " ".join(
+                get_punctuated_text(c) for c in chunks
+            )
         duration_ms = round((time.time() - start_time) * 1000, 2)
         print(f"[punctuate {duration_ms}ms] in={len(request.text)}chars/{len(request.text.split())}words chunks={len(chunks)} out={len(punctuated)}chars preview={punctuated[:120]!r}")
         return {"text": punctuated, "time_ms": duration_ms}
@@ -595,14 +696,14 @@ def _score_pairs(pairs: List[tuple], gaps: List = None) -> List[dict]:
 
 @app.post("/segment")
 def segment_endpoint(request: SegmentRequest):
-    if embed_model is None or embed_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Embedding model not loaded")
-
     start_time = time.time()
 
-    scored = _score_pairs(
-        [(request.window_a, request.window_b)], [request.gapMs]
-    )[0]
+    try:
+        scored = _score_pairs(
+            [(request.window_a, request.window_b)], [request.gapMs]
+        )[0]
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Embedding model unavailable: {e}")
 
     time_ms = round((time.time() - start_time) * 1000, 2)
     wa_n = len(" ".join(request.window_a).split())
@@ -621,18 +722,18 @@ def segment_endpoint(request: SegmentRequest):
 
 @app.post("/segment_batch")
 def segment_batch_endpoint(request: SegmentBatchRequest):
-    if embed_model is None or embed_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Embedding model not loaded")
-
     start_time = time.time()
 
     if not request.windows:
         return {"decisions": [], "time_ms": 0}
 
-    scored = _score_pairs(
-        [(w.window_a, w.window_b) for w in request.windows],
-        [w.gapMs for w in request.windows],
-    )
+    try:
+        scored = _score_pairs(
+            [(w.window_a, w.window_b) for w in request.windows],
+            [w.gapMs for w in request.windows],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Embedding model unavailable: {e}")
     decisions = [
         {
             "afterIndex": w.afterIndex,
@@ -670,9 +771,10 @@ def health():
             "intra_op_num_threads": _ORT_THREADS,
         },
         "thresholds": {"merge_t": MERGE_T, "break_t": BREAK_T},
+        "idle_ttl_s": IDLE_TTL,
         "models": {
-            "punctuation": "loaded" if punct_session is not None else "unavailable",
-            "embeddings": "loaded" if embed_model is not None else "unavailable",
+            "punctuation": punct_model.state,
+            "embeddings": embed_model.state,
         },
         "onnx_files": {
             "punct_dir": os.path.isdir(PUNCT_ONNX_DIR),
