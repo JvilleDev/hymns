@@ -12,7 +12,6 @@ interface Song {
 }
 
 const api = useApi()
-const { isClientIdSet } = api
 const {
   activeIndex, activeLine, viewerActive, isConnected,
   connect, disconnect, changeViewerState, 
@@ -240,26 +239,6 @@ watch(() => api.isHealthy.value, (healthy) => {
 onUnmounted(() => {
   disconnect()
 })
-
-// Mobile Deck Prompt
-const showDeckPrompt = ref(false)
-const DECK_PROMPT_KEY = 'deck-prompt-dismissed'
-
-onMounted(() => {
-  // No apilarlo sobre el diálogo de configuración inicial
-  if (window.innerWidth < 768 && isClientIdSet.value && localStorage.getItem(DECK_PROMPT_KEY) !== '1') {
-    showDeckPrompt.value = true
-  }
-})
-
-function dismissDeckPrompt() {
-  localStorage.setItem(DECK_PROMPT_KEY, '1')
-  showDeckPrompt.value = false
-}
-
-function navigateToDeck() {
-  navigateTo('/deck')
-}
 </script>
 
 <template>
@@ -367,29 +346,6 @@ function navigateToDeck() {
         </div>
       </main>
     </div>
-    <!-- Mobile Prompt Overlay -->
-    <Teleport to="body">
-      <div v-if="showDeckPrompt" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-        <div class="w-full max-w-sm p-6 space-y-4 border rounded-xl bg-card text-card-foreground shadow-2xl">
-          <div class="flex flex-col items-center gap-2 text-center">
-            <div class="p-3 bg-primary/10 rounded-full">
-               <Icon name="tabler:device-mobile-message" class="size-8 text-primary" />
-            </div>
-            <h3 class="text-lg font-bold">¿Usar modo Control?</h3>
-            <p class="text-sm text-muted-foreground">Parece que estás en un celular. ¿Quieres abrir el panel de control remoto (Deck)?</p>
-          </div>
-          
-          <div class="grid gap-2">
-            <GButton size="lg" class="w-full font-bold" @click="navigateToDeck">
-              Sí, ir al Deck
-            </GButton>
-            <GButton variant="ghost" size="lg" class="w-full" @click="dismissDeckPrompt">
-              No, quedarme aquí
-            </GButton>
-          </div>
-        </div>
-      </div>
-    </Teleport>
     <GSheet v-model="sheetOpen" title="Cantos" class="max-w-full md:max-w-md p-4 pt-5">
       <div class="flex flex-col h-full gap-3">
         <div class="relative shrink-0">
