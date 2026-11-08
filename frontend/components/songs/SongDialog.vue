@@ -18,7 +18,7 @@ const emit = defineEmits<{
 
 const typeOptions = [
   { label: 'Canto', value: 'Canto' },
-  { label: 'Especial', value: 'Especial' }
+  { label: 'DR. JBP', value: 'Especial' }
 ]
 
 // Usamos computed con get/set para modelValue para mantener la reactividad correcta con v-model

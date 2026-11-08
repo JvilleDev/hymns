@@ -68,7 +68,7 @@ export const useRealtime = () => {
           activeLine.value = data.activeLine
           activeCantoId.value = data.activeCantoId
           activeIndex.value = data.activeIndex
-          activeSong.value = data.activeSong || null
+          activeSong.value = renameSpecialHeader(data.activeSong) || null
           announcement.value = data.announcement || { text: '', active: false }
           transcription.value = data.transcription || { active: false, producing: false, final: '', interim: '' }
           if (data.session) session.value = data.session
@@ -99,7 +99,7 @@ export const useRealtime = () => {
 
         case 'activeSong':
           console.log('[Realtime] Received ActiveSong:', data)
-          activeSong.value = data
+          activeSong.value = renameSpecialHeader(data)
           if (data) {
               activeCantoId.value = data.id
           }

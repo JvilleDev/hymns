@@ -107,7 +107,7 @@ function highlight(text: string, term: string) {
         <button v-for="tab in tabs" :key="tab" @click="activeTab = tab"
           class="px-2 h-8 flex items-center justify-center rounded-md text-[10px] font-bold uppercase tracking-wider transition-all truncate text-center"
           :class="[activeTab === tab ? 'bg-card text-primary shadow-sm border border-border' : 'text-muted-foreground hover:text-foreground hover:bg-muted']">
-          {{ tab }}
+          {{ songTypeLabel(tab) }}
         </button>
       </div>
     </div>
@@ -123,7 +123,7 @@ function highlight(text: string, term: string) {
           <template v-if="item.id">
             <div class="flex items-center gap-3">
               <span v-if="item.type !== 'Especial' && item.nh" class="shrink-0 w-9 text-center text-xs font-mono font-bold text-primary/70">{{ item.nh }}</span>
-              <Icon v-else name="tabler:star" class="shrink-0 w-9 size-3.5 text-orange-400/80" />
+              <OlivosIcon v-else class="olivos-icon shrink-0 w-9 h-5 text-[#708238]" />
               <h3 class="font-bold text-sm leading-tight min-w-0">{{ item.title }}</h3>
             </div>
             <p v-if="searchTerm.length > 1 && getSnippet(item.content, searchTerm)" 
@@ -154,7 +154,7 @@ function highlight(text: string, term: string) {
   @apply bg-primary text-primary-foreground border-primary shadow-md translate-x-1;
 }
 .song-item.active .text-primary\/70,
-.song-item.active .text-orange-400\/80,
+.song-item.active .olivos-icon,
 .song-item.active .text-primary\/60,
 .song-item.active .text-muted-foreground {
   @apply text-primary-foreground/80;

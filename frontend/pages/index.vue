@@ -69,9 +69,9 @@ function clean(text: string) {
 
 const filteredSongs = computed(() => {
   if (!songs.value) return []
-  if (!searchTerm.value) return songs.value
+  if (!searchTerm.value) return sortSpecialsAlphabetically(songs.value)
   const cleanTerm = clean(searchTerm.value)
-  return songs.value.filter(song => (song as any).searchText.includes(cleanTerm))
+  return sortSpecialsAlphabetically(songs.value.filter(song => (song as any).searchText.includes(cleanTerm)))
 })
 
 const isSearching = computed(() => searchTerm.value.length > 0)
@@ -98,7 +98,7 @@ async function changeSong(id: string) {
        return
      }
      sendCanto(id)
-     const prefix = local.type === 'Canto' && local.nh ? `${local.nh}` : 'ESPECIAL'
+     const prefix = local.type === 'Canto' && local.nh ? `${local.nh}` : SPECIAL_LABEL
      activeSong.value = {
        id: local.id,
        title: local.title,
@@ -251,7 +251,7 @@ onUnmounted(() => {
         <Icon :name="activeSong?.id ? 'tabler:music' : 'tabler:search'" class="size-5 shrink-0 text-muted-foreground" />
         <span v-if="activeSong?.id" class="flex-1 min-w-0 flex flex-col">
           <span class="text-[9px] font-bold uppercase tracking-widest text-primary/70 leading-none mb-0.5">
-            {{ activeSong.type === 'Especial' ? 'Especial' : `#${activeSong.nh}` }}
+            {{ activeSong.type === 'Especial' ? SPECIAL_LABEL : `#${activeSong.nh}` }}
           </span>
           <span class="font-bold text-sm truncate leading-none">{{ activeSong.title }}</span>
         </span>
@@ -316,7 +316,7 @@ onUnmounted(() => {
           <div class="hidden md:flex justify-between items-center h-14 px-4 border-b border-border shrink-0 bg-muted/5">
             <div class="flex flex-col min-w-0">
               <span class="text-[9px] font-bold uppercase tracking-widest text-primary/70 leading-none mb-0.5">
-                {{ activeSong.type === 'Especial' ? 'Canto Especial' : `Himno #${activeSong.nh}` }}
+                {{ activeSong.type === 'Especial' ? SPECIAL_LABEL : `Himno #${activeSong.nh}` }}
               </span>
               <h2 class="font-bold text-base truncate tracking-tight leading-none">{{ activeSong.title }}</h2>
             </div>

@@ -23,7 +23,7 @@ defineEmits<{
             class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-secondary/50 text-secondary-foreground"
             :class="song.type === 'Especial' ? 'bg-primary/10 text-primary' : 'bg-blue-500/10 text-blue-500'"
           >
-            {{ song.type }}
+            {{ songTypeLabel(song.type) }}
           </span>
           <span v-if="song.type === 'Canto'"
             class="text-xs font-mono text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded">

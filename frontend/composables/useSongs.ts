@@ -56,6 +56,9 @@ export const useSongs = () => {
       result = result.filter(song => song.type === activeFilter.value)
     }
 
+    // 3. DR. JBP en orden alfabético
+    result = sortSpecialsAlphabetically(result)
+
     return result
   })
 
