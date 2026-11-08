@@ -25,11 +25,11 @@ const close = () => {
         <Transition name="slide" :duration="400">
             <div v-if="modelValue" class="fixed inset-0 z-50 flex justify-end">
                 <!-- Backdrop -->
-                <div class="sheet-backdrop absolute inset-0 bg-background/40 backdrop-blur-sm" @click="close" />
+                <div class="sheet-backdrop absolute inset-0 bg-black/40" @click="close" />
 
                 <!-- Sheet Content -->
                 <div :data-side="side" :class="cn(
-                    'sheet-panel relative glass h-full w-full max-w-md p-6 shadow-2xl flex flex-col',
+                    'sheet-panel relative bg-background text-foreground h-full w-full max-w-md p-6 shadow-2xl flex flex-col',
                     side === 'left' ? 'left-0 mr-auto' : 'right-0 ml-auto',
                     props.class
                 )">
