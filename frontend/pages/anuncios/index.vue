@@ -695,14 +695,7 @@ onMounted(() => {
     <!-- TRADUCCIÓN EN VIVO -->
     <aside class="hidden lg:flex flex-col h-full w-[420px] xl:w-[500px] bg-neutral-950 text-neutral-50 shrink-0">
       <div class="flex items-center justify-between gap-3 px-7 pt-7 pb-5">
-        <h2 class="text-xl font-bold tracking-tight">Traducción en vivo</h2>
-        <span
-          class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold"
-          :class="transcription.active ? 'bg-red-500 text-white' : 'bg-white/10 text-neutral-300'"
-        >
-          <span class="size-2 rounded-full" :class="transcription.active ? 'bg-white animate-pulse' : 'bg-neutral-500'"></span>
-          {{ transcription.active ? 'En pantalla' : 'Solo aquí' }}
-        </span>
+        <h2 class="text-xl font-bold tracking-tight">Transcripción en vivo</h2>
       </div>
 
       <div ref="transcriptionScrollRef" class="flex-1 overflow-y-auto px-7 pb-6 flex flex-col">
@@ -725,7 +718,7 @@ onMounted(() => {
           <TransitionGroup
             name="word-stream"
             tag="p"
-            class="text-3xl xl:text-4xl leading-tight font-semibold tracking-tight flex flex-wrap gap-x-2.5 gap-y-1 text-white"
+            class="text-xl leading-snug font-semibold tracking-tight flex flex-wrap gap-x-2.5 gap-y-1 text-white"
           >
             <span v-for="word in interimWords" :key="word.id">{{ word.text }}</span>
           </TransitionGroup>
