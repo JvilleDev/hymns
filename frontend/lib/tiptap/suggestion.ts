@@ -6,12 +6,35 @@ import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
 export default {
   items: ({ query }) => {
     const { icons: availableIcons } = useAnnouncementIcons()
-    return availableIcons.value
-      .filter(item => 
-        item.name.toLowerCase().includes(query.toLowerCase()) || 
-        item.label.toLowerCase().includes(query.toLowerCase())
-      )
-      .slice(0, 10)
+    const q = query.trim().toLowerCase()
+
+    // Prioridad: exacta > prefijo > inicio de palabra (separadas por -, _ o espacio) > contiene.
+    // Dentro de cada grupo gana el nombre más corto y luego el orden alfabético.
+    const rank = (item: any): number => {
+      const name = String(item.name).toLowerCase()
+      const label = String(item.label || '').toLowerCase()
+      if (name === q || label === q) return 0
+      if (name.startsWith(q)) return 1
+      if (name.split(/[-_\s]+/).some(w => w.startsWith(q))) return 2
+      if (name.includes(q)) return 3
+      if (label.includes(q)) return 4
+      return -1
+    }
+
+    const list = q
+      ? availableIcons.value
+          .map(item => ({ item, r: rank(item) }))
+          .filter(x => x.r >= 0)
+          .sort((x, y) =>
+            x.r - y.r ||
+            String(x.item.name).length - String(y.item.name).length ||
+            String(x.item.name).localeCompare(String(y.item.name))
+          )
+          .map(x => x.item)
+      : availableIcons.value
+
+    return list
+      .slice(0, 30)
       .map(item => ({
         ...item,
         command: ({ editor, range }) => {
