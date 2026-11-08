@@ -852,57 +852,98 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="min-h-screen bg-neutral-50 text-neutral-900 font-sans p-4 sm:p-8 flex flex-col items-center justify-center">
-    <div v-if="!isSupportedBrowser" class="h-full flex items-center justify-center">
-      <div class="p-8 border border-red-200 bg-red-50 rounded-3xl max-w-sm text-center">
-        <Icon name="tabler:browser-off" class="size-12 text-red-500 mb-4 mx-auto" />
-        <h1 class="text-xl font-bold mb-2">Usar Chrome o Safari</h1>
-        <p class="text-sm text-neutral-500">Este sistema solo funciona en navegadores con soporte oficial de Web Speech API.</p>
+  <div class="min-h-svh bg-background text-foreground p-4 lg:p-6 flex flex-col">
+    <!-- Navegador no soportado -->
+    <div v-if="!isSupportedBrowser" class="flex-1 flex items-center justify-center">
+      <div class="max-w-md rounded-3xl bg-red-500/10 p-10 text-center">
+        <Icon name="tabler:browser-off" class="size-12 text-red-500 mb-5 mx-auto" />
+        <h1 class="text-2xl font-bold tracking-tight mb-2">Usa Chrome o Safari</h1>
+        <p class="text-base text-muted-foreground">Esta página necesita un navegador con soporte oficial de la Web Speech API.</p>
       </div>
     </div>
 
-    <div v-else class="h-[90vh] w-full max-w-[1600px] mx-auto flex flex-col lg:flex-row gap-8">
-      
-      <!-- Sidebar: Controls -->
-      <aside class="w-full lg:w-[340px] flex flex-col gap-6 shrink-0 h-full overflow-y-auto pr-2">
-        
-        <!-- Header -->
-        <header class="space-y-4">
-          <div class="flex items-center justify-between">
-            <h1 class="text-3xl font-black tracking-tighter text-neutral-900 uppercase">STT LIVE</h1>
-            <div class="flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 rounded-full border border-neutral-200">
-              <div class="size-1.5 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
-              <span class="text-[9px] font-bold uppercase tracking-widest text-neutral-500">{{ isConnected ? 'Online' : 'Offline' }}</span>
-            </div>
-          </div>
+    <div v-else class="w-full max-w-[1600px] mx-auto flex flex-col lg:flex-row gap-4 lg:gap-6 lg:flex-none lg:h-[calc(100svh-3rem)] lg:min-h-0">
 
-          <div class="flex flex-wrap gap-2">
-            <div class="flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-neutral-200 cursor-pointer hover:bg-neutral-50 transition-colors" @click="isManualConnectionTrigger = true">
-              <Icon name="tabler:id" class="size-3.5 text-blue-600" />
-              <span class="text-[10px] font-bold uppercase tracking-widest text-neutral-600">
-                {{ clientId?.length > 15 ? clientId.substring(0, 8) + '...' : clientId }}
-              </span>
-            </div>
-            <div v-if="isTranscribing" class="flex items-center gap-1.5 px-2 py-1 bg-blue-50 rounded-full border border-blue-100">
-              <div class="size-1.5 bg-blue-600 rounded-full animate-pulse"></div>
-              <span class="text-[9px] font-black uppercase tracking-widest text-blue-600">Transmitiendo</span>
-            </div>
+      <!-- Controles -->
+      <!-- En móvil el aside se "disuelve" (contents) para intercalar el registro entre la acción principal y los ajustes -->
+      <aside class="contents lg:flex lg:w-[380px] lg:shrink-0 lg:flex-col lg:gap-4 lg:overflow-y-auto">
+
+        <header class="max-lg:order-1 flex items-start justify-between gap-3 px-1 pt-1">
+          <div class="min-w-0">
+            <h1 class="text-3xl font-bold tracking-tight">Transcripción</h1>
+            <button
+              type="button"
+              @click="isManualConnectionTrigger = true"
+              class="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Cambiar el identificador de cliente"
+            >
+              <Icon name="tabler:id" class="size-4" />
+              <span class="truncate max-w-[14rem]">{{ clientId }}</span>
+            </button>
           </div>
+          <span
+            class="mt-1.5 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold shrink-0"
+            :class="isConnected ? 'bg-green-500/15 text-green-700 dark:text-green-400' : 'bg-red-500/15 text-red-600 dark:text-red-400'"
+          >
+            <span class="size-2 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></span>
+            {{ isConnected ? 'Conectado' : 'Sin conexión' }}
+          </span>
         </header>
 
-        <!-- Microphone Selector -->
-        <div class="flex items-center gap-3 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
-          <div class="size-10 bg-neutral-50 rounded-xl flex items-center justify-center text-neutral-400">
-            <Icon name="tabler:microphone" class="size-5" />
-          </div>
-          <div class="flex-1 min-w-0 relative">
+        <!-- Acción principal -->
+        <button
+          @click="toggleTranscription"
+          :disabled="isSomeoneElseTranscribing"
+          class="max-lg:order-2 group flex items-center gap-4 rounded-3xl p-5 text-left transition-colors active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
+          :class="isTranscribing ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-muted/60 hover:bg-muted'"
+        >
+          <span
+            class="size-14 shrink-0 rounded-2xl flex items-center justify-center"
+            :class="isTranscribing ? 'bg-white/20' : 'bg-background'"
+          >
+            <Icon :name="isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off'" class="size-7" />
+          </span>
+          <span class="flex-1 min-w-0">
+            <span class="block text-lg font-semibold leading-tight">
+              {{ isTranscribing ? 'Detener transcripción' : 'Iniciar transcripción' }}
+            </span>
+            <span class="block text-sm mt-0.5" :class="isTranscribing ? 'text-primary-foreground/80' : 'text-muted-foreground'">
+              {{ isTranscribing ? 'Escuchando ahora' : 'Micrófono apagado' }}
+            </span>
+          </span>
+          <span v-if="isTranscribing" class="w-14 h-2 rounded-full bg-white/25 overflow-hidden shrink-0" aria-hidden="true">
+            <span class="block h-full bg-white transition-all duration-75" :style="{ width: `${currentVolume * 100}%` }"></span>
+          </span>
+        </button>
+
+        <p v-if="isSomeoneElseTranscribing" class="max-lg:order-2 rounded-2xl bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400">
+          Alguien más está transcribiendo. Verás su transcripción aquí en tiempo real.
+        </p>
+
+        <button
+          v-if="isLocalProducer"
+          @click="togglePause"
+          class="max-lg:order-3 flex items-center gap-4 rounded-2xl bg-muted/60 hover:bg-muted px-5 py-4 text-left transition-colors active:scale-[0.99]"
+        >
+          <Icon :name="paused ? 'tabler:player-play' : 'tabler:player-pause'" class="size-6 shrink-0" />
+          <span class="min-w-0">
+            <span class="block text-base font-semibold leading-tight">{{ paused ? 'Reanudar' : 'Pausar' }}</span>
+            <span class="block text-sm text-muted-foreground mt-0.5">{{ paused ? 'En pausa, conservas el control' : 'Pausa sin soltar el control' }}</span>
+          </span>
+        </button>
+
+        <!-- Micrófono -->
+        <div class="max-lg:order-5 rounded-2xl bg-muted/60 p-4">
+          <label for="mic-select" class="block text-sm font-semibold mb-2">Micrófono</label>
+          <div class="relative">
             <select
+              id="mic-select"
               v-model="selectedMicrophoneId"
-              class="w-full bg-transparent border-none py-1 pr-8 text-[12px] font-medium tracking-tight text-neutral-700 normal-case focus:ring-0 outline-none appearance-none cursor-pointer"
+              class="w-full appearance-none rounded-xl bg-background pl-4 pr-10 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
               @focus="() => void getMicrophones()"
             >
               <option v-if="!availableMicrophones.length" disabled value="">
-                Lista de micrófonos vacía · toca la pantalla o activa dictado
+                Sin micrófonos: toca la pantalla o activa el dictado
               </option>
               <option
                 v-for="(mic, idx) in availableMicrophones"
@@ -912,117 +953,75 @@ definePageMeta({
                 {{ microphoneLabelFor(mic, idx) }}
               </option>
             </select>
-            <Icon name="tabler:chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 size-4 text-neutral-400 pointer-events-none" />
+            <Icon name="tabler:chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="grid grid-cols-1 gap-3">
-          <!-- F2: PIN productor -->
-          <div class="flex items-center gap-2 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm">
-            <Icon name="tabler:lock" class="size-4 text-neutral-400 ml-2 shrink-0" />
+        <!-- PIN -->
+        <div class="max-lg:order-5 rounded-2xl bg-muted/60 p-4">
+          <label for="producer-pin" class="block text-sm font-semibold mb-2">PIN de productor</label>
+          <div class="relative">
+            <Icon name="tabler:lock" class="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <input
+              id="producer-pin"
               v-model="transcribePin"
               type="password"
-              placeholder="PIN productor"
+              placeholder="Solo si es requerido"
               autocomplete="off"
-              class="w-full bg-transparent border-none py-1 text-[12px] font-medium text-neutral-700 focus:ring-0 outline-none"
+              class="w-full rounded-xl bg-background pl-10 pr-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
             />
           </div>
-          <p v-if="pinError" class="text-[11px] font-bold text-red-500 px-1">{{ pinError }}</p>
-          <!-- Audio/Transcription Toggle -->
-          <button 
-            @click="toggleTranscription"
-            :disabled="isSomeoneElseTranscribing"
-            class="group flex items-center justify-between px-6 py-5 rounded-[1.5rem] border-2 transition-all font-black uppercase tracking-widest text-xs"
-            :class="[
-              isTranscribing 
-                ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200' 
-                : 'border-neutral-200 bg-white text-neutral-400 hover:border-neutral-300 hover:text-neutral-600',
-              isSomeoneElseTranscribing ? 'opacity-50 cursor-not-allowed bg-neutral-100 grayscale' : ''
-            ]"
-          >
-            <div class="flex items-center gap-4">
-              <Icon :name="isTranscribing ? 'tabler:microphone' : 'tabler:microphone-off'" class="size-6" />
-              <div class="text-left">
-                <div class="leading-none">Transcripción Voz</div>
-                <div class="text-[9px] font-bold opacity-60 mt-1">{{ isTranscribing ? 'Escuchando ahora' : 'Micrófono apagado' }}</div>
-              </div>
-            </div>
-            
-            <!-- Volume Meter -->
-            <div v-if="isTranscribing" class="w-12 h-1.5 bg-white/20 rounded-full overflow-hidden">
-              <div 
-                class="h-full bg-white transition-all duration-75" 
-                :style="{ width: `${currentVolume * 100}%` }"
-              ></div>
-            </div>
-            <Icon v-else name="tabler:arrow-right" class="size-4 opacity-0 group-hover:opacity-100 transition-all" />
-          </button>
-          <!-- F7: Pausar/Reanudar -->
-          <button
-            v-if="isLocalProducer"
-            @click="togglePause"
-            class="flex items-center justify-between px-6 py-4 rounded-[1.5rem] border-2 transition-all font-black uppercase tracking-widest text-xs border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300"
-          >
-            <div class="flex items-center gap-4">
-              <Icon :name="paused ? 'tabler:player-play' : 'tabler:player-pause'" class="size-5" />
-              <div class="text-left">
-                <div class="leading-none">{{ paused ? 'Reanudar' : 'Pausar' }}</div>
-                <div class="text-[9px] font-bold opacity-60 mt-1">{{ paused ? 'En pausa, ownership retenido' : 'Pausa sin soltar ownership' }}</div>
-              </div>
-            </div>
-          </button>
-          <!-- F3 copiar/exportar + F7 limpiar -->
-          <div class="grid grid-cols-3 gap-2">
-            <button @click="copyTranscript" class="px-3 py-3 rounded-2xl border border-neutral-200 bg-white text-[10px] font-black uppercase tracking-widest text-neutral-500 hover:border-neutral-300">Copiar</button>
-            <button @click="downloadTranscript" class="px-3 py-3 rounded-2xl border border-neutral-200 bg-white text-[10px] font-black uppercase tracking-widest text-neutral-500 hover:border-neutral-300">Descargar</button>
-            <button @click="clearTranscript" class="px-3 py-3 rounded-2xl border border-red-200 bg-white text-[10px] font-black uppercase tracking-widest text-red-500 hover:border-red-300">Limpiar</button>
-          </div>
+          <p v-if="pinError" class="mt-2 text-sm font-medium text-red-500">{{ pinError }}</p>
         </div>
 
-        <div v-if="isSomeoneElseTranscribing" class="p-4 bg-orange-50 border border-orange-100 rounded-2xl text-center">
-          <p class="text-[10px] font-black uppercase tracking-widest text-orange-600">Alguien más está transcribiendo</p>
+        <!-- Utilidades -->
+        <div class="max-lg:order-5 grid grid-cols-3 gap-2">
+          <button @click="copyTranscript" class="inline-flex flex-col items-center gap-1.5 rounded-2xl bg-muted/60 hover:bg-muted py-3.5 text-sm font-semibold transition-colors active:scale-95">
+            <Icon name="tabler:copy" class="size-5" />
+            Copiar
+          </button>
+          <button @click="downloadTranscript" class="inline-flex flex-col items-center gap-1.5 rounded-2xl bg-muted/60 hover:bg-muted py-3.5 text-sm font-semibold transition-colors active:scale-95">
+            <Icon name="tabler:download" class="size-5" />
+            Descargar
+          </button>
+          <button @click="clearTranscript" class="inline-flex flex-col items-center gap-1.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 py-3.5 text-sm font-semibold transition-colors active:scale-95">
+            <Icon name="tabler:trash" class="size-5" />
+            Limpiar
+          </button>
         </div>
-
       </aside>
 
-      <!-- Main Content: Transcription History -->
-      <main class="flex-1 flex flex-col min-h-0 bg-white rounded-[3rem] border border-neutral-200 shadow-xl overflow-hidden relative">
-        
-        <!-- Decoration -->
-        <div class="absolute top-8 left-10 flex items-center gap-3 pointer-events-none z-10">
-           <div class="size-8 bg-neutral-50 rounded-xl flex items-center justify-center">
-             <Icon name="tabler:history" class="size-4 text-neutral-400" />
-           </div>
-           <div>
-             <span class="block text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Registro en Tiempo Real</span>
-             <span class="block text-[9px] font-bold text-neutral-300">Segmentación semántica activa</span>
-           </div>
+      <!-- Registro en tiempo real -->
+      <main class="max-lg:order-4 max-lg:h-[70svh] max-lg:shrink-0 lg:flex-1 lg:min-h-0 flex flex-col rounded-3xl bg-neutral-950 text-neutral-50 overflow-hidden">
+        <div class="flex items-center justify-between gap-3 px-6 lg:px-8 pt-6 pb-4 shrink-0">
+          <h2 class="text-xl font-bold tracking-tight">Registro en tiempo real</h2>
+          <span
+            class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold"
+            :class="(isTranscribing || isSomeoneElseTranscribing) ? 'bg-red-500 text-white' : 'bg-white/10 text-neutral-300'"
+          >
+            <span class="size-2 rounded-full" :class="(isTranscribing || isSomeoneElseTranscribing) ? 'bg-white animate-pulse' : 'bg-neutral-500'"></span>
+            {{ isTranscribing ? 'Transmitiendo' : isSomeoneElseTranscribing ? 'En vivo' : 'En espera' }}
+          </span>
         </div>
 
-        <!-- History Container -->
-        <div 
-          ref="historyContainer"
-          class="flex-1 overflow-y-auto px-10 pt-28 pb-10 scroll-smooth"
-        >
-          <div 
-            v-if="!(isSomeoneElseTranscribing ? (transcription.final || transcription.interim) : (fullHistory || interimTranscript))" 
-            class="h-full flex flex-col items-center justify-center text-neutral-200"
+        <div ref="historyContainer" class="flex-1 overflow-y-auto px-6 lg:px-8 pb-8 scroll-smooth">
+          <div
+            v-if="!(isSomeoneElseTranscribing ? (transcription.final || transcription.interim) : (fullHistory || interimTranscript))"
+            class="h-full min-h-[40svh] flex flex-col items-center justify-center text-center"
           >
-             <Icon name="tabler:ear" class="size-20 mb-6 opacity-30" />
-             <p class="text-sm font-black uppercase tracking-[0.3em] text-center max-w-xs">
-               {{ isSomeoneElseTranscribing ? 'Esperando señal del orador...' : 'Inicia la transcripción para capturar voz' }}
-             </p>
-          </div>
-          
-          <div v-else class="max-w-4xl">
-            <p class="text-3xl sm:text-4xl font-medium leading-relaxed text-neutral-700 whitespace-pre-wrap">
-              <span>{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
-              <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-blue-600 ml-2 italic underline decoration-blue-200 decoration-4 underline-offset-8">{{ isSomeoneElseTranscribing ? transcription.interim : interimTranscript }}</span>
+            <Icon name="tabler:ear" class="size-14 text-neutral-600 mb-4" />
+            <p class="text-xl font-medium text-neutral-300 max-w-sm">
+              {{ isSomeoneElseTranscribing ? 'Esperando la señal del orador…' : 'Inicia la transcripción para capturar la voz.' }}
             </p>
           </div>
-        </div>      </main>
+
+          <!-- Texto final e interino: mismo tamaño, peso y espaciado; solo cambia la opacidad -->
+          <p v-else class="max-w-4xl text-3xl sm:text-4xl font-medium leading-snug tracking-tight whitespace-pre-wrap">
+            <span class="text-white/45">{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
+            <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-white">{{ ' ' + (isSomeoneElseTranscribing ? transcription.interim : interimTranscript) }}</span>
+          </p>
+        </div>
+      </main>
 
     </div>
   </div>
