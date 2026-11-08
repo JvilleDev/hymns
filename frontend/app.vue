@@ -38,8 +38,8 @@ body,
 
 /* Custom Selection */
 ::selection {
-  background: var(--primary);
-  color: white;
+  background: hsl(var(--primary) / 0.25);
+  color: inherit;
 }
 
 /* Scrollbar Cleanup (Transparent) */
