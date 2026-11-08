@@ -693,62 +693,67 @@ onMounted(() => {
     </main>
 
     <!-- TRADUCCIÓN EN VIVO -->
-    <aside class="hidden lg:flex flex-col h-full w-[400px] xl:w-[460px] bg-muted/30 text-foreground shrink-0">
-      <div class="p-6 pb-4">
-        <div class="flex items-center justify-between gap-3 mb-4">
-          <h2 class="flex items-center gap-2.5 text-base font-semibold">
-            <span class="relative flex size-2.5">
-              <span v-if="transcription.active" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full size-2.5" :class="transcription.active ? 'bg-red-500' : 'bg-muted-foreground/40'"></span>
-            </span>
-            Traducción en vivo
-          </h2>
-          <button
-            v-if="transcriptionHistory"
-            @click="appendToEditor(transcriptionHistory.split('\n').filter(p => p.trim()).pop() || '')"
-            class="text-sm font-medium text-primary hover:underline"
-          >
-            Copiar último al editor
-          </button>
-        </div>
-        <button
-          @click="setTranscriptionActive(!transcription.active)"
-          class="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold px-4 py-3 rounded-xl transition-colors active:scale-[0.99]"
-          :class="transcription.active ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-primary text-primary-foreground hover:bg-primary/90'"
+    <aside class="hidden lg:flex flex-col h-full w-[420px] xl:w-[500px] bg-neutral-950 text-neutral-50 shrink-0">
+      <div class="flex items-center justify-between gap-3 px-7 pt-7 pb-5">
+        <h2 class="text-xl font-bold tracking-tight">Traducción en vivo</h2>
+        <span
+          class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold"
+          :class="transcription.active ? 'bg-red-500 text-white' : 'bg-white/10 text-neutral-300'"
         >
-          <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-4" />
-          {{ transcription.active ? 'Detener transcripción en pantalla' : 'Mostrar transcripción en pantalla' }}
-        </button>
+          <span class="size-2 rounded-full" :class="transcription.active ? 'bg-white animate-pulse' : 'bg-neutral-500'"></span>
+          {{ transcription.active ? 'En pantalla' : 'Solo aquí' }}
+        </span>
       </div>
 
-      <div ref="transcriptionScrollRef" class="flex-1 overflow-y-auto px-6 pb-8 space-y-4">
-        <div
-          v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
-          :key="i"
-          class="group relative"
-        >
-          <p class="text-lg leading-relaxed text-muted-foreground pr-9">{{ p }}</p>
-          <button
-            @click="appendToEditor(p)"
-            aria-label="Copiar al editor"
-            class="absolute top-0.5 right-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg bg-background text-muted-foreground hover:text-foreground transition-opacity"
+      <div ref="transcriptionScrollRef" class="flex-1 overflow-y-auto px-7 pb-6 flex flex-col">
+        <div class="mt-auto space-y-5">
+          <div
+            v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
+            :key="i"
+            class="group relative rounded-xl -mx-3 px-3 py-2 hover:bg-white/5 transition-colors"
           >
-            <Icon name="tabler:copy" class="size-4" />
-          </button>
-        </div>
+            <p class="text-xl leading-snug text-neutral-400 pr-10">{{ p }}</p>
+            <button
+              @click="appendToEditor(p)"
+              aria-label="Copiar al editor"
+              class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg bg-white/10 text-neutral-200 hover:bg-white/20 transition-opacity"
+            >
+              <Icon name="tabler:copy" class="size-4" />
+            </button>
+          </div>
 
-        <TransitionGroup
-          name="word-stream"
-          tag="p"
-          class="text-xl leading-relaxed tracking-tight flex flex-wrap gap-x-1.5 gap-y-1 text-foreground font-medium"
+          <TransitionGroup
+            name="word-stream"
+            tag="p"
+            class="text-3xl xl:text-4xl leading-tight font-semibold tracking-tight flex flex-wrap gap-x-2.5 gap-y-1 text-white"
+          >
+            <span v-for="word in interimWords" :key="word.id">{{ word.text }}</span>
+          </TransitionGroup>
+
+          <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center">
+            <Icon name="tabler:ear" class="size-10 text-neutral-600 mx-auto mb-3" />
+            <p class="text-lg text-neutral-400">Escuchando… aún no hay voz.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-7 pt-4 space-y-3 bg-neutral-900">
+        <button
+          @click="setTranscriptionActive(!transcription.active)"
+          class="w-full inline-flex items-center justify-center gap-2 text-base font-semibold px-4 py-3.5 rounded-xl transition-colors active:scale-[0.99]"
+          :class="transcription.active ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-white text-neutral-950 hover:bg-neutral-200'"
         >
-          <span v-for="word in interimWords" :key="word.id">{{ word.text }}</span>
-        </TransitionGroup>
-
-        <div v-if="!transcription.final && !transcription.interim" class="py-16 text-center rounded-2xl bg-background/60">
-          <Icon name="tabler:ear" class="size-8 text-muted-foreground/40 mx-auto mb-3" />
-          <p class="text-sm text-muted-foreground">Escuchando… aún no hay voz.</p>
-        </div>
+          <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-5" />
+          {{ transcription.active ? 'Quitar de la pantalla' : 'Mostrar en pantalla' }}
+        </button>
+        <button
+          v-if="transcriptionHistory"
+          @click="appendToEditor(transcriptionHistory.split('\n').filter(p => p.trim()).pop() || '')"
+          class="w-full inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl text-neutral-300 hover:bg-white/10 transition-colors"
+        >
+          <Icon name="tabler:copy" class="size-4" />
+          Copiar último fragmento al editor
+        </button>
       </div>
     </aside>
 
