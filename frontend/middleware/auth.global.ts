@@ -31,6 +31,7 @@ export default defineNuxtRouteMiddleware((to) => {
 
   if (!authenticated.value && !isPublic) {
     console.warn(`[AUTH] Remote access detected from ${hostname} to ${to.path}. Redirecting to /login.`);
-    return navigateTo('/login');
+    // guarda a dónde iba para volver tras el login
+    return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
   }
 });

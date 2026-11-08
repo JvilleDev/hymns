@@ -6,11 +6,22 @@ const password = ref('');
 const error = ref(false);
 const showPassword = ref(false);
 
+const route = useRoute();
+
+// Destino tras el login: solo rutas internas (evita open redirect con //host o esquemas)
+const redirectTo = computed(() => {
+  const target = route.query.redirect;
+  if (typeof target !== 'string') return '/';
+  if (!target.startsWith('/') || target.startsWith('//') || target.startsWith('/\\')) return '/';
+  if (target === '/login' || target.startsWith('/login?')) return '/';
+  return target;
+});
+
 const handleLogin = async () => {
   error.value = false;
   if (login(password.value)) {
-    // Redirect to list where admin powers are most needed
-    return navigateTo('/');
+    // Vuelve a donde intentaba entrar (o al inicio)
+    return navigateTo(redirectTo.value);
   }
   error.value = true;
 };
