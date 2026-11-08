@@ -22,14 +22,14 @@ const close = () => {
 
 <template>
     <Teleport to="body">
-        <Transition name="slide">
+        <Transition name="slide" :duration="400">
             <div v-if="modelValue" class="fixed inset-0 z-50 flex justify-end">
                 <!-- Backdrop -->
-                <div class="absolute inset-0 bg-background/40 backdrop-blur-sm" @click="close" />
+                <div class="sheet-backdrop absolute inset-0 bg-background/40 backdrop-blur-sm" @click="close" />
 
                 <!-- Sheet Content -->
-                <div :class="cn(
-                    'relative glass h-full w-full max-w-md p-6 shadow-2xl flex flex-col',
+                <div :data-side="side" :class="cn(
+                    'sheet-panel relative glass h-full w-full max-w-md p-6 shadow-2xl flex flex-col',
                     side === 'left' ? 'left-0 mr-auto' : 'right-0 ml-auto',
                     props.class
                 )">
@@ -61,27 +61,39 @@ const close = () => {
 </template>
 
 <style scoped>
-.slide-enter-active,
-.slide-leave-active {
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+/* El panel entra y sale solo con transform; el fondo atenúa su opacidad aparte */
+.slide-enter-active .sheet-panel,
+.slide-leave-active .sheet-panel {
+    transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
 }
 
-.slide-enter-from,
-.slide-leave-to {
+.slide-enter-active .sheet-backdrop,
+.slide-leave-active .sheet-backdrop {
+    transition: opacity 0.4s ease;
+}
+
+.slide-enter-from .sheet-panel,
+.slide-leave-to .sheet-panel {
+    transform: translateX(100%);
+}
+
+.slide-enter-from .sheet-panel[data-side='left'],
+.slide-leave-to .sheet-panel[data-side='left'] {
+    transform: translateX(-100%);
+}
+
+.slide-enter-from .sheet-backdrop,
+.slide-leave-to .sheet-backdrop {
     opacity: 0;
 }
 
-.slide-enter-from .glass {
-    transform: translateX(100%);
-}
-
-.slide-leave-to .glass {
-    transform: translateX(100%);
-}
-
-/* For left side if needed */
-.left-side.slide-enter-from .glass,
-.left-side.slide-leave-to .glass {
-    transform: translateX(-100%);
+@media (prefers-reduced-motion: reduce) {
+    .slide-enter-active .sheet-panel,
+    .slide-leave-active .sheet-panel,
+    .slide-enter-active .sheet-backdrop,
+    .slide-leave-active .sheet-backdrop {
+        transition-duration: 0.01ms;
+    }
 }
 </style>
