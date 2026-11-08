@@ -13,6 +13,7 @@ const {
   setTranscriptionActive, 
   connect, 
   isConnected,
+  historyRefreshVersion,
 } = useRealtime()
 const { getAnnouncements, createAnnouncement, deleteAnnouncement, clearAnnouncements, deleteSelectedAnnouncements } = useApi()
 const { icons: availableIcons } = useAnnouncementIcons()
@@ -41,6 +42,11 @@ const isMac = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const isUploading = ref(false)
 const mediaList = ref<any[]>([])
+const mediaQuery = ref('')
+const filteredMedia = computed(() => {
+  const q = mediaQuery.value.trim().toLowerCase()
+  return q ? mediaList.value.filter(m => String(m.name).toLowerCase().includes(q)) : mediaList.value
+})
 
 const fetchMediaList = async () => {
   try {
@@ -165,18 +171,44 @@ const appendToEditor = (text: string) => {
   toast.info('Texto añadido al editor')
 }
 
+const shortcuts = computed(() => {
+  const mod = isMac.value ? '⌘' : 'Ctrl'
+  return [
+    { label: 'Enviar anuncio', keys: [mod, 'Enter'], hint: 'Lo guarda en el historial y, si "Enviar al guardar" está activo, lo muestra en pantalla.' },
+    { label: 'Mostrar u ocultar', keys: [mod, 'L'], hint: 'Alterna el último anuncio en pantalla sin tocar el editor.' },
+    { label: 'Limpiar o apagar', keys: ['Esc'], hint: 'Primero borra el texto del editor; con el editor vacío, oculta la pantalla.' },
+  ]
+})
+
+// Feedback visual: el botón asociado a un atajo "se presiona" al usarlo
+const flashing = ref<'send' | 'toggle' | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | undefined
+const flash = (key: 'send' | 'toggle') => {
+  flashing.value = key
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => { flashing.value = null }, 450)
+}
+const sendFromShortcut = () => {
+  flash('send')
+  sendAnnouncement()
+}
+const toggleFromShortcut = () => {
+  flash('toggle')
+  toggleVisibility()
+}
+
 // Shortcuts
 onKeyStroke(['l', 'L'], (e) => {
   if (e.metaKey || e.ctrlKey) {
     e.preventDefault()
-    toggleVisibility()
+    toggleFromShortcut()
   }
 })
 
 onKeyStroke(['Enter'], (e) => {
   if (e.metaKey || e.ctrlKey) {
     e.preventDefault()
-    sendAnnouncement()
+    sendFromShortcut()
   }
 })
 
@@ -187,7 +219,7 @@ onKeyStroke(['Escape'], (e) => {
     toast.info('Texto limpiado')
   } else if (announcement.value.active) {
     e.preventDefault()
-    toggleVisibility()
+    toggleFromShortcut()
     toast.info('Pantalla apagada')
   }
 })
@@ -207,6 +239,16 @@ const fetchHistory = async () => {
     isLoading.value = false
   }
 }
+
+// otra pestaña/dispositivo cambió el historial: recargar sin pisar un envío propio en curso
+watch(historyRefreshVersion, () => {
+  if (!isSyncing.value) fetchHistory()
+})
+
+// al reconectar el WebSocket pudo haber cambios que no recibimos
+watch(isConnected, (connected) => {
+  if (connected) fetchHistory()
+})
 
 const autoSendToAir = ref(true)
 
@@ -445,13 +487,13 @@ onMounted(() => {
 
 <template>
   <div class="flex-1 flex flex-row w-full h-full min-h-0 overflow-hidden bg-background">
-    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto">
+    <div class="flex-1 min-w-0 min-h-0 overflow-y-auto">
       <div class="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-8">
 
         <!-- EN PANTALLA -->
         <section
           aria-label="Estado de la pantalla"
-          class="flex items-center gap-4 rounded-2xl px-5 py-4 transition-colors"
+          class="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-3 rounded-2xl px-5 py-4 transition-colors"
           :class="announcement.active ? 'bg-red-500/10' : 'bg-muted/60'"
         >
           <span class="relative flex size-3 shrink-0">
@@ -462,8 +504,8 @@ onMounted(() => {
             <p class="text-sm font-semibold" :class="announcement.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">
               {{ announcement.active ? 'En pantalla ahora' : 'Pantalla libre' }}
             </p>
-            <p v-if="announcement.active" class="text-base text-foreground truncate mt-0.5">
-              {{ (announcement.topic ? announcement.topic + ' · ' : '') + (announcement.text || '').replace(/<[^>]+>/g, '') }}
+            <p v-if="announcement.active" class="text-base font-medium text-foreground line-clamp-2 sm:line-clamp-1 break-words mt-0.5">
+              {{ (announcement.text || '').replace(/<[^>]+>/g, '') }}
             </p>
             <p v-else-if="!session.live" class="text-sm text-muted-foreground mt-0.5">Sin sesión activa</p>
             <p v-else class="text-sm text-muted-foreground mt-0.5">Escribe un anuncio o reenvía uno del historial.</p>
@@ -471,7 +513,8 @@ onMounted(() => {
           <button
             v-if="announcement.active"
             @click="toggleVisibility()"
-            class="shrink-0 inline-flex items-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 transition-colors active:scale-95"
+            class="shrink-0 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 transition-all duration-150 active:scale-95"
+            :class="flashing === 'toggle' && 'scale-95 ring-4 ring-red-500/40'"
           >
             <Icon name="tabler:player-stop" class="size-4" />
             Ocultar
@@ -491,10 +534,10 @@ onMounted(() => {
             placeholder="Título del anuncio"
             class="w-full bg-transparent text-2xl md:text-3xl font-bold tracking-tight border-none outline-none mb-3 px-2 placeholder:text-muted-foreground/40 focus:ring-0 text-foreground"
           />
-          <AnnouncementsEditor v-model="textInput" @submit="sendAnnouncement" />
+          <AnnouncementsEditor v-model="textInput" @submit="sendFromShortcut" />
 
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
-            <div class="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+            <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
               <button
                 @click="textInput = ''"
                 :disabled="!textInput || isLoading"
@@ -526,7 +569,8 @@ onMounted(() => {
               v-if="!announcement.active"
               @click="sendAnnouncement()"
               :disabled="!textInput || isLoading"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-colors active:scale-95 disabled:opacity-40 disabled:pointer-events-none w-full sm:w-auto shrink-0"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none w-full sm:w-auto shrink-0"
+              :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:player-play" class="size-4" />
               {{ autoSendToAir ? 'Mostrar en pantalla' : 'Guardar' }}
@@ -535,7 +579,8 @@ onMounted(() => {
               v-else
               @click="sendAnnouncement()"
               :disabled="!textInput || isLoading"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-colors active:scale-95 disabled:opacity-40 disabled:pointer-events-none w-full sm:w-auto shrink-0"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none w-full sm:w-auto shrink-0"
+              :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:refresh" class="size-4" />
               {{ autoSendToAir ? 'Reemplazar en pantalla' : 'Guardar' }}
@@ -653,19 +698,22 @@ onMounted(() => {
                 <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-3 text-white" stroke-width="4" />
               </button>
 
-              <div
-                class="flex-1 min-w-0 text-[15px] text-foreground truncate cursor-pointer"
-                @click="resendFromHistory(item)"
-              >
-                <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
-                  <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
-                  <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
-                  <span v-else v-html="segment.value" :class="segment.class"></span>
-                </template>
+              <div class="flex-1 min-w-0 cursor-pointer" @click="resendFromHistory(item)">
+                <div class="text-[15px] text-foreground line-clamp-2 md:line-clamp-1 break-words">
+                  <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
+                    <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
+                    <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
+                    <span v-else v-html="segment.value" :class="segment.class"></span>
+                  </template>
+                </div>
+                <p class="md:hidden mt-1 text-xs text-muted-foreground tabular-nums">
+                  {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                  <span v-if="isActive(item)" class="ml-1 font-semibold text-red-600 dark:text-red-400">· En pantalla</span>
+                </p>
               </div>
 
-              <span v-if="isActive(item)" class="flex-none text-xs font-semibold text-red-600 dark:text-red-400">En pantalla</span>
-              <span class="flex-none text-sm text-muted-foreground tabular-nums">
+              <span v-if="isActive(item)" class="hidden md:inline flex-none text-xs font-semibold text-red-600 dark:text-red-400">En pantalla</span>
+              <span class="hidden md:inline flex-none text-sm text-muted-foreground tabular-nums">
                 {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
               </span>
 
@@ -690,7 +738,7 @@ onMounted(() => {
           </ul>
         </section>
       </div>
-    </main>
+    </div>
 
     <!-- TRADUCCIÓN EN VIVO -->
     <aside class="hidden lg:flex flex-col h-full w-[420px] xl:w-[500px] bg-neutral-950 text-neutral-50 shrink-0">
@@ -705,7 +753,7 @@ onMounted(() => {
             :key="i"
             class="group relative rounded-xl -mx-3 px-3 py-2 hover:bg-white/5 transition-colors"
           >
-            <p class="text-xl leading-snug text-neutral-400 pr-10">{{ p }}</p>
+            <p class="text-xl leading-snug font-medium tracking-tight text-neutral-400 pr-10">{{ p }}</p>
             <button
               @click="appendToEditor(p)"
               aria-label="Copiar al editor"
@@ -718,9 +766,9 @@ onMounted(() => {
           <TransitionGroup
             name="word-stream"
             tag="p"
-            class="text-xl leading-snug font-semibold tracking-tight flex flex-wrap gap-x-2.5 gap-y-1 text-white"
+            class="text-xl leading-snug font-medium tracking-tight text-white"
           >
-            <span v-for="word in interimWords" :key="word.id">{{ word.text }}</span>
+            <span v-for="word in interimWords" :key="word.id">{{ word.text + ' ' }}</span>
           </TransitionGroup>
 
           <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center">
@@ -752,51 +800,91 @@ onMounted(() => {
 
     <!-- Atajos -->
     <GSheet v-model="showHelp">
-      <div class="flex flex-col bg-background">
-        <h2 class="text-xl font-bold mb-6 pr-8">Atajos de teclado</h2>
-        <ul class="grid gap-2">
-          <li v-for="s in [
-            { label: 'Enviar texto', keys: (isMac ? '⌘' : 'Ctrl') + ' + Enter' },
-            { label: 'Mostrar u ocultar en pantalla', keys: (isMac ? '⌘' : 'Ctrl') + ' + L' },
-            { label: 'Limpiar / apagar', keys: 'Esc' },
-          ]" :key="s.label" class="flex items-center justify-between gap-4 px-4 py-3 rounded-xl bg-muted/50">
-            <span class="text-sm font-medium">{{ s.label }}</span>
-            <kbd class="text-sm font-semibold bg-background px-2.5 py-1 rounded-md">{{ s.keys }}</kbd>
+      <div class="flex flex-col pr-8">
+        <h2 class="text-2xl font-bold tracking-tight">Atajos de teclado</h2>
+        <p class="text-sm text-muted-foreground mt-1">Funcionan en cualquier parte de la página, incluso escribiendo.</p>
+
+        <ul class="mt-6 space-y-3">
+          <li v-for="s in shortcuts" :key="s.label" class="rounded-2xl bg-muted/50 p-4">
+            <div class="flex items-center justify-between gap-4">
+              <span class="text-base font-semibold">{{ s.label }}</span>
+              <span class="flex items-center gap-1.5 shrink-0">
+                <template v-for="(k, i) in s.keys" :key="k">
+                  <span v-if="i > 0" class="text-sm text-muted-foreground">+</span>
+                  <kbd class="inline-flex items-center justify-center min-w-9 h-9 px-2.5 rounded-lg bg-background text-sm font-semibold text-foreground border-b-[3px] border-foreground/15">{{ k }}</kbd>
+                </template>
+              </span>
+            </div>
+            <p class="text-sm text-muted-foreground mt-2">{{ s.hint }}</p>
           </li>
         </ul>
       </div>
     </GSheet>
 
     <!-- Medios -->
-    <GSheet v-model="showMediaManager">
-      <div class="flex flex-col bg-background p-8 h-full">
-        <div class="flex items-center justify-between mb-6 gap-4">
-          <h2 class="text-xl font-bold">Librería de medios</h2>
-          <div class="mr-8">
-            <button @click="triggerFileUpload" :disabled="isUploading" class="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
-              <Icon :name="isUploading ? 'tabler:loader' : 'tabler:upload'" class="size-4" :class="{ 'animate-spin': isUploading }" />
-              {{ isUploading ? 'Subiendo…' : 'Subir imagen' }}
+    <GSheet v-model="showMediaManager" class="max-w-2xl">
+      <div class="flex flex-col h-full min-h-0">
+        <div class="pr-10 mb-5">
+          <h2 class="text-2xl font-bold tracking-tight">Librería de medios</h2>
+          <p class="text-sm text-muted-foreground mt-1">
+            Escribe <kbd class="font-semibold text-foreground">/nombre</kbd> en un anuncio para insertar la imagen.
+          </p>
+        </div>
+
+        <div class="relative mb-5">
+          <Icon name="tabler:search" class="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          <input
+            v-model="mediaQuery"
+            type="search"
+            aria-label="Buscar imagen"
+            placeholder="Buscar por nombre"
+            class="w-full rounded-xl bg-muted/60 pl-10 pr-4 py-2.5 text-sm outline-none border-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
+          />
+        </div>
+
+        <div class="flex-1 overflow-y-auto -mx-1 px-1 pb-2">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <button
+              @click="triggerFileUpload"
+              :disabled="isUploading"
+              class="min-h-[12rem] rounded-2xl bg-primary/10 hover:bg-primary/15 text-primary flex flex-col items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-60"
+            >
+              <Icon :name="isUploading ? 'tabler:loader' : 'tabler:upload'" class="size-7" :class="{ 'animate-spin': isUploading }" />
+              <span class="text-sm font-semibold">{{ isUploading ? 'Subiendo…' : 'Subir imagen' }}</span>
             </button>
             <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileUpload" />
-          </div>
-        </div>
-        <div class="flex-1 overflow-y-auto">
-          <div v-if="mediaList.length === 0 && !isUploading" class="py-12 flex flex-col items-center text-center">
-            <Icon name="tabler:photo" class="size-10 mb-3 text-muted-foreground/40" />
-            <p class="text-base font-medium">Sin imágenes</p>
-            <p class="text-sm text-muted-foreground mt-1">Súbelas y úsalas en un anuncio con su nombre.</p>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div v-for="media in mediaList" :key="media.id" class="group relative rounded-xl overflow-hidden bg-muted/50 flex flex-col">
-              <img :src="useApi().getFullUrl(media.url)" :alt="media.name" class="w-full h-32 object-contain" />
-              <div class="px-3 py-2.5">
-                <div class="text-sm font-medium text-foreground truncate">/{{ media.name }}</div>
+
+            <figure
+              v-for="media in filteredMedia"
+              :key="media.id"
+              class="group relative rounded-2xl overflow-hidden bg-muted flex flex-col"
+            >
+              <div class="aspect-square bg-white m-1.5 mb-0 rounded-xl overflow-hidden">
+                <img
+                  :src="useApi().getFullUrl(media.url)"
+                  :alt="media.name"
+                  loading="lazy"
+                  class="size-full object-contain p-3"
+                />
               </div>
-              <button @click="deleteMediaItem(media.id)" aria-label="Eliminar imagen" class="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-lg md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity">
+              <figcaption class="px-3 py-2.5 text-sm font-medium text-foreground truncate">/{{ media.name }}</figcaption>
+              <button
+                @click="deleteMediaItem(media.id)"
+                :aria-label="`Eliminar ${media.name}`"
+                class="absolute top-3 right-3 size-8 inline-flex items-center justify-center rounded-lg bg-background/90 text-red-600 hover:bg-red-600 hover:text-white md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all"
+              >
                 <Icon name="tabler:trash" class="size-4" />
               </button>
-            </div>
+            </figure>
           </div>
+
+          <div v-if="mediaList.length && !filteredMedia.length" class="py-14 text-center">
+            <p class="text-base font-medium">Sin resultados</p>
+            <p class="text-sm text-muted-foreground mt-1">Ninguna imagen coincide con “{{ mediaQuery }}”.</p>
+          </div>
+          <p v-else-if="!mediaList.length && !isUploading" class="py-10 text-center text-sm text-muted-foreground">
+            Aún no hay imágenes. Sube la primera con el recuadro azul.
+          </p>
         </div>
       </div>
     </GSheet>
@@ -809,16 +897,11 @@ onMounted(() => {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
+/* solo opacidad: spans inline con espacio real, igual que el texto final */
 .word-stream-enter-active {
-  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
-  transition-delay: 0.05s;
+  transition: opacity 0.3s ease;
 }
 .word-stream-enter-from {
   opacity: 0;
-  transform: translateY(4px) scale(0.95);
-  filter: blur(4px);
-}
-.word-stream-move {
-  transition: transform 0.4s ease;
 }
 </style>
