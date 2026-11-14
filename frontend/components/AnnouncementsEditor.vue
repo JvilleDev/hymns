@@ -41,7 +41,7 @@ const editor = useEditor({
   },
   editorProps: {
     attributes: {
-      class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl focus:outline-none min-h-[6rem] max-h-[12rem] overflow-y-auto outline-none',
+      class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl focus:outline-none min-h-[9rem] max-h-[50svh] overflow-y-auto outline-none',
     },
     handleKeyDown: (view, event) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {

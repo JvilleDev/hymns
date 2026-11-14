@@ -231,6 +231,7 @@ const fetchHistory = async () => {
       const lastItemWithTopic = history.value.find(item => item.topic)
       if (lastItemWithTopic) {
         currentTopic.value = lastItemWithTopic.topic
+        refreshDateTopic() // si era una fecha de otro día, pasa a la de hoy
       }
     }
   } catch (e) {
@@ -475,7 +476,28 @@ watch(showMediaManager, (val) => {
   if (val) fetchMediaList()
 })
 
+// El título por defecto es la fecha de hoy (hora de Colombia, igual que el backend). Si la página queda
+// abierta y cambia el día, se renueva; un título escrito a mano no se toca.
+const DATE_TOPIC_RE = /^[^\d,]+, \d{1,2} de [^\d]+ de \d{4}$/
+const todayTopic = () => {
+  const parts = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' }).formatToParts(new Date())
+  const get = (t: string) => parts.find(p => p.type === t)?.value
+  return `${get('weekday')}, ${get('day')} de ${get('month')} de ${get('year')}`.replace(/^\w/, c => c.toUpperCase())
+}
+const refreshDateTopic = () => {
+  if (announcement.value.active) return
+  const t = currentTopic.value
+  if (t && DATE_TOPIC_RE.test(t) && t !== todayTopic()) currentTopic.value = todayTopic()
+}
+let topicTimer: ReturnType<typeof setInterval> | undefined
+onBeforeUnmount(() => {
+  clearInterval(topicTimer)
+  document.removeEventListener('visibilitychange', refreshDateTopic)
+})
+
 onMounted(() => {
+  topicTimer = setInterval(refreshDateTopic, 60_000)
+  document.addEventListener('visibilitychange', refreshDateTopic)
   textInput.value = localStorage.getItem(DRAFT_KEY) || ''
   isMac.value = navigator.platform.toUpperCase().indexOf('MAC') >= 0
   loadOutbox()
@@ -487,45 +509,54 @@ onMounted(() => {
 
 <template>
   <div class="flex-1 flex flex-row w-full h-full min-h-0 overflow-hidden bg-background">
-    <div class="flex-1 min-w-0 min-h-0 overflow-y-auto">
-      <div class="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-8">
+    <div class="flex-1 min-w-0 min-h-0 overflow-y-auto cq">
+      <div class="anuncios-grid mx-auto w-full max-w-[1600px] px-4 md:px-8 xl:px-10 py-6 md:py-8">
 
-        <!-- EN PANTALLA -->
-        <section
-          aria-label="Estado de la pantalla"
-          class="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-3 rounded-2xl px-5 py-4 transition-colors"
-          :class="announcement.active ? 'bg-red-500/10' : 'bg-muted/60'"
-        >
-          <span class="relative flex size-3 shrink-0">
-            <span v-if="announcement.active" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-70"></span>
-            <span class="relative inline-flex size-3 rounded-full" :class="announcement.active ? 'bg-red-500' : 'bg-muted-foreground/40'"></span>
-          </span>
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold" :class="announcement.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">
-              {{ announcement.active ? 'En pantalla ahora' : 'Pantalla libre' }}
-            </p>
-            <p v-if="announcement.active" class="text-base font-medium text-foreground line-clamp-2 sm:line-clamp-1 break-words mt-0.5">
-              {{ (announcement.text || '').replace(/<[^>]+>/g, '') }}
-            </p>
-            <p v-else-if="!session.live" class="text-sm text-muted-foreground mt-0.5">Sin sesión activa</p>
-            <p v-else class="text-sm text-muted-foreground mt-0.5">Escribe un anuncio o reenvía uno del historial.</p>
+        <!-- ENCABEZADO + ESTADO DE LA PANTALLA -->
+        <header class="span-all flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div class="min-w-0">
+            <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Anuncios</h1>
+            <p class="mt-1 text-muted-foreground">Escribe, muestra en pantalla y reenvía desde el historial.</p>
           </div>
-          <button
-            v-if="announcement.active"
-            @click="toggleVisibility()"
-            class="shrink-0 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 transition-all duration-150 active:scale-95"
-            :class="flashing === 'toggle' && 'scale-95 ring-4 ring-red-500/40'"
+
+          <section
+            aria-label="Estado de la pantalla"
+            class="flex items-center gap-3 rounded-2xl pl-4 pr-2 py-2 max-w-full sm:max-w-xl min-w-0 transition-colors"
+            :class="announcement.active ? 'bg-red-500/10' : 'bg-muted/60'"
           >
-            <Icon name="tabler:player-stop" class="size-4" />
-            Ocultar
-          </button>
-        </section>
-        <p v-if="announcement.active && !session.live" class="-mt-5 px-1 text-sm text-red-500">
+            <span class="relative flex size-3 shrink-0">
+              <span v-if="announcement.active" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-70"></span>
+              <span class="relative inline-flex size-3 rounded-full" :class="announcement.active ? 'bg-red-500' : 'bg-muted-foreground/40'"></span>
+            </span>
+            <div class="min-w-0 py-1">
+              <p class="text-sm font-semibold leading-tight" :class="announcement.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">
+                {{ announcement.active ? 'En pantalla ahora' : 'Pantalla libre' }}
+              </p>
+              <p v-if="announcement.active" class="text-sm font-medium text-foreground truncate">
+                {{ (announcement.text || '').replace(/<[^>]+>/g, '') }}
+              </p>
+              <p v-else-if="!session.live" class="text-xs text-muted-foreground">Sin sesión activa</p>
+              <p v-else class="text-xs text-muted-foreground">Lista para un anuncio</p>
+            </div>
+            <button
+              v-if="announcement.active"
+              @click="toggleVisibility()"
+              class="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 ml-1 transition-all duration-150 active:scale-95"
+              :class="flashing === 'toggle' && 'scale-95 ring-4 ring-red-500/40'"
+            >
+              <Icon name="tabler:player-stop" class="size-4" />
+              Ocultar
+            </button>
+          </section>
+        </header>
+        <p v-if="announcement.active && !session.live" class="span-all -mt-3 px-1 text-sm text-red-500">
           La sesión está inactiva: la pantalla se ve en negro en /ver.
         </p>
 
-        <!-- EDITOR -->
-        <section aria-label="Nuevo anuncio" class="rounded-2xl bg-muted/40 p-4 md:p-6">
+        <!-- COLUMNA IZQUIERDA: EDITOR + PENDIENTES -->
+        <div class="min-w-0 space-y-6">
+          <!-- EDITOR -->
+          <section aria-label="Nuevo anuncio" class="rounded-3xl bg-muted/40 p-4 md:p-6">
           <label for="announcement-topic" class="sr-only">Título del anuncio</label>
           <input
             id="announcement-topic"
@@ -586,7 +617,7 @@ onMounted(() => {
               {{ autoSendToAir ? 'Reemplazar en pantalla' : 'Guardar' }}
             </button>
           </div>
-        </section>
+          </section>
 
         <!-- PENDIENTES -->
         <section v-if="outbox.length" aria-label="Pendientes de sincronizar">
@@ -628,9 +659,11 @@ onMounted(() => {
             </li>
           </ul>
         </section>
+        </div>
 
+        <!-- COLUMNA DERECHA: HISTORIAL -->
         <!-- HISTORIAL -->
-        <section aria-label="Historial">
+        <section aria-label="Historial" class="min-w-0 hist-wrap">
           <div class="flex items-center justify-between mb-3 px-1 min-h-9">
             <h2 class="text-base font-semibold text-foreground">
               Historial
@@ -663,7 +696,7 @@ onMounted(() => {
           </div>
 
           <!-- Loading -->
-          <div v-if="isLoading && history.length === 0" class="space-y-2">
+          <div v-if="isLoading && history.length === 0" class="hist-grid">
             <div v-for="n in 4" :key="n" class="flex items-center gap-3 px-4 py-4 rounded-xl bg-muted/40">
               <GSkeleton class="size-5 rounded-md shrink-0" />
               <GSkeleton class="h-4 flex-1 rounded" />
@@ -672,18 +705,18 @@ onMounted(() => {
           </div>
 
           <!-- Empty -->
-          <div v-else-if="history.length === 0" class="py-14 rounded-2xl bg-muted/40 flex flex-col items-center text-center px-6">
+          <div v-else-if="history.length === 0" class="py-16 rounded-3xl bg-muted/40 flex flex-col items-center text-center px-6">
             <Icon name="tabler:speakerphone" class="size-8 mb-3 text-muted-foreground/50" />
             <p class="text-base font-medium text-foreground">Aún no hay anuncios</p>
             <p class="text-sm text-muted-foreground mt-1">Los que muestres en pantalla aparecerán aquí para reenviarlos.</p>
           </div>
 
           <!-- List -->
-          <ul v-else class="space-y-2">
+          <ul v-else class="hist-grid">
             <li
               v-for="item in history"
               :key="item.id"
-              class="flex items-center gap-3 pl-4 pr-3 py-3 rounded-xl transition-colors group"
+              class="flex items-start gap-3 pl-4 pr-3 py-3.5 rounded-2xl transition-colors group min-w-0"
               :class="selectedIds.has(item.id)
                 ? 'bg-primary/15'
                 : isActive(item) ? 'bg-red-500/10' : 'bg-muted/40 hover:bg-muted'"
@@ -692,30 +725,25 @@ onMounted(() => {
                 @click.stop="toggleSelect(item.id)"
                 :aria-label="selectedIds.has(item.id) ? 'Quitar de la selección' : 'Seleccionar'"
                 :aria-pressed="selectedIds.has(item.id)"
-                class="flex-none size-5 rounded-md border-2 flex items-center justify-center transition-colors"
+                class="flex-none size-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-colors"
                 :class="selectedIds.has(item.id) ? 'bg-primary border-primary' : 'border-muted-foreground/40 hover:border-primary'"
               >
                 <Icon v-if="selectedIds.has(item.id)" name="tabler:check" class="size-3 text-white" stroke-width="4" />
               </button>
 
               <div class="flex-1 min-w-0 cursor-pointer" @click="resendFromHistory(item)">
-                <div class="text-[15px] text-foreground line-clamp-2 md:line-clamp-1 break-words">
+                <div class="text-[15px] leading-snug text-foreground line-clamp-3 break-words">
                   <template v-for="(segment, idx) in parseHTMLContent(item.text)" :key="idx">
                     <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
                     <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" />
                     <span v-else v-html="segment.value" :class="segment.class"></span>
                   </template>
                 </div>
-                <p class="md:hidden mt-1 text-xs text-muted-foreground tabular-nums">
+                <p class="mt-1.5 text-xs text-muted-foreground tabular-nums">
                   {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
                   <span v-if="isActive(item)" class="ml-1 font-semibold text-red-600 dark:text-red-400">· En pantalla</span>
                 </p>
               </div>
-
-              <span v-if="isActive(item)" class="hidden md:inline flex-none text-xs font-semibold text-red-600 dark:text-red-400">En pantalla</span>
-              <span class="hidden md:inline flex-none text-sm text-muted-foreground tabular-nums">
-                {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-              </span>
 
               <div class="flex-none flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
                 <button
@@ -741,7 +769,7 @@ onMounted(() => {
     </div>
 
     <!-- TRADUCCIÓN EN VIVO -->
-    <aside class="hidden lg:flex flex-col h-full w-[420px] xl:w-[500px] bg-neutral-950 text-neutral-50 shrink-0">
+    <aside class="hidden lg:flex flex-col h-full w-[420px] xl:w-[500px] bg-muted/40 text-foreground border-l border-border/60 shrink-0">
       <div class="flex items-center justify-between gap-3 px-7 pt-7 pb-5">
         <h2 class="text-xl font-bold tracking-tight">Transcripción en vivo</h2>
       </div>
@@ -751,13 +779,13 @@ onMounted(() => {
           <div
             v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
             :key="i"
-            class="group relative rounded-xl -mx-3 px-3 py-2 hover:bg-white/5 transition-colors"
+            class="group relative rounded-xl -mx-3 px-3 py-2 hover:bg-foreground/5 transition-colors"
           >
-            <p class="text-xl leading-snug font-medium tracking-tight text-neutral-400 pr-10">{{ p }}</p>
+            <p class="text-xl leading-snug font-medium tracking-tight text-muted-foreground pr-10">{{ p }}</p>
             <button
               @click="appendToEditor(p)"
               aria-label="Copiar al editor"
-              class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg bg-white/10 text-neutral-200 hover:bg-white/20 transition-opacity"
+              class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg bg-background text-muted-foreground hover:text-foreground shadow-sm transition-opacity"
             >
               <Icon name="tabler:copy" class="size-4" />
             </button>
@@ -766,23 +794,23 @@ onMounted(() => {
           <TransitionGroup
             name="word-stream"
             tag="p"
-            class="text-xl leading-snug font-medium tracking-tight text-white"
+            class="text-xl leading-snug font-medium tracking-tight text-foreground"
           >
             <span v-for="word in interimWords" :key="word.id">{{ word.text + ' ' }}</span>
           </TransitionGroup>
 
           <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center">
-            <Icon name="tabler:ear" class="size-10 text-neutral-600 mx-auto mb-3" />
-            <p class="text-lg text-neutral-400">Escuchando… aún no hay voz.</p>
+            <Icon name="tabler:ear" class="size-10 text-muted-foreground/40 mx-auto mb-3" />
+            <p class="text-lg text-muted-foreground">Escuchando… aún no hay voz.</p>
           </div>
         </div>
       </div>
 
-      <div class="p-7 pt-4 space-y-3 bg-neutral-900">
+      <div class="p-7 pt-4 space-y-3 border-t border-border/50">
         <button
           @click="setTranscriptionActive(!transcription.active)"
           class="w-full inline-flex items-center justify-center gap-2 text-base font-semibold px-4 py-3.5 rounded-xl transition-colors active:scale-[0.99]"
-          :class="transcription.active ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-white text-neutral-950 hover:bg-neutral-200'"
+          :class="transcription.active ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-primary text-primary-foreground hover:bg-primary/90'"
         >
           <Icon :name="transcription.active ? 'tabler:player-stop' : 'tabler:player-play'" class="size-5" />
           {{ transcription.active ? 'Quitar de la pantalla' : 'Mostrar en pantalla' }}
@@ -790,7 +818,7 @@ onMounted(() => {
         <button
           v-if="transcriptionHistory"
           @click="appendToEditor(transcriptionHistory.split('\n').filter(p => p.trim()).pop() || '')"
-          class="w-full inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl text-neutral-300 hover:bg-white/10 transition-colors"
+          class="w-full inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
         >
           <Icon name="tabler:copy" class="size-4" />
           Copiar último fragmento al editor
@@ -892,6 +920,18 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Distribución según el ancho disponible del área (no de la ventana) */
+.cq { container-type: inline-size; }
+.anuncios-grid { display: grid; gap: 1.5rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.anuncios-grid .span-all { grid-column: 1 / -1; }
+@container (min-width: 980px) {
+  .anuncios-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 2rem; }
+}
+.hist-wrap { container-type: inline-size; }
+.hist-grid { display: grid; gap: 0.5rem; grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 640px) {
+  .hist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }

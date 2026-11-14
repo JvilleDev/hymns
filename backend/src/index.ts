@@ -45,6 +45,20 @@ function getColombianDate() {
   return `${weekday}, ${day} de ${month} de ${year}`.replace(/^\w/, (c) => c.toUpperCase());
 }
 
+// El tema por defecto es la fecha de hoy ("Sábado, 14 de noviembre de 2026"). Se guarda en el estado,
+// así que si es una fecha vieja (otro día) se renueva; un tema escrito a mano no se toca.
+const DATE_TOPIC_RE = /^[^\d,]+, \d{1,2} de [^\d]+ de \d{4}$/;
+function refreshDateTopic(state: { announcement: { active: boolean; topic: string }; lastAnnouncementUpdate: number }): boolean {
+  if (state.announcement.active) return false; // no cambiar el título de lo que está en pantalla
+  const topic = state.announcement.topic;
+  if (!topic || !DATE_TOPIC_RE.test(topic)) return false;
+  const today = getColombianDate();
+  if (topic === today) return false;
+  state.announcement.topic = today;
+  state.lastAnnouncementUpdate = Date.now();
+  return true;
+}
+
 // Explicitly handle WebSocket upgrades for /ws path
 server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url || "", `http://${request.headers.host}`);
@@ -89,8 +103,38 @@ const upload = multer({ storage });
 const auth = makeAuth(db);
 const { requireTenant, requireMaster, optionalTenant } = auth;
 const authAdmin = requireMaster;
-registerAuthRoutes(app, db, auth);
+registerAuthRoutes(app, db, auth, purgeTenantData);
 const tenantOf = (req: any): string => req.tenant.tenantId;
+
+// Borra todo lo del tenant (datos, archivos subidos, estado en memoria) y cierra sus conexiones
+function purgeTenantData(id: string) {
+  try {
+    const files = db.query("SELECT url FROM media WHERE clientId = ?").all(id) as Array<{ url: string }>;
+    for (const f of files) {
+      try {
+        fs.unlinkSync(path.join(uploadDir, path.basename(f.url)));
+      } catch {}
+    }
+  } catch {}
+  const deletes: Array<[string, string]> = [
+    ["anuncios", "clientId"],
+    ["media", "clientId"],
+    ["client_states", "clientId"],
+    ["processed_paragraphs", "clientId"],
+    ["transcript_lines", "session_id"],
+  ];
+  for (const [table, col] of deletes) {
+    try {
+      db.query(`DELETE FROM ${table} WHERE ${col} = ?`).run(id);
+    } catch (e) {
+      console.error(`[tenants] no se pudo limpiar ${table} de ${id}:`, e);
+    }
+  }
+  clientStates.delete(id);
+  wss.clients.forEach((ws: any) => {
+    if (ws.clientId === id) ws.close(4003, "Cuenta eliminada");
+  });
+}
 
 let fuse: Fuse<Canto>;
 
@@ -1265,7 +1309,9 @@ const clientStates = new Map<string, InitialInfo>();
 
 async function getClientState(clientId: string): Promise<InitialInfo> {
   if (clientStates.has(clientId)) {
-    return clientStates.get(clientId)!;
+    const cached = clientStates.get(clientId)!;
+    if (refreshDateTopic(cached)) saveClientState(clientId, cached);
+    return cached;
   }
 
   // Try to load from DB
@@ -1298,6 +1344,7 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
         }
       }
       
+      if (refreshDateTopic(state)) saveClientState(clientId, state);
       clientStates.set(clientId, state);
       return state;
     }

@@ -159,7 +159,13 @@ const tooManyAttempts = (key: string) => {
   return a.n > 8;
 };
 
-export function registerAuthRoutes(app: Express, db: Database, auth: ReturnType<typeof makeAuth>) {
+export function registerAuthRoutes(
+  app: Express,
+  db: Database,
+  auth: ReturnType<typeof makeAuth>,
+  // Limpieza de datos y conexiones del tenant antes de borrarlo
+  onTenantDeleted: (id: string) => void = () => {},
+) {
   app.post("/api/auth/login", async (req, res) => {
     const tenantId = String(req.body?.tenantId ?? "").trim();
     const password = String(req.body?.password ?? "");
@@ -245,5 +251,25 @@ export function registerAuthRoutes(app: Express, db: Database, auth: ReturnType<
       db.query("UPDATE tenants SET isActive = ? WHERE id = ?").run(isActive ? 1 : 0, id);
     }
     res.json({ success: true });
+  });
+
+  app.delete("/api/tenants/:id", auth.requireMaster, (req, res) => {
+    const id = req.params.id;
+    if (id === MASTER_TENANT_ID) {
+      res.status(400).json({ error: "No se puede eliminar el tenant maestro" });
+      return;
+    }
+    if (!db.query("SELECT 1 FROM tenants WHERE id = ?").get(id)) {
+      res.status(404).json({ error: "Tenant no encontrado" });
+      return;
+    }
+    try {
+      onTenantDeleted(id);
+      db.query("DELETE FROM tenants WHERE id = ?").run(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(`[auth] error eliminando tenant ${id}:`, e);
+      res.status(500).json({ error: "No se pudo eliminar el tenant" });
+    }
   });
 }

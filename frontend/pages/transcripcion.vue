@@ -987,14 +987,14 @@ definePageMeta({
       </aside>
 
       <!-- Registro en tiempo real -->
-      <main class="max-lg:order-4 max-lg:h-[70svh] max-lg:shrink-0 lg:flex-1 lg:min-h-0 flex flex-col rounded-3xl bg-neutral-950 text-neutral-50 overflow-hidden">
+      <main class="max-lg:order-4 max-lg:h-[70svh] max-lg:shrink-0 lg:flex-1 lg:min-h-0 flex flex-col rounded-3xl bg-muted/40 text-foreground overflow-hidden">
         <div class="flex items-center justify-between gap-3 px-6 lg:px-8 pt-6 pb-4 shrink-0">
           <h2 class="text-xl font-bold tracking-tight">Registro en tiempo real</h2>
           <span
             class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold"
-            :class="(isTranscribing || isSomeoneElseTranscribing) ? 'bg-red-500 text-white' : 'bg-white/10 text-neutral-300'"
+            :class="(isTranscribing || isSomeoneElseTranscribing) ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground'"
           >
-            <span class="size-2 rounded-full" :class="(isTranscribing || isSomeoneElseTranscribing) ? 'bg-white animate-pulse' : 'bg-neutral-500'"></span>
+            <span class="size-2 rounded-full" :class="(isTranscribing || isSomeoneElseTranscribing) ? 'bg-white animate-pulse' : 'bg-muted-foreground/50'"></span>
             {{ isTranscribing ? 'Transmitiendo' : isSomeoneElseTranscribing ? 'En vivo' : 'En espera' }}
           </span>
         </div>
@@ -1004,16 +1004,16 @@ definePageMeta({
             v-if="!(isSomeoneElseTranscribing ? (transcription.final || transcription.interim) : (fullHistory || interimTranscript))"
             class="h-full min-h-[40svh] flex flex-col items-center justify-center text-center"
           >
-            <Icon name="tabler:ear" class="size-14 text-neutral-600 mb-4" />
-            <p class="text-xl font-medium text-neutral-300 max-w-sm">
+            <Icon name="tabler:ear" class="size-14 text-muted-foreground/40 mb-4" />
+            <p class="text-xl font-medium text-muted-foreground max-w-sm">
               {{ isSomeoneElseTranscribing ? 'Esperando la señal del orador…' : 'Inicia la transcripción para capturar la voz.' }}
             </p>
           </div>
 
           <!-- Texto final e interino: mismo tamaño, peso y espaciado; solo cambia la opacidad -->
           <p v-else class="max-w-4xl text-3xl sm:text-4xl font-medium leading-snug tracking-tight whitespace-pre-wrap">
-            <span class="text-white/45">{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
-            <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-white">{{ ' ' + (isSomeoneElseTranscribing ? transcription.interim : interimTranscript) }}</span>
+            <span class="text-foreground/45">{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
+            <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-foreground">{{ ' ' + (isSomeoneElseTranscribing ? transcription.interim : interimTranscript) }}</span>
           </p>
         </div>
       </main>

@@ -15,7 +15,7 @@ interface Tenant {
 type StatusFilter = 'all' | 'active' | 'inactive'
 
 const api = useApi()
-const { confirmDialog } = useDialog()
+const { confirmDialog, promptDialog } = useDialog()
 
 const tenants = ref<Tenant[]>([])
 const loading = ref(true)
@@ -140,6 +140,27 @@ const toggleActive = async (t: Tenant) => {
   if (t.isActive && !(await confirmDialog(`"${t.name}" no podrá iniciar sesión mientras esté desactivada.`, { title: 'Desactivar cuenta', confirmLabel: 'Desactivar', destructive: true }))) return
   try {
     await api.put(`/api/tenants/${encodeURIComponent(t.id)}`, { isActive: !t.isActive })
+    await load()
+  } catch (e) {
+    toast.error(errMsg(e))
+  }
+}
+
+// -- Eliminar (borra la cuenta y todos sus datos) --
+const remove = async (t: Tenant) => {
+  const typed = await promptDialog(
+    `Se eliminarán la cuenta "${t.name}" y todos sus datos: anuncios, archivos, historial y transcripciones. No se puede deshacer. Escribe el ID para confirmar:`,
+    '',
+    { title: 'Eliminar cuenta', confirmLabel: 'Eliminar', destructive: true }
+  )
+  if (typed === null) return
+  if (typed.trim() !== t.id) {
+    toast.error('El ID no coincide; no se eliminó nada')
+    return
+  }
+  try {
+    await api.delete(`/api/tenants/${encodeURIComponent(t.id)}`)
+    toast.success(`Cuenta "${t.id}" eliminada`)
     await load()
   } catch (e) {
     toast.error(errMsg(e))
@@ -279,11 +300,20 @@ onMounted(load)
                     variant="ghost"
                     size="sm"
                     class="ml-auto"
-                    :class="t.isActive ? 'text-muted-foreground hover:text-red-500' : 'text-emerald-600'"
+                    :class="t.isActive ? 'text-muted-foreground hover:text-amber-600' : 'text-emerald-600'"
                     :title="t.isActive ? 'Desactivar' : 'Activar'"
                     @click="toggleActive(t)"
                   >
                     <Icon :name="t.isActive ? 'tabler:player-pause' : 'tabler:player-play'" class="size-4" />
+                  </GButton>
+                  <GButton
+                    variant="ghost"
+                    size="sm"
+                    class="text-muted-foreground hover:text-red-500"
+                    title="Eliminar cuenta"
+                    @click="remove(t)"
+                  >
+                    <Icon name="tabler:trash" class="size-4" />
                   </GButton>
                 </template>
               </div>
