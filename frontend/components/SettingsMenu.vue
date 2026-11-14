@@ -50,7 +50,7 @@ onClickOutside(rootRef, () => { isOpen.value = false })
       >
         <div class="p-2.5 space-y-1">
           <div class="px-4 py-2">
-            <span class="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-bold">Grupo</span>
+            <span class="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-bold">Cuenta</span>
             <p class="text-sm font-bold truncate">{{ tenantId }}</p>
           </div>
 
@@ -78,8 +78,8 @@ onClickOutside(rootRef, () => { isOpen.value = false })
               <Icon name="tabler:users-group" class="size-4" />
             </div>
             <div class="flex flex-col">
-              <span>Gestionar grupos</span>
-              <span class="text-[10px] text-muted-foreground/60 font-medium">Tenants y contraseñas</span>
+              <span>Gestionar cuentas</span>
+              <span class="text-[10px] text-muted-foreground/60 font-medium">Accesos y contraseñas</span>
             </div>
           </button>
 

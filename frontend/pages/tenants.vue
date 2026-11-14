@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
 
-useHead({ title: 'Grupos' })
+useHead({ title: 'Cuentas' })
 
 interface Tenant {
   id: string
@@ -25,7 +25,7 @@ const load = async () => {
   try {
     tenants.value = await api.get<Tenant[]>('/api/tenants')
   } catch (e) {
-    toast.error('No se pudieron cargar los grupos')
+    toast.error('No se pudieron cargar las cuentas')
   } finally {
     loading.value = false
   }
@@ -37,7 +37,7 @@ const create = async () => {
   creating.value = true
   try {
     await api.post('/api/tenants', { id: newId.value, name: newName.value, password: newPassword.value })
-    toast.success(`Grupo "${newId.value}" creado`)
+    toast.success(`Cuenta "${newId.value}" creada`)
     newId.value = newName.value = newPassword.value = ''
     await load()
   } catch (e) {
@@ -80,8 +80,8 @@ onMounted(load)
   <main class="flex-1 min-h-0 overflow-y-auto bg-background">
     <div class="w-full max-w-3xl mx-auto px-4 md:px-8 py-6 flex flex-col gap-6">
       <header>
-        <h1 class="text-3xl font-bold tracking-tight">Grupos</h1>
-        <p class="text-sm text-muted-foreground mt-1">Cada grupo (tenant) entra con su ID y contraseña. El ID también sirve para el enlace del visor.</p>
+        <h1 class="text-3xl font-bold tracking-tight">Cuentas</h1>
+        <p class="text-sm text-muted-foreground mt-1">Cada cuenta entra con su ID y contraseña. El ID también sirve para el enlace del visor.</p>
       </header>
 
       <GCard class="p-5">

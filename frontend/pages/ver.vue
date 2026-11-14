@@ -81,7 +81,7 @@ onUnmounted(() => {
 
 <template>
   <main v-if="!clientId" class="h-svh w-svw flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-    Falta el ID del grupo. Abre este enlace con <code class="mx-1 font-mono">?clientId=&lt;id&gt;</code> (cópialo desde Ajustes → Copiar enlace del visor).
+    Falta el ID. Abre este enlace con <code class="mx-1 font-mono">?clientId=&lt;id&gt;</code> (cópialo desde Ajustes → Copiar enlace del visor).
   </main>
   <main v-else class="relative h-svh w-svw overflow-hidden flex flex-col transition-all duration-500 ease-in-out will-change-[transform,opacity]">
     <!-- Sin sesión viva: pantalla vacía (transparente en OBS), sin restos -->
