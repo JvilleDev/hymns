@@ -1,37 +1,33 @@
+// Solo /login, /ver y /anuncios/history son públicas; el resto exige sesión de un tenant.
+// /ver y el historial leen el tenant desde ?clientId=<id> (solo lectura).
+const PUBLIC_PATHS = ['/login', '/ver', '/anuncios/history']
+const VIEWER_PATHS = ['/ver', '/anuncios/history']
+const MASTER_PATHS = ['/tenants']
+
 export default defineNuxtRouteMiddleware((to) => {
-  const { setClientId, setDevMode } = useApi();
-  const clientIdFromQuery = to.query.clientId as string;
-  const devFromQuery = to.query.dev as string;
+  const { setClientId, setDevMode } = useApi()
+  const { isLoggedIn, isMaster } = useAuth()
 
-  if (clientIdFromQuery) {
-    console.log(`[CLIENT-ID] Found clientId in query: ${clientIdFromQuery}. Updating context.`);
-    setClientId(clientIdFromQuery);
+  const devFromQuery = to.query.dev as string
+  if (devFromQuery === 'true') setDevMode(true)
+  else if (devFromQuery === 'false') setDevMode(false)
+
+  // Vistas públicas: el tenant a leer viene en la URL
+  const clientIdFromQuery = to.query.clientId
+  if (VIEWER_PATHS.includes(to.path) && typeof clientIdFromQuery === 'string' && clientIdFromQuery) {
+    setClientId(clientIdFromQuery)
   }
 
-  if (devFromQuery === 'true') {
-    setDevMode(true);
-  } else if (devFromQuery === 'false') {
-    setDevMode(false);
+  if (PUBLIC_PATHS.includes(to.path) || to.path.startsWith('/_')) {
+    // Con sesión no tiene sentido ver el login
+    if (to.path === '/login' && isLoggedIn.value) return navigateTo('/')
+    return
   }
 
-  const { authenticated } = useAuth();
-  const requestURL = useRequestURL();
-  const hostname = requestURL.hostname;
-
-  // Localhost (127.0.0.1 or localhost) has full access
-  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-
-  if (isLocal) {
-    return;
-  }
-
-  // Handle Remote Access (Tunnel)
-  const publicPaths = ['/login', '/anuncios/history', '/ver', '/anuncios'];
-  const isPublic = publicPaths.includes(to.path) || to.path.startsWith('/_'); // Allow specific paths and internal assets
-
-  if (!authenticated.value && !isPublic) {
-    console.warn(`[AUTH] Remote access detected from ${hostname} to ${to.path}. Redirecting to /login.`);
+  if (!isLoggedIn.value) {
     // guarda a dónde iba para volver tras el login
-    return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
+    return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
   }
-});
+
+  if (MASTER_PATHS.includes(to.path) && !isMaster.value) return navigateTo('/')
+})

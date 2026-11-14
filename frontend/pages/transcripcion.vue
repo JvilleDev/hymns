@@ -10,7 +10,7 @@ const {
   transcription,
   connectionId
 } = useRealtime()
-const { clientId, isManualConnectionTrigger } = useApi()
+const { clientId } = useApi()
 const { confirmDialog } = useDialog()
 
 // ponytail: cola de reenvío — los updateTranscription durante un corte WS se pierden (sendEvent los descarta)
@@ -871,15 +871,10 @@ definePageMeta({
         <header class="max-lg:order-1 flex items-start justify-between gap-3 px-1 pt-1">
           <div class="min-w-0">
             <h1 class="text-3xl font-bold tracking-tight">Transcripción</h1>
-            <button
-              type="button"
-              @click="isManualConnectionTrigger = true"
-              class="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Cambiar el identificador de cliente"
-            >
+            <span class="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
               <Icon name="tabler:id" class="size-4" />
               <span class="truncate max-w-[14rem]">{{ clientId }}</span>
-            </button>
+            </span>
           </div>
           <span
             class="mt-1.5 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold shrink-0"

@@ -10,6 +10,7 @@ import cors from "cors";
 import Fuse from "fuse.js";
 import multer from "multer";
 import path from "path";
+import { initAuth, makeAuth, registerAuthRoutes, verifyToken } from "./auth";
 const db = new Database("./src/data/database.db");
 db.run("PRAGMA journal_mode=WAL;");
 db.run("PRAGMA synchronous=NORMAL;");
@@ -82,21 +83,27 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
-// -- Auth Middleware --
-const authAdmin = (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  const masterPassword = process.env.ADMIN_PASSWORD || "Jville24861937";
-  if (authHeader === masterPassword) {
-    return next();
-  }
-  res.status(401).json({ error: "Unauthorized" });
-};
+// -- Auth (multi-tenant) --
+// requireTenant: token de cualquier tenant · requireMaster: solo tenant maestro (cantos y gestión)
+// optionalTenant: lecturas públicas por tenant ID (/ver, historial)
+const auth = makeAuth(db);
+const { requireTenant, requireMaster, optionalTenant } = auth;
+const authAdmin = requireMaster;
+registerAuthRoutes(app, db, auth);
+const tenantOf = (req: any): string => req.tenant.tenantId;
 
 let fuse: Fuse<Canto>;
 
 wss.on("connection", async (ws, request) => {
   const url = new URL(request.url || "", `http://${request.headers.host}`);
-  const clientId = url.searchParams.get("clientId") || "default";
+  // Con token válido: control del tenant. Solo con clientId: visor de solo lectura (retrocompatibilidad).
+  const tokenInfo = verifyToken(url.searchParams.get("token"));
+  const clientId = tokenInfo ? tokenInfo.tenantId : url.searchParams.get("clientId") || "";
+  const readOnly = !tokenInfo;
+  if (!clientId) {
+    ws.close(4001, "clientId requerido");
+    return;
+  }
   const connectionId = uuid();
   // @ts-ignore
   ws.clientId = clientId;
@@ -123,6 +130,7 @@ wss.on("connection", async (ws, request) => {
 
   // ponytail: eventos client→server via WS directo, sin HTTP POST round-trip
   ws.on("message", async (raw) => {
+    if (readOnly) return; // los visores no envían eventos
     try {
       const msg = JSON.parse(raw.toString());
       const { type, data, from, to } = msg;
@@ -411,10 +419,10 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
 
 // -- HTTP POST fallback (kept for backwards compat) --
 
-app.post("/api/ws-events/:type", async (req, res) => {
+app.post("/api/ws-events/:type", requireTenant, async (req, res) => {
   const { type } = req.params;
   const { data, from, to } = req.body;
-  const clientId = (req.headers["x-client-id"] as string) || "default";
+  const clientId = tenantOf(req);
   const connectionId = from || "";
 
   await handleWSEvent(clientId, connectionId, type, data, from, to);
@@ -473,11 +481,11 @@ app.get("/", (req, res) => {
   `);
 });
 
-app.get("/api/cantos", async (req, res) => {
+app.get("/api/cantos", requireTenant, async (req, res) => {
   res.send(await getCantos());
 });
 
-app.get("/api/canto/:id", async (req, res) => {
+app.get("/api/canto/:id", requireTenant, async (req, res) => {
   const answer = await getCantos(req.params.id);
   res.send(answer[0]);
 });
@@ -588,12 +596,13 @@ app.delete("/api/canto/:id", authAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/anuncios", (req, res) => {
+app.get("/api/anuncios", optionalTenant, (req, res) => {
   try {
-    const clientId =
-      (req.query.clientId as string) ||
-      (req.headers["x-client-id"] as string) ||
-      "gran-diamante";
+    const clientId = req.tenant?.tenantId || (req.query.clientId as string);
+    if (!clientId) {
+      res.status(400).json({ error: "clientId requerido" });
+      return;
+    }
     const query = db.query(
       "SELECT * FROM anuncios WHERE clientId = ? ORDER BY createdAt DESC",
     );
@@ -604,10 +613,10 @@ app.get("/api/anuncios", (req, res) => {
   }
 });
 
-app.post("/api/anuncios", (req, res) => {
+app.post("/api/anuncios", requireTenant, (req, res) => {
   try {
     const { text, topic } = req.body;
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     if (!text) {
       res.status(400).json({ error: "Text is required" });
       return;
@@ -626,9 +635,9 @@ app.post("/api/anuncios", (req, res) => {
   }
 });
 
-app.delete("/api/anuncios/:id", (req, res) => {
+app.delete("/api/anuncios/:id", requireTenant, (req, res) => {
   try {
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     const query = db.query("DELETE FROM anuncios WHERE id = ? AND clientId = ?");
     query.run(req.params.id, clientId);
     broadcast(clientId, { type: "historyRefresh", data: true });
@@ -639,9 +648,9 @@ app.delete("/api/anuncios/:id", (req, res) => {
   }
 });
 
-app.delete("/api/anuncios", (req, res) => {
+app.delete("/api/anuncios", requireTenant, (req, res) => {
   try {
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     const query = db.query("DELETE FROM anuncios WHERE clientId = ?");
     query.run(clientId);
     broadcast(clientId, { type: "historyRefresh", data: true });
@@ -652,10 +661,10 @@ app.delete("/api/anuncios", (req, res) => {
   }
 });
 
-app.post("/api/anuncios/delete-selected", (req, res) => {
+app.post("/api/anuncios/delete-selected", requireTenant, (req, res) => {
   try {
     const { ids } = req.body;
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     if (!Array.isArray(ids)) {
       res.status(400).json({ error: "IDs array is required" });
       return;
@@ -674,9 +683,9 @@ app.post("/api/anuncios/delete-selected", (req, res) => {
   }
 });
 
-app.get("/api/media", (req, res) => {
+app.get("/api/media", requireTenant, (req, res) => {
   try {
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     const query = db.query(
       "SELECT * FROM media WHERE clientId = ? ORDER BY createdAt DESC"
     );
@@ -687,9 +696,9 @@ app.get("/api/media", (req, res) => {
   }
 });
 
-app.post("/api/media", upload.single("file"), (req, res) => {
+app.post("/api/media", requireTenant, upload.single("file"), (req, res) => {
   try {
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     const { name, type } = req.body;
     const file = req.file;
     if (!file) {
@@ -711,9 +720,9 @@ app.post("/api/media", upload.single("file"), (req, res) => {
   }
 });
 
-app.delete("/api/media/:id", (req, res) => {
+app.delete("/api/media/:id", requireTenant, (req, res) => {
   try {
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
     const query = db.query("DELETE FROM media WHERE id = ? AND clientId = ?");
     query.run(req.params.id, clientId);
     res.json({ success: true });
@@ -722,7 +731,7 @@ app.delete("/api/media/:id", (req, res) => {
   }
 });
 
-app.get("/search", async (req, res) => {
+app.get("/search", requireTenant, async (req, res) => {
   try {
     if (!req.query.q) {
       res.status(400).json({ error: "Search query is required" });
@@ -753,7 +762,7 @@ app.get("/search", async (req, res) => {
 // El primer request tras un idle de rpunct carga el modelo (varios segundos).
 const RPUNCT_PUNCTUATE_TIMEOUT_MS = Number(process.env.RPUNCT_PUNCTUATE_TIMEOUT_MS) || 15000;
 
-app.post("/api/punctuate", async (req, res) => {
+app.post("/api/punctuate", requireTenant, async (req, res) => {
   if (DEBUG) console.log("=== TEST ===")
   if (DEBUG) console.log("PUNCTUATION REQUESTED")
   try {
@@ -787,12 +796,12 @@ app.post("/api/punctuate", async (req, res) => {
   }
 });
 
-app.post("/api/segment", async (req, res) => {
+app.post("/api/segment", requireTenant, async (req, res) => {
   const startTime = Date.now();
   try {
     const { sentences, documentId, gaps } = req.body;
     const gapList: Array<number | null> = Array.isArray(gaps) ? gaps : [];
-    const clientId = (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
 
     if (!Array.isArray(sentences) || sentences.length === 0) {
       res.status(400).json({ error: "sentences must be a non-empty array" });
@@ -1032,10 +1041,10 @@ app.post("/api/segment", async (req, res) => {
   }
 });
 
-app.get("/api/paragraphs", (req, res) => {
+app.get("/api/paragraphs", requireTenant, (req, res) => {
   try {
     const documentId = req.query.documentId as string;
-    const clientId = (req.query.clientId as string) || (req.headers["x-client-id"] as string) || "default";
+    const clientId = tenantOf(req);
 
     if (!documentId) {
       res.status(400).json({ error: "documentId query param is required" });
@@ -1071,12 +1080,11 @@ app.get("/api/paragraphs", (req, res) => {
 
 // -- Transcription persistence (F1) + PIN ownership (F2) --
 
-const sessionIdOf = (req: any): string =>
-  ((req.query.clientId as string) || (req.headers["x-client-id"] as string) || "default");
+const sessionIdOf = (req: any): string => tenantOf(req);
 
-app.post("/api/transcription/claim", async (req, res) => {
+app.post("/api/transcription/claim", requireTenant, async (req, res) => {
   try {
-    const sessionId = (req.body?.clientId as string) || (req.headers["x-client-id"] as string) || "default";
+    const sessionId = tenantOf(req);
     const producerId = (req.body?.clientId as string) || sessionId;
     const pin = (req.body?.pin as string) || "";
     if (TRANSCRIBE_PIN && pin !== TRANSCRIBE_PIN) {
@@ -1104,7 +1112,7 @@ app.post("/api/transcription/claim", async (req, res) => {
   }
 });
 
-app.get("/api/transcription/state", (req, res) => {
+app.get("/api/transcription/state", requireTenant, (req, res) => {
   try {
     const sessionId = sessionIdOf(req);
     const rows = db
@@ -1116,9 +1124,9 @@ app.get("/api/transcription/state", (req, res) => {
   }
 });
 
-app.post("/api/transcription/append", (req, res) => {
+app.post("/api/transcription/append", requireTenant, (req, res) => {
   try {
-    const sessionId = (req.body?.clientId as string) || (req.headers["x-client-id"] as string) || "default";
+    const sessionId = tenantOf(req);
     const { text, ts } = req.body || {};
     if (!text || !String(text).trim()) {
       res.status(400).json({ error: "text is required" });
@@ -1133,7 +1141,7 @@ app.post("/api/transcription/append", (req, res) => {
   }
 });
 
-app.delete("/api/transcription/state", (req, res) => {
+app.delete("/api/transcription/state", requireTenant, (req, res) => {
   try {
     const sessionId = sessionIdOf(req);
     db.query("DELETE FROM transcript_lines WHERE session_id = ?").run(sessionId);
@@ -1484,6 +1492,7 @@ async function checkRpunct() {
 server.listen(PORT, "0.0.0.0", async () => {
   colorprint.INFO("Server running in http://0.0.0.0:" + PORT);
   await prepareDb();
+  initAuth(db);
   await setupFuse();
   checkRpunct();
 });

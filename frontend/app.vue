@@ -16,7 +16,6 @@ useHead({
 <template>
   <NuxtRouteAnnouncer />
   <TooltipProvider />
-  <ConnectionDialog v-if="$route.path !== '/ver'"/>
   <GDialogHost />
   <NuxtLayout>
     <NuxtPage />

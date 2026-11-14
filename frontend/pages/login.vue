@@ -2,8 +2,10 @@
 useHead({ title: 'Iniciar sesión' })
 
 const { login } = useAuth();
+const tenantId = ref('');
 const password = ref('');
-const error = ref(false);
+const error = ref('');
+const loading = ref(false);
 const showPassword = ref(false);
 
 const route = useRoute();
@@ -18,12 +20,15 @@ const redirectTo = computed(() => {
 });
 
 const handleLogin = async () => {
-  error.value = false;
-  if (login(password.value)) {
+  error.value = '';
+  loading.value = true;
+  const err = await login(tenantId.value, password.value);
+  loading.value = false;
+  if (!err) {
     // Vuelve a donde intentaba entrar (o al inicio)
     return navigateTo(redirectTo.value);
   }
-  error.value = true;
+  error.value = err;
 };
 
 // Layout blank for login page
@@ -47,18 +52,26 @@ definePageMeta({
           <Icon name="tabler:book" class="size-8 text-primary-foreground" />
         </div>
         <h1 class="text-3xl font-bold tracking-tight text-foreground mb-2">Himnario Digital</h1>
-        <p class="text-sm text-muted-foreground font-medium px-4">Ingresa la contraseña maestra para habilitar las funciones administrativas.</p>
+        <p class="text-sm text-muted-foreground font-medium px-4">Ingresa con el ID y la contraseña de tu grupo.</p>
       </div>
 
       <!-- Card Principal -->
       <GCard class="p-8 shadow-2xl shadow-primary/5 border-border/50">
         <form @submit.prevent="handleLogin" class="space-y-6">
+          <GInput
+            label="ID del grupo"
+            v-model="tenantId"
+            placeholder="mi-iglesia"
+            autocomplete="username"
+            autocapitalize="off"
+          />
+
           <GInput 
-            label="Contraseña de Acceso"
+            label="Contraseña"
             :type="showPassword ? 'text' : 'password'"
             v-model="password"
             placeholder="••••••••"
-            :error="error ? 'La contraseña es incorrecta' : ''"
+            :error="error"
           >
             <template #suffix>
               <button 
@@ -74,29 +87,19 @@ definePageMeta({
 
           <GButton 
             type="submit"
+            :disabled="loading || !tenantId || !password"
             class="w-full h-12 text-base font-bold rounded-xl shadow-lg shadow-primary/20"
           >
-            <span>Desbloquear Todo</span>
+            <span>{{ loading ? 'Entrando...' : 'Entrar' }}</span>
             <Icon name="tabler:arrow-right" class="size-5 ml-2" />
           </GButton>
         </form>
 
-        <div class="mt-8 pt-6 border-t border-border/50">
-          <p class="text-xs text-center text-muted-foreground font-semibold uppercase tracking-widest mb-4">Acceso Público</p>
-          <GButton 
-            variant="outline"
-            class="w-full h-11 rounded-xl border-primary/20 hover:bg-primary/5 font-bold"
-            @click="navigateTo('/anuncios/history')"
-          >
-            <Icon name="tabler:history" class="size-4 mr-2 text-primary" />
-            <span>Ver Historial de Escritos</span>
-          </GButton>
-        </div>
       </GCard>
 
       <!-- Footer -->
       <p class="mt-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">
-        © 2024 Himnario Digital • Admin Panel
+        © 2024 Himnario Digital
       </p>
     </div>
   </div>

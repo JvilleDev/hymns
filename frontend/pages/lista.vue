@@ -64,14 +64,6 @@ onMounted(() => {
               <template v-if="searchTerm"> para “{{ searchTerm }}”</template>
             </template>
           </p>
-          <NuxtLink
-            v-if="!isAdmin"
-            :to="{ path: '/login', query: { redirect: $route.fullPath } }"
-            class="inline-flex items-center gap-2 rounded-xl bg-muted/60 hover:bg-muted text-sm font-semibold px-4 py-2.5 transition-colors"
-          >
-            <Icon name="tabler:lock" class="size-4" />
-            Iniciar sesión para editar
-          </NuxtLink>
           <button
             v-if="isAdmin"
             type="button"

@@ -1,27 +1,17 @@
 <script setup lang="ts">
 import { Toaster } from 'vue-sonner'
-import { cn } from '~/utils'
 
-const { isAdmin } = useAuth();
+const { isMaster } = useAuth();
 
 const items = computed(() => [
   { title: "Inicio", value: "/", icon: "tabler:home", description: "En pantalla viva" },
   { title: "Lista", value: "/lista", icon: "tabler:list", description: "Base de datos global" },
   { title: "Visor", value: "/visor", icon: "tabler:eye", description: "Control de proyección" },
   { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Gestión de escritos" },
+  ...(isMaster.value ? [{ title: "Grupos", value: "/tenants", icon: "tabler:users-group", description: "Tenants y accesos" }] : []),
 ]);
 
-const { logout } = useAuth();
-
-const { isManualConnectionTrigger } = useApi();
 const route = useRoute();
-const isSettingsOpen = ref(false);
-const settingsRef = ref(null);
-
-onClickOutside(settingsRef, () => {
-  isSettingsOpen.value = false;
-});
-
 const currentPage = computed(() => {
   return items.value.find(i => i.value === route.path) || { title: 'Himnario', description: '' }
 })
@@ -35,124 +25,69 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-svh w-screen flex flex-col overflow-hidden bg-background text-foreground selection:bg-primary/10 selection:text-primary">
-    <!-- Navbar (Desktop & Tablet) -->
-    <header class="h-14 md:h-16 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 md:px-6 flex items-center justify-between">
-      <div class="flex items-center gap-3 md:gap-4 min-w-0">
-        <div class="hidden md:flex size-9 rounded-xl bg-primary items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
+  <div class="h-svh w-screen flex overflow-hidden bg-background text-foreground selection:bg-primary/10 selection:text-primary">
+    <!-- Sidebar (Desktop & Tablet) -->
+    <aside class="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-background/80 backdrop-blur-md z-40 p-3">
+      <div class="flex items-center gap-3 px-2 py-3 mb-2">
+        <div class="size-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
           <Icon name="tabler:book" class="size-5 text-primary-foreground" />
         </div>
-
-        <!-- Dynamic Page Title -->
-        <div class="min-w-0">
-          <h1 class="font-bold text-lg md:text-base tracking-tight leading-none truncate">{{ currentPage.title }}</h1>
-          <p v-if="currentPage.description" class="hidden sm:block text-[10px] text-muted-foreground font-medium mt-1">{{ currentPage.description }}</p>
-        </div>
+        <span class="font-bold text-lg tracking-tight">Himnario</span>
       </div>
-      
-      <nav class="hidden md:flex items-center bg-muted/50 p-1 rounded-xl border border-border/50">
+
+      <nav class="flex flex-col gap-1">
         <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
-          class="px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2"
-          :class="[route.path === item.value ? 'bg-background text-primary shadow-sm border border-border/50' : 'text-muted-foreground hover:text-foreground hover:bg-muted']">
-          <Icon :name="item.icon" class="size-4" />
-          <span>{{ item.title }}</span>
+          class="px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-3 border"
+          :class="[route.path === item.value ? 'bg-primary/10 text-primary border-primary/20' : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted']">
+          <Icon :name="item.icon" class="size-5 shrink-0" />
+          <span class="flex flex-col leading-tight min-w-0">
+            <span>{{ item.title }}</span>
+            <span class="text-[10px] font-medium opacity-70 truncate">{{ item.description }}</span>
+          </span>
         </NuxtLink>
       </nav>
 
-      <div class="flex items-center gap-2 relative" ref="settingsRef">
-        <!-- Unified Settings Toggle -->
-        <GButton 
-          variant="ghost" 
-          size="icon" 
-          :class="cn(
-            'rounded-xl text-muted-foreground hover:text-primary transition-all duration-300', 
-            isSettingsOpen && 'bg-muted text-primary'
-          )"
-          @click.stop="isSettingsOpen = !isSettingsOpen"
-        >
-          <Icon 
-            name="tabler:settings" 
-            class="size-5 transition-transform duration-500" 
-            :class="{ 'rotate-90': isSettingsOpen }" 
-          />
-        </GButton>
-
-        <!-- Shared Settings Dropdown -->
-        <Transition
-          enter-active-class="transition duration-300 ease-out"
-          enter-from-class="translate-y-2 opacity-0 scale-95"
-          enter-to-class="translate-y-0 opacity-100 scale-100"
-          leave-active-class="transition duration-200 ease-in"
-          leave-from-class="translate-y-0 opacity-100 scale-100"
-          leave-to-class="translate-y-2 opacity-0 scale-95"
-        >
-          <div v-if="isSettingsOpen" class="absolute right-0 top-full mt-3 w-64 origin-top-right rounded-2xl border border-border bg-background/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden ring-1 ring-black/5">
-            <div class="p-2.5 space-y-1">
-              <!-- User ID Settings -->
-              <button 
-                @click="isManualConnectionTrigger = true; isSettingsOpen = false"
-                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all text-left"
-              >
-                <div class="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                  <Icon name="tabler:user-cog" class="size-4" />
-                </div>
-                <div class="flex flex-col">
-                  <span>Configuración Cuenta</span>
-                  <span class="text-[10px] text-muted-foreground/60 font-medium">Sincronizar dispositivos</span>
-                </div>
-              </button>
-              
-              <div class="h-px bg-border/50 mx-2 my-1"></div>
-
-              <!-- Admin Action -->
-              <button 
-                v-if="!isAdmin"
-                @click="navigateTo('/login'); isSettingsOpen = false"
-                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-primary hover:bg-primary/5 transition-all text-left group"
-              >
-                <div class="size-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground group-hover:scale-110 transition-transform">
-                  <Icon name="tabler:lock" class="size-4" />
-                </div>
-                <div class="flex flex-col">
-                  <span class="uppercase tracking-widest text-[10px]">Acceso Admin</span>
-                  <span class="text-[10px] text-muted-foreground/80 font-medium normal-case">Gestionar cantos</span>
-                </div>
-              </button>
-              <button 
-                v-else
-                @click="logout(); isSettingsOpen = false"
-                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-500 hover:bg-red-500/10 transition-all text-left group"
-              >
-                 <div class="size-8 rounded-lg bg-red-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform">
-                  <Icon name="tabler:logout" class="size-4" />
-                </div>
-                <div class="flex flex-col">
-                  <span class="uppercase tracking-widest text-[10px]">Cerrar Sesión</span>
-                  <span class="text-[10px] text-red-400/60 font-medium normal-case">Salir del panel</span>
-                </div>
-              </button>
-            </div>
-          </div>
-        </Transition>
+      <div class="mt-auto pt-3 border-t border-border/50">
+        <SettingsMenu placement="top-start" v-slot="{ open, toggle }">
+          <button
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold text-muted-foreground hover:text-primary hover:bg-muted transition-all"
+            :class="{ 'bg-muted text-primary': open }"
+            @click.stop="toggle"
+          >
+            <Icon name="tabler:settings" class="size-5 transition-transform duration-500" :class="{ 'rotate-90': open }" />
+            <span>Ajustes</span>
+          </button>
+        </SettingsMenu>
       </div>
-    </header>
+    </aside>
 
-    <!-- Page Content -->
-    <main class="flex-1 min-h-0 w-full relative overflow-hidden flex flex-col">
-      <NuxtLoadingIndicator :height="2" :duration="300" color="hsl(var(--primary))" />
-      <slot />
-    </main>
+    <div class="flex-1 min-w-0 flex flex-col">
+      <!-- Header (Mobile Only) -->
+      <header class="md:hidden h-14 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 flex items-center justify-between">
+        <div class="min-w-0">
+          <h1 class="font-bold text-lg tracking-tight leading-none truncate">{{ currentPage.title }}</h1>
+          <p v-if="currentPage.description" class="hidden sm:block text-[10px] text-muted-foreground font-medium mt-1">{{ currentPage.description }}</p>
+        </div>
+        <SettingsMenu />
+      </header>
 
-    <!-- Bottom Nav (Mobile Only) -->
-    <nav class="md:hidden shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
-      <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
-        class="relative flex flex-col items-center justify-center gap-0.5 h-14 transition-colors"
-        :class="[route.path === item.value ? 'text-primary' : 'text-muted-foreground']">
-        <span v-if="route.path === item.value" class="absolute top-0 h-0.5 w-8 rounded-full bg-primary" />
-        <Icon :name="item.icon" class="size-5" />
-        <span class="text-[10px] font-bold uppercase tracking-tight">{{ item.title }}</span>
-      </NuxtLink>
-    </nav>
+      <!-- Page Content -->
+      <main class="flex-1 min-h-0 w-full relative overflow-hidden flex flex-col">
+        <NuxtLoadingIndicator :height="2" :duration="300" color="hsl(var(--primary))" />
+        <slot />
+      </main>
+
+      <!-- Bottom Nav (Mobile Only) -->
+      <nav class="md:hidden shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid pb-[env(safe-area-inset-bottom)]" :style="{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }">
+        <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
+          class="relative flex flex-col items-center justify-center gap-0.5 h-14 transition-colors"
+          :class="[route.path === item.value ? 'text-primary' : 'text-muted-foreground']">
+          <span v-if="route.path === item.value" class="absolute top-0 h-0.5 w-8 rounded-full bg-primary" />
+          <Icon :name="item.icon" class="size-5" />
+          <span class="text-[10px] font-bold uppercase tracking-tight">{{ item.title }}</span>
+        </NuxtLink>
+      </nav>
+    </div>
 
     <Toaster position="bottom-left" richColors />
   </div>
