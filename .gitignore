@@ -37,3 +37,6 @@ node_modules/
 
 # Datos locales (DB y similares)
 data/
+
+# Variables de entorno locales (compose)
+.env

@@ -9,6 +9,10 @@ services:
     environment:
       # dentro de compose se resuelve por nombre de servicio, no localhost
       - RPUNCT_URL=${RPUNCT_URL:-http://rpunct:8000}
+      # auth multi-tenant: se definen en el entorno del despliegue (nunca en el repo)
+      - MASTER_TENANT_ID=${MASTER_TENANT_ID}
+      - MASTER_PASSWORD=${MASTER_PASSWORD}
+      - TOKEN_SECRET=${TOKEN_SECRET}
     volumes:
       - db_data:/app/src/data
       - uploads_data:/app/public/uploads
