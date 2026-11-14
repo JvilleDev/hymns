@@ -16,6 +16,7 @@ useHead({
 <template>
   <NuxtRouteAnnouncer />
   <TooltipProvider />
+  <CustomCursor />
   <GDialogHost />
   <NuxtLayout>
     <NuxtPage />
