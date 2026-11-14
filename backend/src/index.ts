@@ -683,9 +683,14 @@ app.post("/api/anuncios/delete-selected", requireTenant, (req, res) => {
   }
 });
 
-app.get("/api/media", requireTenant, (req, res) => {
+app.get("/api/media", optionalTenant, (req, res) => {
   try {
-    const clientId = tenantOf(req);
+    // Público por tenant ID (el historial necesita los íconos); con token usa el del token
+    const clientId = req.tenant?.tenantId || (req.query.clientId as string);
+    if (!clientId) {
+      res.status(400).json({ error: "clientId requerido" });
+      return;
+    }
     const query = db.query(
       "SELECT * FROM media WHERE clientId = ? ORDER BY createdAt DESC"
     );

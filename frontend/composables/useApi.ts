@@ -84,7 +84,7 @@ export const useApi = () => {
     deleteSelectedAnnouncements: (ids: string[]) => request<any>('/api/anuncios/delete-selected', { method: 'POST', body: { ids } }),
     
     // Media
-    getMedia: () => request<any[]>('/api/media'),
+    getMedia: () => request<any[]>(`/api/media?clientId=${encodeURIComponent(clientId.value)}`),
     uploadMedia: async (file: File, name?: string, type?: string) => {
       const formData = new FormData()
       formData.append('file', file)

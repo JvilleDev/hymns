@@ -2,7 +2,7 @@
 // /ver y el historial leen el tenant desde ?clientId=<id> (solo lectura).
 const PUBLIC_PATHS = ['/login', '/ver', '/anuncios/history']
 const VIEWER_PATHS = ['/ver', '/anuncios/history']
-const MASTER_PATHS = ['/tenants']
+const MASTER_PATHS = ['/cuentas']
 
 export default defineNuxtRouteMiddleware((to) => {
   const { setClientId, setDevMode } = useApi()

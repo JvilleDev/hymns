@@ -17,6 +17,8 @@ const filterOptions: { label: string, value: SongFilter }[] = [
   { label: 'DR. JBP', value: 'Especial' }
 ]
 
+const activeIndex = computed(() => Math.max(0, filterOptions.findIndex(o => o.value === props.activeFilter)))
+
 const internalSearch = computed({
   get: () => props.searchTerm,
   set: (val) => emit('update:searchTerm', val)
@@ -37,21 +39,34 @@ const internalSearch = computed({
       />
     </div>
 
-    <!-- Filtros -->
-    <div class="flex p-1 rounded-2xl bg-muted/60 shrink-0" role="group" aria-label="Categoría">
+    <!-- Filtros (el indicador se desliza al activo) -->
+    <div class="relative grid grid-cols-3 p-1 rounded-2xl bg-muted/60 shrink-0 md:w-80" role="group" aria-label="Categoría">
+      <span
+        class="filter-pill absolute top-1 bottom-1 left-1 rounded-xl bg-primary shadow-sm shadow-primary/30"
+        :style="{ transform: `translateX(${activeIndex * 100}%)` }"
+        aria-hidden="true"
+      />
       <button
         v-for="option in filterOptions"
         :key="option.value"
         type="button"
         @click="$emit('update:activeFilter', option.value)"
         :aria-pressed="activeFilter === option.value"
-        class="flex-1 md:flex-none px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors"
-        :class="activeFilter === option.value
-          ? 'bg-primary text-primary-foreground'
-          : 'text-muted-foreground hover:text-foreground'"
+        class="relative z-10 px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors duration-200"
+        :class="activeFilter === option.value ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
       >
         {{ option.label }}
       </button>
     </div>
   </div>
 </template>
+
+<style scoped>
+.filter-pill {
+  width: calc((100% - 0.5rem) / 3);
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .filter-pill { transition: none; }
+}
+</style>

@@ -72,7 +72,7 @@ onClickOutside(rootRef, () => { isOpen.value = false })
           <button
             v-if="isMaster"
             class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all text-left"
-            @click="navigateTo('/tenants'); isOpen = false"
+            @click="navigateTo('/cuentas'); isOpen = false"
           >
             <div class="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <Icon name="tabler:users-group" class="size-4" />

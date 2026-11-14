@@ -23,6 +23,17 @@ useHead({
   </NuxtLayout>
 </template>
 <style>
+/* Transición entre layouts (p. ej. login ⇄ app) */
+.layout-enter-active,
+.layout-leave-active {
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), filter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.layout-enter-from,
+.layout-leave-to {
+  opacity: 0;
+  filter: blur(6px);
+}
+
 html,
 body,
 #__nuxt {

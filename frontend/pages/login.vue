@@ -59,9 +59,9 @@ const handleLogin = async () => {
   error.value = err;
 };
 
-// Layout blank for login page
+// Layout blank for login page (con nombre para que layoutTransition anime al entrar/salir)
 definePageMeta({
-  layout: false
+  layout: 'blank'
 });
 </script>
 

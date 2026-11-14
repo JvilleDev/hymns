@@ -49,7 +49,7 @@ onMounted(() => {
 <template>
   <main class="flex-1 min-h-0 flex flex-col w-full bg-background">
     <div class="flex-1 min-h-0 w-full overflow-y-auto">
-      <div class="w-full max-w-5xl mx-auto px-4 md:px-8 py-5 md:py-8 flex flex-col gap-5">
+      <div class="w-full max-w-[1920px] mx-auto px-4 md:px-8 xl:px-10 py-5 md:py-8 flex flex-col gap-5">
         <SongToolbar
           v-model:search-term="searchTerm"
           v-model:active-filter="activeFilter"
@@ -59,7 +59,9 @@ onMounted(() => {
           <p class="text-base text-muted-foreground tabular-nums" aria-live="polite">
             <template v-if="isLoading">Cargando cantos…</template>
             <template v-else>
-              <span class="font-semibold text-foreground">{{ filteredSongs.length }}</span>
+              <Transition name="count" mode="out-in">
+                <span :key="filteredSongs.length" class="inline-block font-semibold text-foreground">{{ filteredSongs.length }}</span>
+              </Transition>
               {{ filteredSongs.length === 1 ? 'canto' : 'cantos' }}
               <template v-if="searchTerm"> para “{{ searchTerm }}”</template>
             </template>
@@ -104,3 +106,15 @@ onMounted(() => {
     />
   </main>
 </template>
+
+<style scoped>
+.count-enter-active,
+.count-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.count-enter-from { opacity: 0; transform: translateY(-6px); }
+.count-leave-to { opacity: 0; transform: translateY(6px); }
+@media (prefers-reduced-motion: reduce) {
+  .count-enter-active, .count-leave-active { transition: none; }
+}
+</style>

@@ -8,7 +8,7 @@ const items = computed(() => [
   { title: "Lista", value: "/lista", icon: "tabler:list", description: "Base de datos global" },
   { title: "Visor", value: "/visor", icon: "tabler:eye", description: "Control de proyección" },
   { title: "Anuncios", value: "/anuncios", icon: "tabler:speakerphone", description: "Gestión de escritos" },
-  ...(isMaster.value ? [{ title: "Cuentas", value: "/tenants", icon: "tabler:users-group", description: "Accesos y contraseñas" }] : []),
+  ...(isMaster.value ? [{ title: "Cuentas", value: "/cuentas", icon: "tabler:users-group", description: "Accesos y contraseñas" }] : []),
 ]);
 
 const route = useRoute();
