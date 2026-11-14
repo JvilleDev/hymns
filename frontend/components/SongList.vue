@@ -123,7 +123,7 @@ function highlight(text: string, term: string) {
           <template v-if="item.id">
             <div class="flex items-center gap-3">
               <span v-if="item.type !== 'Especial' && item.nh" class="shrink-0 w-9 text-center text-xs font-mono font-bold text-primary/70">{{ item.nh }}</span>
-              <OlivosIcon v-else class="olivos-icon shrink-0 w-9 h-5 text-[#708238]" />
+              <OlivosIcon v-else class="olivos-icon shrink-0 w-9 h-7 text-[#708238]" />
               <h3 class="font-bold text-sm leading-tight min-w-0">{{ item.title }}</h3>
             </div>
             <p v-if="searchTerm.length > 1 && getSnippet(item.content, searchTerm)" 
