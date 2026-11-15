@@ -770,20 +770,6 @@ watch(selectedMicrophoneId, () => {
   if (isTranscribing.value) void startAudioAnalysis()
 })
 
-// Auto-scroll the history container
-const historyContainer = ref<HTMLElement | null>(null)
-watch([
-  () => fullHistory.value, 
-  () => interimTranscript.value,
-  () => transcription.value.final,
-  () => transcription.value.interim
-], () => {
-  nextTick(() => {
-    if (historyContainer.value) {
-      historyContainer.value.scrollTop = historyContainer.value.scrollHeight
-    }
-  })
-})
 
 onMounted(() => {
   checkBrowser()
@@ -999,23 +985,13 @@ definePageMeta({
           </span>
         </div>
 
-        <div ref="historyContainer" class="flex-1 overflow-y-auto px-6 lg:px-8 pb-8 scroll-smooth">
-          <div
-            v-if="!(isSomeoneElseTranscribing ? (transcription.final || transcription.interim) : (fullHistory || interimTranscript))"
-            class="h-full min-h-[40svh] flex flex-col items-center justify-center text-center"
-          >
-            <Icon name="tabler:ear" class="size-14 text-muted-foreground/40 mb-4" />
-            <p class="text-xl font-medium text-muted-foreground max-w-sm">
-              {{ isSomeoneElseTranscribing ? 'Esperando la señal del orador…' : 'Inicia la transcripción para capturar la voz.' }}
-            </p>
-          </div>
-
-          <!-- Texto final e interino: mismo tamaño, peso y espaciado; solo cambia la opacidad -->
-          <p v-else class="max-w-4xl text-3xl sm:text-4xl font-medium leading-snug tracking-tight whitespace-pre-wrap">
-            <span class="text-foreground/45">{{ isSomeoneElseTranscribing ? transcription.final : fullHistory }}</span>
-            <span v-if="isSomeoneElseTranscribing ? transcription.interim : interimTranscript" class="text-foreground">{{ ' ' + (isSomeoneElseTranscribing ? transcription.interim : interimTranscript) }}</span>
-          </p>
-        </div>
+        <LiveTranscript
+          :final="isSomeoneElseTranscribing ? transcription.final : fullHistory"
+          :interim="isSomeoneElseTranscribing ? transcription.interim : interimTranscript"
+          size="lg"
+          content-class="px-6 lg:px-8 pb-8"
+          :empty-text="isSomeoneElseTranscribing ? 'Esperando la señal del orador…' : 'Inicia la transcripción para capturar la voz.'"
+        />
       </main>
 
     </div>

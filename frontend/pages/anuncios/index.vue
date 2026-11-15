@@ -29,7 +29,6 @@ watch(textInput, (val) => {
 const currentTopic = ref(announcement.value.topic || '')
 const isLoading = ref(true)
 const history = ref<any[]>([])
-const transcriptionScrollRef = ref<HTMLElement | null>(null)
 const MAX_TRANSCRIPTION_LENGTH = 5000
 const transcriptionHistory = computed(() => {
   const text = transcription.value.final || ''
@@ -108,14 +107,6 @@ const deleteMediaItem = async (id: string) => {
   }
 }
 
-
-// Words only for the interim stream
-const interimWords = computed(() => {
-  return transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
-    id: `i-${i}`,
-    text: w
-  }))
-})
 
 // Select Logic
 const selectedIds = ref<Set<string>>(new Set())
@@ -472,14 +463,6 @@ watch(() => announcement.value.topic, (newVal) => {
   }
 })
 
-watch([() => transcription.value.final, () => transcription.value.interim], () => {
-    nextTick(() => {
-        if (transcriptionScrollRef.value) {
-            transcriptionScrollRef.value.scrollTop = transcriptionScrollRef.value.scrollHeight
-        }
-    })
-})
-
 watch(showMediaManager, (val) => {
   if (val) fetchMediaList()
 })
@@ -757,40 +740,13 @@ onMounted(() => {
         <h2 class="text-xl font-bold tracking-tight">Transcripción en vivo</h2>
       </div>
 
-      <div ref="transcriptionScrollRef" class="flex-1 overflow-y-auto px-7 pb-6 flex flex-col">
-        <div
-          class="space-y-5"
-          :class="!transcriptionHistory.trim() && !transcription.final && !transcription.interim ? 'my-auto' : 'mt-auto'"
-        >
-          <div
-            v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
-            :key="i"
-            class="group relative rounded-xl -mx-3 px-3 py-2 hover:bg-foreground/5 transition-colors"
-          >
-            <p class="text-xl leading-snug font-medium tracking-tight text-muted-foreground pr-10">{{ p }}</p>
-            <button
-              @click="appendToEditor(p)"
-              aria-label="Copiar al editor"
-              class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center p-1.5 rounded-lg bg-background text-muted-foreground hover:text-foreground shadow-sm transition-opacity"
-            >
-              <Icon name="tabler:copy" class="size-4" />
-            </button>
-          </div>
-
-          <TransitionGroup
-            name="word-stream"
-            tag="p"
-            class="text-xl leading-snug font-medium tracking-tight text-foreground"
-          >
-            <span v-for="word in interimWords" :key="word.id">{{ word.text + ' ' }}</span>
-          </TransitionGroup>
-
-          <div v-if="!transcriptionHistory.trim() && !transcription.final && !transcription.interim" class="text-center">
-            <Icon name="tabler:ear" class="size-10 text-muted-foreground/40 mx-auto mb-3" />
-            <p class="text-lg text-muted-foreground">Escuchando… aún no hay voz.</p>
-          </div>
-        </div>
-      </div>
+      <LiveTranscript
+        :final="transcription.final || ''"
+        :interim="transcription.interim || ''"
+        :max-length="MAX_TRANSCRIPTION_LENGTH"
+        copyable
+        @copy="appendToEditor"
+      />
 
       <div class="p-7 pt-4 space-y-3 border-t border-border/50">
         <button
@@ -931,12 +887,4 @@ onMounted(() => {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
-
-/* solo opacidad: spans inline con espacio real, igual que el texto final */
-.word-stream-enter-active {
-  transition: opacity 0.3s ease;
-}
-.word-stream-enter-from {
-  opacity: 0;
-}
 </style>
