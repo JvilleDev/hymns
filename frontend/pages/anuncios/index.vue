@@ -554,7 +554,7 @@ onMounted(() => {
             <button
               v-if="announcement.active"
               @click="toggleVisibility()"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-5 py-3 transition-all duration-150 active:scale-95"
+              class="inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 whitespace-nowrap transition-all duration-150 active:scale-95 max-sm:flex-1 min-w-0"
               :class="flashing === 'toggle' && 'scale-95 ring-4 ring-red-500/40'"
             >
               <Icon name="tabler:player-stop" class="size-4" />
@@ -564,21 +564,21 @@ onMounted(() => {
               v-if="!announcement.active"
               @click="sendAnnouncement()"
               :disabled="!textInput || isLoading"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex-1 sm:flex-none"
+              class="inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-4 whitespace-nowrap transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none max-sm:flex-1 min-w-0"
               :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:player-play" class="size-4" />
-              {{ autoSendToAir ? 'Mostrar en pantalla' : 'Guardar' }}
+              {{ autoSendToAir ? 'Mostrar' : 'Guardar' }}<span v-if="autoSendToAir" class="hidden sm:inline"> en pantalla</span>
             </button>
             <button
               v-else
               @click="sendAnnouncement()"
               :disabled="!textInput || isLoading"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex-1 sm:flex-none"
+              class="inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-4 whitespace-nowrap transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none max-sm:flex-1 min-w-0"
               :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:refresh" class="size-4" />
-              {{ autoSendToAir ? 'Reemplazar en pantalla' : 'Guardar' }}
+              {{ autoSendToAir ? 'Reemplazar' : 'Guardar' }}<span v-if="autoSendToAir" class="hidden sm:inline"> en pantalla</span>
             </button>
             </div>
           </div>

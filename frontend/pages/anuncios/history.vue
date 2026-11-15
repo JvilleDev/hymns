@@ -190,7 +190,7 @@ const generatePdf = () => {
 </script>
 
 <template>
-  <div class="h-svh flex overflow-hidden bg-white text-neutral-900 font-sans print:bg-white print:p-0">
+  <div class="h-svh flex overflow-hidden bg-white text-neutral-900 font-sans print:block print:h-auto print:overflow-visible print:bg-white print:p-0">
 
     <!-- History Rail (left edge, desktop only) -->
     <div class="hidden lg:flex flex-col w-72 border-r border-neutral-100 shrink-0 print:hidden">
@@ -533,27 +533,21 @@ const generatePdf = () => {
       </Transition>
     </Teleport>
 
-    <!-- Print: full history list -->
-    <div class="hidden print:block print:absolute print:inset-0 print:bg-white print:p-8">
-      <h1 class="text-3xl font-black uppercase mb-8">{{ displayTopic }}</h1>
-      <div class="space-y-8">
-        <div v-for="item in history" :key="item.id" class="border-b border-neutral-100 pb-6">
-          <div class="flex items-center gap-3 mb-3">
-            <span class="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
-              {{ formatTimeAgo(new Date(item.createdAt)) }}
-            </span>
-            <span class="hidden print:block text-[10px] text-neutral-300 font-mono">
-              {{ new Date(item.createdAt).toLocaleString() }}
-            </span>
-          </div>
-          <div class="text-xl font-bold leading-relaxed">
-            <div class="whitespace-pre-line">
-              <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
-                <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" />
-                <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" class="mb-1" />
-                <span v-else v-html="segment.value" :class="segment.class"></span>
-              </template>
-            </div>
+    <!-- Print: historial completo, compacto y fluyendo en varias páginas -->
+    <div class="hidden print:block print:bg-white">
+      <h1 class="text-xl font-black uppercase mb-1">{{ displayTopic }}</h1>
+      <p class="text-[10px] text-neutral-400 mb-4">{{ new Date().toLocaleDateString() }} · {{ history.length }} anuncios</p>
+      <div>
+        <div v-for="item in history" :key="item.id" class="print-item flex gap-3 border-b border-neutral-200 py-2">
+          <span class="w-11 shrink-0 whitespace-nowrap text-[10px] font-mono tabular-nums text-neutral-400 pt-0.5">
+            {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) }}
+          </span>
+          <div class="flex-1 min-w-0 text-[13px] font-semibold leading-snug whitespace-pre-line">
+            <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
+              <img v-if="segment.type === 'image'" :src="segment.value" :class="segment.class" class="!max-h-[1.2em]" />
+              <Icon v-else-if="segment.type === 'icon'" :name="segment.value" :class="segment.class" class="size-3.5 align-text-bottom" />
+              <span v-else v-html="segment.value" :class="segment.class"></span>
+            </template>
           </div>
         </div>
       </div>
@@ -596,8 +590,10 @@ const generatePdf = () => {
 }
 
 @media print {
-  @page { margin: 2cm; }
+  @page { margin: 1.2cm; }
   body { background: white !important; }
+  /* un anuncio no se parte entre páginas */
+  .print-item { break-inside: avoid; }
 }
 
 .word-stream-enter-active,
