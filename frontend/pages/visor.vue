@@ -4,6 +4,9 @@ import { toast } from 'vue-sonner'
 
 useHead({ title: 'Visor' })
 
+const { config, changeConfig, connect } = useRealtime()
+onMounted(connect)
+
 // Opciones disponibles para el visor
 const options = ref({
   bg: true,      // Añade un fondo azul detrás del texto
@@ -63,7 +66,7 @@ watch(options, (newVal) => {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden bg-background">
+  <div class="flex-1 flex flex-col w-full min-h-0 overflow-hidden">
     <div class="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
       <!-- Panel de Opciones -->
       <aside class="order-2 md:order-1 w-full md:w-80 shrink-0 md:border-r border-t md:border-t-0 border-border bg-muted/5 flex flex-col p-4 md:p-6 gap-6 md:gap-8 md:overflow-y-auto">
@@ -95,6 +98,17 @@ watch(options, (newVal) => {
                 <GSwitch v-model="options.no_bg" :disabled="!options.slide" />
               </div>
             </div>
+          </div>
+
+          <div class="pt-6 border-t border-border/50">
+            <div class="flex items-center justify-between mb-4">
+              <label class="text-[10px] font-bold text-primary tracking-widest uppercase opacity-70">TAMAÑO DEL TEXTO</label>
+              <span class="text-xs font-bold tabular-nums">{{ config.fontSize }}%</span>
+            </div>
+            <input type="range" min="50" max="200" step="5" :value="config.fontSize"
+              class="w-full accent-[hsl(var(--primary))]"
+              @input="changeConfig({ fontSize: Number(($event.target as HTMLInputElement).value) })" />
+            <p class="text-[11px] text-muted-foreground mt-1">Aplica a letras y anuncios</p>
           </div>
 
           <div class="pt-6 border-t border-border/50">
@@ -139,8 +153,9 @@ watch(options, (newVal) => {
               options.no_bg && options.slide ? '!bg-white border border-slate-200' : ''
             ]">
             <p class="text-center transition-all duration-500 leading-tight w-full"
+              :style="{ '--fs': config.fontSize / 100 }"
               :class="[
-                options.slide ? 'text-[clamp(1.2rem,6vh,10vh)] font-bold px-6' : 'text-[clamp(1rem,4vw,4.5rem)] font-medium px-4',
+                options.slide ? '[font-size:calc(clamp(1.2rem,6vh,10vh)*var(--fs))] font-bold px-6' : '[font-size:calc(clamp(1rem,4vw,4.5rem)*var(--fs))] font-medium px-4',
                 (options.no_bg && options.slide) ? 'text-black' : 'text-white'
               ]">
               {{ previewText || '· · ·' }}

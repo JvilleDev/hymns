@@ -10,6 +10,7 @@ const {
   connect,
   disconnect,
   activeSong,
+  config,
 } = useRealtime();
 
 const { clientId } = useApi();
@@ -73,8 +74,9 @@ onUnmounted(() => {
         <Transition name="lyric-fade" mode="out-in">
           <p :key="line"
             class="text-center font-outfit drop-shadow-[0_10px_10px_rgba(0,0,0,0.3)] leading-none tracking-tight w-full"
+            :style="{ '--fs': config.fontSize / 100 }"
             :class="[
-              queries.slide ? 'text-[clamp(4vh,12vh,20vh)] font-bold px-10' : 'text-[clamp(1.5rem,5vw,6rem)] font-medium',
+              queries.slide ? '[font-size:calc(clamp(4vh,12vh,20vh)*var(--fs))] font-bold px-10' : '[font-size:calc(clamp(1.5rem,5vw,6rem)*var(--fs))] font-medium',
               (queries.no_bg && queries.slide) ? 'text-black drop-shadow-none' : 'text-white'
             ]">
             {{ line.trim() || '· · ·' }}

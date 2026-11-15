@@ -47,7 +47,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="flex-1 min-h-0 flex flex-col w-full bg-background">
+  <main class="flex-1 min-h-0 flex flex-col w-full">
     <div class="flex-1 min-h-0 w-full overflow-y-auto">
       <div class="w-full max-w-[1920px] mx-auto px-4 md:px-8 xl:px-10 py-5 md:py-8 flex flex-col gap-5">
         <SongToolbar

@@ -516,7 +516,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-row w-full h-full min-h-0 overflow-hidden bg-background">
+  <div class="flex-1 flex flex-row w-full h-full min-h-0 overflow-hidden">
     <div class="flex-1 min-w-0 min-h-0 overflow-y-auto cq">
       <div class="anuncios-grid mx-auto w-full max-w-[1600px] px-4 md:px-8 xl:px-10 py-6 md:py-8">
 

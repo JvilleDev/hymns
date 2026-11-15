@@ -25,12 +25,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-svh w-screen flex overflow-hidden bg-background text-foreground selection:bg-primary/10 selection:text-primary">
+  <div class="h-svh w-screen flex overflow-hidden bg-app text-foreground selection:bg-primary/10 selection:text-primary">
     <!-- Sidebar (Desktop & Tablet) -->
-    <aside class="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-background/80 backdrop-blur-md z-40 p-3">
+    <aside class="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-sidebar z-40 p-3">
       <div class="flex items-center gap-3 px-2 py-3 mb-2">
         <div class="size-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 transition-transform hover:scale-105 active:scale-95">
-          <Icon name="tabler:book" class="size-5 text-primary-foreground" />
+          <HymnalIcon class="size-6 text-primary-foreground" />
         </div>
         <span class="font-bold text-lg tracking-tight">Himnario</span>
       </div>

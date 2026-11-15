@@ -433,6 +433,12 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
       }
       break;
 
+    case "configChange":
+      // Acepta cambios parciales; el server valida y retransmite la config completa
+      state.config = sanitizeConfig(data, state.config);
+      broadcast(clientId, { type: "configChange", data: state.config, from, to });
+      break;
+
     case "setTranscriptionActive":
       state.transcription.active = data;
       state.lastTranscriptionUpdate = Date.now();
@@ -1310,6 +1316,22 @@ interface InitialInfo {
   lastTranscriptionUpdate: number;
   lastAnnouncementUpdate: number;
   session: { live: boolean; openedAt: number; lastActivity: number }; // FASE 1
+  config: ViewerConfig;
+}
+
+// Config dinámica compartida por todos los clientes de la cuenta.
+// fontSize: escala del texto del visor en %, igual para letra y anuncios (100 = tamaño base)
+interface ViewerConfig {
+  fontSize: number;
+}
+
+const defaultConfig = (): ViewerConfig => ({ fontSize: 100 });
+
+function sanitizeConfig(input: any, base: ViewerConfig): ViewerConfig {
+  const next = { ...base };
+  const size = Number(input?.fontSize);
+  if (Number.isFinite(size)) next.fontSize = Math.min(200, Math.max(50, Math.round(size)));
+  return next;
 }
 
 const defaultInitialInfo = (): InitialInfo => ({
@@ -1328,6 +1350,7 @@ const defaultInitialInfo = (): InitialInfo => ({
   lastTranscriptionUpdate: Date.now(),
   lastAnnouncementUpdate: Date.now(),
   session: { live: false, openedAt: 0, lastActivity: 0 },
+  config: defaultConfig(),
 });
 
 const clientStates = new Map<string, InitialInfo>();
@@ -1361,6 +1384,9 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.session.live = !!(row as any).sessionLive;
       state.session.openedAt = (row as any).sessionOpenedAt || 0;
       state.session.lastActivity = (row as any).sessionLastActivity || 0;
+      try {
+        state.config = sanitizeConfig(JSON.parse((row as any).config || "{}"), defaultConfig());
+      } catch {}
 
       // Load song if activeCantoId exists
       if (state.activeCantoId) {
@@ -1404,8 +1430,8 @@ function persistClientState(clientId: string, state: InitialInfo) {
         announcementTopic, transcriptionActive, transcriptionProducing,
         transcriptionProducer,
         lastTranscriptionUpdate, lastAnnouncementUpdate,
-        sessionLive, sessionOpenedAt, sessionLastActivity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        sessionLive, sessionOpenedAt, sessionLastActivity, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     query.run(
       clientId,
@@ -1423,7 +1449,8 @@ function persistClientState(clientId: string, state: InitialInfo) {
       state.lastAnnouncementUpdate,
       state.session.live ? 1 : 0,
       state.session.openedAt,
-      state.session.lastActivity
+      state.session.lastActivity,
+      JSON.stringify(state.config)
     );
   } catch (e) {
     console.error(`Error saving state for ${clientId}:`, e);
@@ -1508,6 +1535,9 @@ async function prepareDb() {
     } catch (e) {}
     try {
       db.run("ALTER TABLE client_states ADD COLUMN sessionLastActivity INTEGER");
+    } catch (e) {}
+    try {
+      db.run("ALTER TABLE client_states ADD COLUMN config TEXT");
     } catch (e) {}
   } catch (error) {
     console.error("Error preparing database:", error);

@@ -290,7 +290,7 @@ onUnmounted(() => {
       </section>
 
       <!-- Visor principal -->
-      <main class="flex-1 flex flex-col min-w-0 min-h-0 bg-background">
+      <main class="flex-1 flex flex-col min-w-0 min-h-0">
         <!-- Quick Actions Bar -->
         <div v-if="activeSong?.id" class="w-full h-12 shrink-0 bg-muted/5 border-b border-border overflow-hidden">
           <div id="quick-actions-container" class="flex gap-2.5 items-center h-full px-4 overflow-x-auto scrollbar-hide py-2">

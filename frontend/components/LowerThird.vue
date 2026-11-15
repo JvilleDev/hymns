@@ -4,6 +4,9 @@ const props = defineProps<{
 }>()
 
 const { parseHTML } = useContentParser()
+const { config } = useRealtime()
+// Escala compartida con la letra (configChange del server)
+const fontScale = computed(() => config.value.fontSize / 100)
 
 const repeatCount = ref(20) 
 const isScrollable = ref(true)
@@ -64,8 +67,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="fixed left-0 right-0 bottom-0 z-50">
-  <div class="relative bg-white text-neutral-950 overflow-hidden py-[1.6vh]">
+  <div class="lower-root fixed left-0 right-0 bottom-0 z-50" :style="{ '--fs': fontScale }">
+  <div class="relative bg-white text-neutral-950 overflow-hidden py-4">
     <Transition name="announcement-fade" mode="out-in">
       <div :key="text" class="marquee-container w-full whitespace-nowrap text-center">
         <div 
@@ -128,8 +131,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* Misma altura que la caja de la letra: py-4 + 1 línea de leading-none */
+.lower-root {
+  --fsz: calc(clamp(1.5rem, 5vw, 6rem) * var(--fs, 1));
+}
+
 .marquee-container {
   overflow: hidden;
+  height: var(--fsz);
 }
 
 .animate-scroll {
@@ -146,8 +155,8 @@ onUnmounted(() => {
 }
 .announcement-text {
   font-family: 'Outfit', sans-serif;
-  font-size: clamp(1.5rem, 5vw, 6rem);
-  line-height: 1.15;
+  font-size: var(--fsz);
+  line-height: 1;
   letter-spacing: -0.01em;
 }
 
@@ -167,5 +176,11 @@ onUnmounted(() => {
 
 .announcement-fade-leave-to {
   transform: translateY(-100%);
+}
+
+/* Íconos e imágenes no deben estirar la línea */
+.announcement-text :deep(img),
+.announcement-text :deep(svg) {
+  max-height: 1em;
 }
 </style>

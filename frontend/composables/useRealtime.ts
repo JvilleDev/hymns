@@ -15,6 +15,13 @@ export interface SessionState {
     lastActivity: number;
 }
 
+export interface ViewerConfig {
+    /** Escala del texto del visor en % (100 = base), compartida por letra y anuncios. */
+    fontSize: number;
+}
+
+export const DEFAULT_CONFIG: ViewerConfig = { fontSize: 100 }
+
 // Single instance of connections for the application
 let sharedWS: WebSocket | null = null
 let reconnectAttempt = 0
@@ -45,6 +52,8 @@ export const useRealtime = () => {
     final: '',
     interim: ''
   }))
+  /** Config dinámica del visor, controlada por el server (evento configChange). */
+  const config = useState<ViewerConfig>('realtime:config', () => ({ ...DEFAULT_CONFIG }))
   /** Marca de tiempo del servidor para el último cambio en anuncio (ms). */
   const lastAnnouncementUpdate = useState('realtime:lastAnnouncementUpdate', () => 0)
   /** Incrementa cada vez que el server pide refrescar historial. */
@@ -70,6 +79,7 @@ export const useRealtime = () => {
           activeIndex.value = data.activeIndex
           activeSong.value = renameSpecialHeader(data.activeSong) || null
           announcement.value = data.announcement || { text: '', active: false }
+          config.value = { ...DEFAULT_CONFIG, ...(data.config || {}) }
           transcription.value = data.transcription || { active: false, producing: false, final: '', interim: '' }
           if (data.session) session.value = data.session
           lastAnnouncementUpdate.value =
@@ -116,6 +126,10 @@ export const useRealtime = () => {
             typeof msg.lastAnnouncementUpdate === 'number' && !Number.isNaN(msg.lastAnnouncementUpdate)
               ? msg.lastAnnouncementUpdate
               : Date.now()
+          break
+
+        case 'configChange':
+          config.value = { ...config.value, ...data }
           break
 
         case 'transcriptionState':
@@ -265,6 +279,12 @@ export const useRealtime = () => {
     sendEvent('setAnnouncement', data)
   }
 
+  const changeConfig = (patch: Partial<ViewerConfig>) => {
+    // Optimistic Update; el server valida y retransmite el valor final
+    config.value = { ...config.value, ...patch }
+    sendEvent('configChange', patch)
+  }
+
   const setTranscriptionActive = (active: boolean) => {
     // Optimistic Update
     transcription.value.active = active
@@ -294,6 +314,7 @@ export const useRealtime = () => {
     activeSong,
     announcement,
     transcription,
+    config,
     session,
     lastAnnouncementUpdate,
     historyRefreshVersion,
@@ -304,6 +325,7 @@ export const useRealtime = () => {
     sendIndex,
     changeViewerState,
     setAnnouncement,
+    changeConfig,
     setTranscriptionActive,
     setTranscriptionProducing,
     updateTranscription

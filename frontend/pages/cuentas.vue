@@ -171,7 +171,7 @@ onMounted(load)
 </script>
 
 <template>
-  <main class="flex-1 min-h-0 overflow-y-auto bg-background">
+  <main class="flex-1 min-h-0 overflow-y-auto">
     <div class="w-full max-w-[1400px] mx-auto px-4 md:px-8 xl:px-10 py-6 md:py-8 flex flex-col gap-6">
       <!-- Encabezado -->
       <header class="flex flex-wrap items-end justify-between gap-4">
