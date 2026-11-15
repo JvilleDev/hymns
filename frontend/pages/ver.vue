@@ -17,10 +17,6 @@ const { clientId } = useApi();
 const line = ref("");
 const isActive = ref(false);
 
-// Exclusión mutua: letra y anuncio nunca se muestran a la vez.
-// Gana lo último que el operador activó.
-const surface = ref<'lyrics' | 'announcement' | null>(null);
-
 const route = useRoute();
 const queries = computed(() => ({
   bg: route.query.bg !== undefined,
@@ -42,32 +38,10 @@ watch(viewerActive, (newValue) => {
   isActive.value = newValue;
 }, { immediate: true });
 
-// Estado inicial: si ambos vienen activos, el anuncio gana
-surface.value = announcement.value.active ? 'announcement' : (isActive.value ? 'lyrics' : null);
-
-// Un solo watcher: gana lo que se activó; si ambos cambian a la vez, el anuncio
-watch([() => announcement.value.active, isActive], ([annOn, lyrOn], [annWas, lyrWas]) => {
-  const annTurnedOn = annOn && !annWas;
-  const lyrTurnedOn = lyrOn && !lyrWas;
-  if (annTurnedOn) surface.value = 'announcement';
-  else if (lyrTurnedOn) surface.value = 'lyrics';
-  else if (!annOn && surface.value === 'announcement') surface.value = lyrOn ? 'lyrics' : null;
-  else if (!lyrOn && surface.value === 'lyrics') surface.value = annOn ? 'announcement' : null;
-});
-
-// Mover la letra con un anuncio en pantalla devuelve el protagonismo a la letra
-watch(activeLine, (_, previous) => {
-  // ignora la carga inicial (de vacío a una línea)
-  if (!previous) return;
-  if (isActive.value && announcement.value.active) surface.value = 'lyrics';
-});
-
-// En modo ?slide el anuncio no se muestra, así que no debe tapar la letra
-const showLyrics = computed(() =>
-  (surface.value === 'lyrics' || (surface.value === 'announcement' && queries.value.slide)) && !transcription.value.active
-);
+// El server garantiza que letra y anuncio nunca están activos a la vez
+const showLyrics = computed(() => isActive.value && !transcription.value.active);
 const showAnnouncement = computed(() =>
-  announcement.value.active && surface.value === 'announcement' && !queries.value.slide && !transcription.value.active
+  announcement.value.active && !queries.value.slide && !transcription.value.active
 );
 
 onMounted(() => {

@@ -328,6 +328,26 @@ async function touchSessionById(clientId: string) {
 
 // -- Event Handler (shared by WS messages and HTTP POST fallback) --
 
+// Exclusión mutua letra/anuncio: la decide el server y se propaga a todos los clientes
+function hideAnnouncement(clientId: string, state: any, from: string, to?: string) {
+  if (!state.announcement.active) return;
+  state.announcement.active = false;
+  state.lastAnnouncementUpdate = Date.now();
+  broadcast(clientId, {
+    type: "announcement",
+    data: state.announcement,
+    lastAnnouncementUpdate: state.lastAnnouncementUpdate,
+    from,
+    to,
+  });
+}
+
+function hideLyrics(clientId: string, state: any, from: string, to?: string) {
+  if (!state.viewerActive) return;
+  state.viewerActive = false;
+  broadcast(clientId, { type: "viewerActive", data: false, from, to });
+}
+
 async function handleWSEvent(clientId: string, connectionId: string, type: string, data: any, from: string, to?: string) {
   const state = await getClientState(clientId);
 
@@ -335,6 +355,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
     case "newLine":
       state.activeLine = data;
       openSession(clientId, state);
+      if (state.viewerActive) hideAnnouncement(clientId, state, from, to);
       broadcast(clientId, { type: "line", data, from, to });
       break;
 
@@ -351,6 +372,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
           broadcast(clientId, { type: "activeSong", data: parsed, from, to });
           if (parsed.lines.length > 0) {
             state.activeLine = parsed.lines[0];
+            if (state.viewerActive) hideAnnouncement(clientId, state, from, to);
             broadcast(clientId, { type: "line", data: state.activeLine, from, to });
             broadcast(clientId, { type: "index", data: 0, from, to });
           }
@@ -368,6 +390,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
         state.activeSong.lines[data] !== undefined
       ) {
         state.activeLine = state.activeSong.lines[data];
+        if (state.viewerActive) hideAnnouncement(clientId, state, from, to);
         broadcast(clientId, { type: "line", data: state.activeLine, from, to });
       }
       broadcast(clientId, { type: "index", data, from, to });
@@ -378,6 +401,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
       if (data) openSession(clientId, state);
       else touchSession(state);
       broadcast(clientId, { type: "viewerActive", data, from, to });
+      if (data) hideAnnouncement(clientId, state, from, to);
       break;
     case "setAnnouncement":
       state.announcement = {
@@ -398,6 +422,7 @@ async function handleWSEvent(clientId: string, connectionId: string, type: strin
         to,
       });
       broadcast(clientId, { type: "historyRefresh", data: true });
+      if (data.active) hideLyrics(clientId, state, from, to);
       if (data.active && state.transcription.active) {
         state.transcription.active = false;
         broadcast(clientId, {
@@ -1326,6 +1351,7 @@ async function getClientState(clientId: string): Promise<InitialInfo> {
       state.announcement.text = row.announcementText || "";
       state.announcement.active = !!row.announcementActive;
       state.announcement.topic = row.announcementTopic || "ANUNCIO";
+      if (state.announcement.active) state.viewerActive = false; // exclusión mutua con datos antiguos
       state.transcription.active = !!row.transcriptionActive;
       state.transcription.producing = !!row.transcriptionProducing;
       state.transcriptionProducer = (row as any).transcriptionProducer || "";

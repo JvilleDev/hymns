@@ -251,6 +251,7 @@ export const useRealtime = () => {
   const changeViewerState = (state: boolean) => {
     sendEvent('view', state)
     viewerActive.value = state
+    if (state) announcement.value.active = false
   }
 
   const setAnnouncement = (data: { text: string, active: boolean, topic?: string }) => {
@@ -260,6 +261,7 @@ export const useRealtime = () => {
       ...data
     }
     lastAnnouncementUpdate.value = Date.now()
+    if (data.active) viewerActive.value = false
     sendEvent('setAnnouncement', data)
   }
 
