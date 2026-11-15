@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { toast } from 'vue-sonner'
-import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
+import { useAnnouncementIcons, iconClass, BUILTIN_ICONS } from '~/composables/useAnnouncementIcons'
 import { onKeyStroke, watchDebounced } from '@vueuse/core'
 
 useHead({ title: 'Anuncios' })
@@ -43,9 +43,17 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const isUploading = ref(false)
 const mediaList = ref<any[]>([])
 const mediaQuery = ref('')
+const builtinNames = new Set(BUILTIN_ICONS.map(i => i.name))
+// Librería SVG (solo lectura) filtrada por la búsqueda
+const filteredBuiltin = computed(() => {
+  const q = mediaQuery.value.trim().toLowerCase()
+  return q ? BUILTIN_ICONS.filter(i => i.name.includes(q) || i.label.toLowerCase().includes(q)) : BUILTIN_ICONS
+})
+// Imágenes subidas: las que ya tienen un SVG con el mismo nombre quedan reemplazadas por él
 const filteredMedia = computed(() => {
   const q = mediaQuery.value.trim().toLowerCase()
-  return q ? mediaList.value.filter(m => String(m.name).toLowerCase().includes(q)) : mediaList.value
+  const own = mediaList.value.filter(m => !builtinNames.has(m.name))
+  return q ? own.filter(m => String(m.name).toLowerCase().includes(q)) : own
 })
 
 const fetchMediaList = async () => {
@@ -433,7 +441,7 @@ const parseHTMLContent = (html: string) => {
                      segments.push({
                          type: 'icon',
                          value: iconDef.icon,
-                         class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
+                         class: iconClass(iconDef, iconColorClass)
                      })
                  }
                  return 
@@ -512,44 +520,7 @@ onMounted(() => {
     <div class="flex-1 min-w-0 min-h-0 overflow-y-auto cq">
       <div class="anuncios-grid mx-auto w-full max-w-[1600px] px-4 md:px-8 xl:px-10 py-6 md:py-8">
 
-        <!-- ENCABEZADO + ESTADO DE LA PANTALLA -->
-        <header class="span-all flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <div class="min-w-0">
-            <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Anuncios</h1>
-            <p class="mt-1 text-muted-foreground">Escribe, muestra en pantalla y reenvía desde el historial.</p>
-          </div>
-
-          <section
-            aria-label="Estado de la pantalla"
-            class="flex items-center gap-3 rounded-2xl pl-4 pr-2 py-2 max-w-full sm:max-w-xl min-w-0 transition-colors"
-            :class="announcement.active ? 'bg-red-500/10' : 'bg-muted/60'"
-          >
-            <span class="relative flex size-3 shrink-0">
-              <span v-if="announcement.active" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-70"></span>
-              <span class="relative inline-flex size-3 rounded-full" :class="announcement.active ? 'bg-red-500' : 'bg-muted-foreground/40'"></span>
-            </span>
-            <div class="min-w-0 py-1">
-              <p class="text-sm font-semibold leading-tight" :class="announcement.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'">
-                {{ announcement.active ? 'En pantalla ahora' : 'Pantalla libre' }}
-              </p>
-              <p v-if="announcement.active" class="text-sm font-medium text-foreground truncate">
-                {{ (announcement.text || '').replace(/<[^>]+>/g, '') }}
-              </p>
-              <p v-else-if="!session.live" class="text-xs text-muted-foreground">Sin sesión activa</p>
-              <p v-else class="text-xs text-muted-foreground">Lista para un anuncio</p>
-            </div>
-            <button
-              v-if="announcement.active"
-              @click="toggleVisibility()"
-              class="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 ml-1 transition-all duration-150 active:scale-95"
-              :class="flashing === 'toggle' && 'scale-95 ring-4 ring-red-500/40'"
-            >
-              <Icon name="tabler:player-stop" class="size-4" />
-              Ocultar
-            </button>
-          </section>
-        </header>
-        <p v-if="announcement.active && !session.live" class="span-all -mt-3 px-1 text-sm text-red-500">
+        <p v-if="announcement.active && !session.live" class="span-all px-1 text-sm text-red-500">
           La sesión está inactiva: la pantalla se ve en negro en /ver.
         </p>
 
@@ -596,11 +567,21 @@ onMounted(() => {
               </label>
             </div>
 
+            <div class="flex items-center gap-2 w-full sm:w-auto shrink-0">
+            <button
+              v-if="announcement.active"
+              @click="toggleVisibility()"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-5 py-3 transition-all duration-150 active:scale-95"
+              :class="flashing === 'toggle' && 'scale-95 ring-4 ring-red-500/40'"
+            >
+              <Icon name="tabler:player-stop" class="size-4" />
+              Ocultar
+            </button>
             <button
               v-if="!announcement.active"
               @click="sendAnnouncement()"
               :disabled="!textInput || isLoading"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none w-full sm:w-auto shrink-0"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex-1 sm:flex-none"
               :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:player-play" class="size-4" />
@@ -610,12 +591,13 @@ onMounted(() => {
               v-else
               @click="sendAnnouncement()"
               :disabled="!textInput || isLoading"
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none w-full sm:w-auto shrink-0"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold px-6 py-3 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex-1 sm:flex-none"
               :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:refresh" class="size-4" />
               {{ autoSendToAir ? 'Reemplazar en pantalla' : 'Guardar' }}
             </button>
+            </div>
           </div>
           </section>
 
@@ -853,9 +835,9 @@ onMounted(() => {
     <GSheet v-model="showMediaManager" class="max-w-2xl">
       <div class="flex flex-col h-full min-h-0">
         <div class="pr-10 mb-5">
-          <h2 class="text-2xl font-bold tracking-tight">Librería de medios</h2>
+          <h2 class="text-2xl font-bold tracking-tight">Librería de íconos</h2>
           <p class="text-sm text-muted-foreground mt-1">
-            Escribe <kbd class="font-semibold text-foreground">/nombre</kbd> en un anuncio para insertar la imagen.
+            Escribe <kbd class="font-semibold text-foreground">/nombre</kbd> en un anuncio para insertar un ícono.
           </p>
         </div>
 
@@ -864,13 +846,26 @@ onMounted(() => {
           <input
             v-model="mediaQuery"
             type="search"
-            aria-label="Buscar imagen"
+            aria-label="Buscar ícono"
             placeholder="Buscar por nombre"
             class="w-full rounded-xl bg-muted/60 pl-10 pr-4 py-2.5 text-sm outline-none border-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
           />
         </div>
 
         <div class="flex-1 overflow-y-auto -mx-1 px-1 pb-2">
+          <!-- Librería SVG: toma el color del texto donde se use -->
+          <h3 class="text-sm font-semibold text-muted-foreground mb-2 px-1">Librería SVG</h3>
+          <div v-if="filteredBuiltin.length" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+            <figure v-for="ico in filteredBuiltin" :key="ico.name" class="rounded-2xl bg-muted flex flex-col">
+              <div class="aspect-square bg-white m-1.5 mb-0 rounded-xl flex items-center justify-center text-neutral-900">
+                <Icon :name="ico.icon" class="w-4/5 h-4/5" />
+              </div>
+              <figcaption class="px-3 py-2.5 text-sm font-medium text-foreground truncate">/{{ ico.name }}</figcaption>
+            </figure>
+          </div>
+          <p v-else class="px-1 mb-8 text-sm text-muted-foreground">Ningún ícono de la librería coincide con “{{ mediaQuery }}”.</p>
+
+          <h3 class="text-sm font-semibold text-muted-foreground mb-2 px-1">Mis imágenes</h3>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <button
               @click="triggerFileUpload"
@@ -906,12 +901,8 @@ onMounted(() => {
             </figure>
           </div>
 
-          <div v-if="mediaList.length && !filteredMedia.length" class="py-14 text-center">
-            <p class="text-base font-medium">Sin resultados</p>
-            <p class="text-sm text-muted-foreground mt-1">Ninguna imagen coincide con “{{ mediaQuery }}”.</p>
-          </div>
-          <p v-else-if="!mediaList.length && !isUploading" class="py-10 text-center text-sm text-muted-foreground">
-            Aún no hay imágenes. Sube la primera con el recuadro azul.
+          <p v-if="mediaQuery && !filteredMedia.length" class="pt-6 text-center text-sm text-muted-foreground">
+            Ninguna imagen tuya coincide con “{{ mediaQuery }}”.
           </p>
         </div>
       </div>

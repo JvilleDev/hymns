@@ -30,8 +30,7 @@ const iconColorClass = computed(() => {
       <Icon 
         v-else-if="iconDef" 
         :name="iconDef.icon" 
-        class="size-4"
-        :class="iconColorClass"
+        :class="[iconDef.builtin ? 'size-5' : 'size-4', iconColorClass]"
       />
       <span v-else class="text-[10px] font-mono text-muted-foreground uppercase">
         {{ iconName }}

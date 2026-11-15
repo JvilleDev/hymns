@@ -10,6 +10,10 @@ export default defineNuxtConfig({
     '@formkit/auto-animate/nuxt',
     'nuxt-tiptap-editor',
   ],
+  icon: {
+    // Librería de íconos de anuncios (SVG propios): se usan como <Icon name="ann:nombre" />
+    customCollections: [{ prefix: 'ann', dir: './assets/icons/announcements' }]
+  },
   runtimeConfig: {
     public: {
       apiUrl: process.env.BACKEND_URL || "https://hymns-back.jville.dev",

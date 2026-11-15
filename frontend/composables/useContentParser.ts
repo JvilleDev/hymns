@@ -1,4 +1,4 @@
-import { useAnnouncementIcons } from '~/composables/useAnnouncementIcons'
+import { useAnnouncementIcons, iconClass } from '~/composables/useAnnouncementIcons'
 
 export interface ContentSegment {
   type: 'text' | 'icon'
@@ -80,7 +80,7 @@ export const useContentParser = () => {
                    segments.push({
                      type: 'icon',
                      value: iconDef.icon,
-                     class: `inline-block align-text-bottom mb-1 size-[1.1em] ${iconColorClass}`
+                     class: iconClass(iconDef, iconColorClass)
                    })
                  }
                  return 

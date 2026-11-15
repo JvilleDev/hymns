@@ -72,7 +72,7 @@ defineExpose({ onKeyDown })
 <template>
   <div class="w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl bg-popover text-popover-foreground shadow-2xl overflow-hidden flex flex-col">
     <div class="flex items-baseline justify-between gap-3 px-4 pt-3 pb-2">
-      <span class="text-sm font-semibold">Insertar imagen</span>
+      <span class="text-sm font-semibold">Insertar ícono</span>
       <span v-if="items.length" class="text-xs text-muted-foreground tabular-nums">
         {{ items.length }} {{ items.length === 1 ? 'resultado' : 'resultados' }}
       </span>
