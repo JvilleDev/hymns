@@ -757,7 +757,10 @@ onMounted(() => {
       </div>
 
       <div ref="transcriptionScrollRef" class="flex-1 overflow-y-auto px-7 pb-6 flex flex-col">
-        <div class="mt-auto space-y-5">
+        <div
+          class="space-y-5"
+          :class="!transcriptionHistory.trim() && !transcription.final && !transcription.interim ? 'my-auto' : 'mt-auto'"
+        >
           <div
             v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
             :key="i"
@@ -781,7 +784,7 @@ onMounted(() => {
             <span v-for="word in interimWords" :key="word.id">{{ word.text + ' ' }}</span>
           </TransitionGroup>
 
-          <div v-if="!transcription.final && !transcription.interim" class="py-20 text-center">
+          <div v-if="!transcriptionHistory.trim() && !transcription.final && !transcription.interim" class="text-center">
             <Icon name="tabler:ear" class="size-10 text-muted-foreground/40 mx-auto mb-3" />
             <p class="text-lg text-muted-foreground">Escuchando… aún no hay voz.</p>
           </div>

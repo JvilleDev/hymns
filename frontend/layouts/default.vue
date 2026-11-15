@@ -2,6 +2,7 @@
 import { Toaster } from 'vue-sonner'
 
 const { isMaster } = useAuth();
+const { config, changeConfig } = useRealtime();
 
 const items = computed(() => [
   { title: "Inicio", value: "/", icon: "tabler:home", description: "En pantalla viva" },
@@ -47,7 +48,24 @@ onMounted(() => {
         </NuxtLink>
       </nav>
 
-      <div class="mt-auto pt-3 border-t border-border/50">
+      <div class="mt-auto mb-3 rounded-xl border border-border bg-background/70 p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="flex items-center gap-2 text-xs font-bold text-muted-foreground">
+            <Icon name="tabler:typography" class="size-4" />
+            Tamaño de letra
+          </span>
+          <span class="text-xs font-bold tabular-nums text-primary">{{ config.fontSize }}%</span>
+        </div>
+        <input type="range" min="50" max="200" step="5" :value="config.fontSize"
+          class="w-full accent-[hsl(var(--primary))]"
+          aria-label="Tamaño de letra"
+          @input="changeConfig({ fontSize: Number(($event.target as HTMLInputElement).value) })" />
+        <button v-if="config.fontSize !== 100" type="button"
+          class="mt-1 text-[10px] font-semibold text-muted-foreground hover:text-primary transition-colors"
+          @click="changeConfig({ fontSize: 100 })">Restablecer</button>
+      </div>
+
+      <div class="pt-3 border-t border-border/50">
         <SettingsMenu placement="top-start" v-slot="{ open, toggle }">
           <button
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold text-muted-foreground hover:text-primary hover:bg-muted transition-all"
