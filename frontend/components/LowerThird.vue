@@ -146,7 +146,7 @@ onUnmounted(() => {
 }
 .announcement-text {
   font-family: 'Outfit', sans-serif;
-  font-size: clamp(2.5rem, 6vw, 6.5rem);
+  font-size: clamp(1.5rem, 5vw, 6rem);
   line-height: 1.15;
   letter-spacing: -0.01em;
 }
