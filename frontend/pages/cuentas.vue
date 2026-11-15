@@ -15,7 +15,7 @@ interface Tenant {
 type StatusFilter = 'all' | 'active' | 'inactive'
 
 const api = useApi()
-const { confirmDialog, promptDialog } = useDialog()
+const { confirmDialog } = useDialog()
 
 const tenants = ref<Tenant[]>([])
 const loading = ref(true)
@@ -148,16 +148,11 @@ const toggleActive = async (t: Tenant) => {
 
 // -- Eliminar (borra la cuenta y todos sus datos) --
 const remove = async (t: Tenant) => {
-  const typed = await promptDialog(
-    `Se eliminarán la cuenta "${t.name}" y todos sus datos: anuncios, archivos, historial y transcripciones. No se puede deshacer. Escribe el ID para confirmar:`,
-    '',
+  const ok = await confirmDialog(
+    `Se eliminarán la cuenta "${t.name}" y todos sus datos: anuncios, archivos, historial y transcripciones. No se puede deshacer.`,
     { title: 'Eliminar cuenta', confirmLabel: 'Eliminar', destructive: true }
   )
-  if (typed === null) return
-  if (typed.trim() !== t.id) {
-    toast.error('El ID no coincide; no se eliminó nada')
-    return
-  }
+  if (!ok) return
   try {
     await api.delete(`/api/tenants/${encodeURIComponent(t.id)}`)
     toast.success(`Cuenta "${t.id}" eliminada`)
@@ -288,18 +283,18 @@ onMounted(load)
                 <span class="ml-auto text-muted-foreground font-medium">Desde {{ created(t.createdAt) }}</span>
               </div>
 
-              <div class="flex items-center gap-2 pt-1 border-t border-border/50 -mx-1 px-1 pt-3">
-                <GButton variant="secondary" size="sm" class="gap-2 flex-1 sm:flex-none" @click="copyLink(t)">
-                  <Icon name="tabler:link" class="size-4" /> Enlace del visor
+              <div class="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+                <GButton variant="secondary" size="sm" class="gap-2 whitespace-nowrap flex-1 sm:flex-none" @click="copyLink(t)">
+                  <Icon name="tabler:link" class="size-4 shrink-0" /> Enlace<span class="hidden sm:inline">&nbsp;del visor</span>
                 </GButton>
                 <template v-if="!t.isMaster">
-                  <GButton variant="secondary" size="sm" class="gap-2 flex-1 sm:flex-none" @click="openPassword(t)">
-                    <Icon name="tabler:key" class="size-4" /> Contraseña
+                  <GButton variant="secondary" size="sm" class="gap-2 whitespace-nowrap flex-1 sm:flex-none" @click="openPassword(t)">
+                    <Icon name="tabler:key" class="size-4 shrink-0" /> Contraseña
                   </GButton>
                   <GButton
                     variant="ghost"
                     size="sm"
-                    class="ml-auto"
+                    class="ml-auto shrink-0"
                     :class="t.isActive ? 'text-muted-foreground hover:text-amber-600' : 'text-emerald-600'"
                     :title="t.isActive ? 'Desactivar' : 'Activar'"
                     @click="toggleActive(t)"
@@ -309,7 +304,7 @@ onMounted(load)
                   <GButton
                     variant="ghost"
                     size="sm"
-                    class="text-muted-foreground hover:text-red-500"
+                    class="shrink-0 text-muted-foreground hover:text-red-500"
                     title="Eliminar cuenta"
                     @click="remove(t)"
                   >
