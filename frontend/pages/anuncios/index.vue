@@ -521,8 +521,8 @@ onMounted(() => {
           />
           <AnnouncementsEditor v-model="textInput" @submit="sendFromShortcut" />
 
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
-            <div class="flex flex-wrap items-center gap-x-1 gap-y-1 min-w-0">
+          <div class="act-bar flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-x-0.5 gap-y-1 min-w-0">
               <button
                 @click="textInput = ''"
                 :disabled="!textInput || isLoading"
@@ -535,7 +535,7 @@ onMounted(() => {
                 class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
               >
                 <Icon name="tabler:photo" class="size-4" />
-                Medios
+                <span class="act-extra">Medios</span>
               </button>
               <button
                 @click="showHelp = true"
@@ -545,7 +545,7 @@ onMounted(() => {
                 <Icon name="tabler:help-circle" class="size-4" />
               </button>
               <label class="flex items-center gap-2 px-3 py-2 shrink-0 cursor-pointer text-sm font-medium text-muted-foreground whitespace-nowrap" title="Enviar directamente a la pantalla al guardar">
-                Enviar al guardar
+                Enviar<span class="act-extra">&nbsp;al guardar</span>
                 <GSwitch v-model="autoSendToAir" />
               </label>
             </div>
@@ -568,7 +568,7 @@ onMounted(() => {
               :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:player-play" class="size-4" />
-              {{ autoSendToAir ? 'Mostrar' : 'Guardar' }}<span v-if="autoSendToAir" class="hidden sm:inline"> en pantalla</span>
+              {{ autoSendToAir ? 'Mostrar' : 'Guardar' }}<span v-if="autoSendToAir" class="act-extra-main"> en pantalla</span>
             </button>
             <button
               v-else
@@ -578,7 +578,7 @@ onMounted(() => {
               :class="flashing === 'send' && 'scale-95 ring-4 ring-primary/40'"
             >
               <Icon name="tabler:refresh" class="size-4" />
-              {{ autoSendToAir ? 'Reemplazar' : 'Guardar' }}<span v-if="autoSendToAir" class="hidden sm:inline"> en pantalla</span>
+              {{ autoSendToAir ? 'Reemplazar' : 'Guardar' }}<span v-if="autoSendToAir" class="act-extra-main"> en pantalla</span>
             </button>
             </div>
           </div>
@@ -871,6 +871,15 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Barra de acciones del editor: siempre en una sola fila. Cuando el panel es angosto se
+   acortan las etiquetas (no se parte en dos filas), según el ancho del contenedor y no del viewport. */
+.act-bar { container-type: inline-size; }
+@container (max-width: 620px) {
+  .act-extra { display: none; }
+}
+@container (max-width: 480px) {
+  .act-extra-main { display: none; }
+}
 /* Distribución según el ancho disponible del área (no de la ventana) */
 .cq { container-type: inline-size; }
 .anuncios-grid { display: grid; gap: 1.5rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
