@@ -5,12 +5,12 @@ useHead({
     {
       rel: 'icon',
       type: 'image/svg+xml',
-      href: '/icon.svg'
+      href: '/icon.svg?v=2'
     },
     {
       rel: 'icon',
       type: 'image/x-icon',
-      href: '/favicon.ico'
+      href: '/favicon.ico?v=2'
     }
   ],
   htmlAttrs: {
