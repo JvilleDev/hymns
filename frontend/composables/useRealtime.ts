@@ -91,10 +91,19 @@ export const useRealtime = () => {
           // para tomar los cambios del server; un blip de red no cambia el uuid, así que no recarga
           if (data.serverInstanceId) {
             const known = localStorage.getItem(SERVER_INSTANCE_KEY)
-            localStorage.setItem(SERVER_INSTANCE_KEY, data.serverInstanceId)
+            // La página de transcripción no se recarga: cortaría el reconocimiento de voz en curso.
+            // No se guarda el nuevo ID, así la próxima página que se abra sí detecta el reinicio y recarga.
+            const isTranscribing = location.pathname.startsWith('/transcripcion')
             if (known && known !== data.serverInstanceId) {
-              console.log('[Realtime] Backend reiniciado — recargando en 7s')
-              setTimeout(() => location.reload(), 7000)
+              if (isTranscribing) {
+                console.log('[Realtime] Backend reiniciado — recarga omitida en /transcripcion')
+              } else {
+                localStorage.setItem(SERVER_INSTANCE_KEY, data.serverInstanceId)
+                console.log('[Realtime] Backend reiniciado — recargando en 7s')
+                setTimeout(() => location.reload(), 7000)
+              }
+            } else if (!known) {
+              localStorage.setItem(SERVER_INSTANCE_KEY, data.serverInstanceId)
             }
           }
           break

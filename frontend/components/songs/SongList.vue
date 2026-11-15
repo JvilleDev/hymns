@@ -84,7 +84,7 @@ const open = (song: Song) => (props.isAdmin ? emit('edit', song) : emit('view', 
               type="button"
               @click.stop="$emit('edit', song)"
               :aria-label="`Editar ${song.title}`"
-              class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+              class="flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
             >
               <Icon name="tabler:pencil" class="size-5" />
             </button>
@@ -92,7 +92,7 @@ const open = (song: Song) => (props.isAdmin ? emit('edit', song) : emit('view', 
               type="button"
               @click.stop="$emit('delete', song.id)"
               :aria-label="`Eliminar ${song.title}`"
-              class="p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-background transition-colors"
+              class="flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-background transition-colors"
             >
               <Icon name="tabler:trash" class="size-5" />
             </button>

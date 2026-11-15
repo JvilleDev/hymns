@@ -55,6 +55,21 @@
   }
 }
 
+/* Botones que solo contienen un ícono: el ícono siempre centrado.
+   En @layer base para que cualquier utilidad (flex, grid, etc.) siga mandando. */
+@layer base {
+  button:has(> .iconify:only-child),
+  a:has(> .iconify:only-child) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  button > .iconify:only-child,
+  a > .iconify:only-child {
+    flex-shrink: 0;
+  }
+}
+
 @layer components {
   .glass {
     background: var(--glass-bg);

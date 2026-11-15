@@ -557,7 +557,7 @@ onMounted(() => {
               <button
                 @click="showHelp = true"
                 aria-label="Ayuda y atajos"
-                class="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                class="flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
               >
                 <Icon name="tabler:help-circle" class="size-4" />
               </button>
@@ -634,7 +634,7 @@ onMounted(() => {
                 v-if="item.status !== 'sending'"
                 @click="removeFromOutbox(item.id)"
                 aria-label="Descartar"
-                class="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-background/60 transition-colors"
+                class="flex items-center justify-center shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-background/60 transition-colors"
               >
                 <Icon name="tabler:x" class="size-4" />
               </button>
@@ -698,7 +698,7 @@ onMounted(() => {
             <li
               v-for="item in history"
               :key="item.id"
-              class="flex items-start gap-3 pl-4 pr-3 py-3.5 rounded-2xl transition-colors group min-w-0"
+              class="relative flex items-start gap-3 pl-4 pr-3 pt-3.5 pb-8 rounded-2xl transition-colors group min-w-0"
               :class="selectedIds.has(item.id)
                 ? 'bg-primary/15'
                 : isActive(item) ? 'bg-red-500/10' : 'bg-muted/40 hover:bg-muted'"
@@ -721,25 +721,26 @@ onMounted(() => {
                     <span v-else v-html="segment.value" :class="segment.class"></span>
                   </template>
                 </div>
-                <p class="mt-1.5 text-xs text-muted-foreground tabular-nums">
-                  {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-                  <span v-if="isActive(item)" class="ml-1 font-semibold text-red-600 dark:text-red-400">· En pantalla</span>
-                </p>
               </div>
+
+              <p class="absolute bottom-2.5 right-4 text-xs text-muted-foreground tabular-nums pointer-events-none">
+                <span v-if="isActive(item)" class="mr-1 font-semibold text-red-600 dark:text-red-400">En pantalla ·</span>
+                {{ new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+              </p>
 
               <div class="flex-none flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
                 <button
                   v-if="!isActive(item)"
                   @click.stop="resendFromHistory(item)"
                   aria-label="Reenviar"
-                  class="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-background/60 transition-colors"
+                  class="flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-background/60 transition-colors"
                 >
                   <Icon name="tabler:send" class="size-4" />
                 </button>
                 <button
                   @click.stop="deleteItem(item.id)"
                   aria-label="Eliminar"
-                  class="p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-background/60 transition-colors"
+                  class="flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-background/60 transition-colors"
                 >
                   <Icon name="tabler:trash" class="size-4" />
                 </button>
@@ -770,7 +771,7 @@ onMounted(() => {
             <button
               @click="appendToEditor(p)"
               aria-label="Copiar al editor"
-              class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg bg-background text-muted-foreground hover:text-foreground shadow-sm transition-opacity"
+              class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center p-1.5 rounded-lg bg-background text-muted-foreground hover:text-foreground shadow-sm transition-opacity"
             >
               <Icon name="tabler:copy" class="size-4" />
             </button>
