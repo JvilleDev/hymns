@@ -522,7 +522,7 @@ onMounted(() => {
           <AnnouncementsEditor v-model="textInput" @submit="sendFromShortcut" />
 
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
-            <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+            <div class="flex flex-wrap items-center gap-x-1 gap-y-1 min-w-0">
               <button
                 @click="textInput = ''"
                 :disabled="!textInput || isLoading"
@@ -544,7 +544,7 @@ onMounted(() => {
               >
                 <Icon name="tabler:help-circle" class="size-4" />
               </button>
-              <label class="flex items-center gap-2 pl-3 ml-1 shrink-0 cursor-pointer text-sm font-medium text-muted-foreground whitespace-nowrap" title="Enviar directamente a la pantalla al guardar">
+              <label class="flex items-center gap-2 px-3 py-2 shrink-0 cursor-pointer text-sm font-medium text-muted-foreground whitespace-nowrap" title="Enviar directamente a la pantalla al guardar">
                 Enviar al guardar
                 <GSwitch v-model="autoSendToAir" />
               </label>

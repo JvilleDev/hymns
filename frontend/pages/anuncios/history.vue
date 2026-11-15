@@ -41,15 +41,10 @@ const parseHTML = (text: string) => {
 
 const history = shallowRef<any[]>([])
 const isLoading = ref(true)
-const desktopScrollContainer = ref<HTMLElement | null>(null)
-const mobileScrollContainer = ref<HTMLElement | null>(null)
 const showMonitor = ref(false)
 const isMobileExpanded = ref(false)
 const hideTimeout = ref<NodeJS.Timeout|null>(null)
 const manuallyHidden = ref(false)
-const transcriptionHistory = computed(() => transcription.value.final)
-const autoScrollEnabled = ref(true)
-const isAutoScrolling = ref(false)
 const scrollContainer = ref<HTMLElement | null>(null)
 const showTranscription = ref(!!(transcription.value.final || transcription.value.interim))
 const historyRailRef = ref<HTMLElement | null>(null)
@@ -79,58 +74,6 @@ const spotlight = computed(() => {
   }
   return null
 })
-
-const handleScroll = () => {
-    if (!desktopScrollContainer.value || isAutoScrolling.value) return
-    const { scrollTop, scrollHeight, clientHeight } = desktopScrollContainer.value
-    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 100
-    autoScrollEnabled.value = isAtBottom
-}
-
-const scrollToBottom = () => {
-    autoScrollEnabled.value = true
-    isAutoScrolling.value = true
-    nextTick(() => {
-        if (desktopScrollContainer.value) {
-            desktopScrollContainer.value.scrollTo({
-                top: desktopScrollContainer.value.scrollHeight,
-                behavior: 'smooth'
-            })
-            setTimeout(() => { isAutoScrolling.value = false }, 600)
-        }
-    })
-}
-
-const mobileAutoScrollEnabled = ref(true)
-const isMobileAutoScrolling = ref(false)
-
-const handleMobileScroll = () => {
-    if (!mobileScrollContainer.value || isMobileAutoScrolling.value) return
-    const { scrollTop, scrollHeight, clientHeight } = mobileScrollContainer.value
-    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 100
-    mobileAutoScrollEnabled.value = isAtBottom
-}
-
-const scrollMobileToBottom = () => {
-    if (!mobileScrollContainer.value) return
-    mobileAutoScrollEnabled.value = true
-    isMobileAutoScrolling.value = true
-    mobileScrollContainer.value.scrollTo({
-        top: mobileScrollContainer.value.scrollHeight,
-        behavior: 'smooth'
-    })
-    // Guard until scroll actually reaches bottom
-    const check = setInterval(() => {
-        if (!mobileScrollContainer.value) { clearInterval(check); return }
-        const { scrollTop, scrollHeight, clientHeight } = mobileScrollContainer.value
-        if (scrollHeight - scrollTop <= clientHeight + 10) {
-            isMobileAutoScrolling.value = false
-            clearInterval(check)
-        }
-    }, 100)
-    // Fallback: release guard after 2s max
-    setTimeout(() => { isMobileAutoScrolling.value = false; clearInterval(check) }, 2000)
-}
 
 const interimWords = computed(() => {
   return transcription.value.interim.split(/\s+/).filter(Boolean).map((w, i) => ({
@@ -187,12 +130,6 @@ watch([() => transcription.value.final, () => transcription.value.interim], ([ne
     }
     nextTick(() => {
         if (newFinal && scrollContainer.value) scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
-        if (desktopScrollContainer.value && autoScrollEnabled.value) {
-            desktopScrollContainer.value.scrollTop = desktopScrollContainer.value.scrollHeight
-        }
-        if (mobileScrollContainer.value && mobileAutoScrollEnabled.value) {
-            mobileScrollContainer.value.scrollTop = mobileScrollContainer.value.scrollHeight
-        }
     })
 })
 
@@ -271,7 +208,7 @@ const generatePdf = () => {
         </div>
 
         <!-- History items -->
-        <div v-else class="space-y-0.5">
+        <div v-else v-auto-animate="{ duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }" class="space-y-0.5">
           <button
             v-for="item in history"
             :key="item.id"
@@ -289,18 +226,34 @@ const generatePdf = () => {
               <span class="text-[9px] font-bold text-neutral-300 uppercase tracking-widest">
                 {{ formatTimeAgo(new Date(item.createdAt)) }}
               </span>
-              <span v-if="selectedHistoryId === item.id"
-                    class="text-[8px] font-black text-amber-600 uppercase tracking-[0.2em] bg-amber-100 px-1.5 py-0.5 rounded">
-                Mostrando
-              </span>
-              <span v-else-if="announcement.active && session.live && announcement.text === item.text"
-                    class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
-                Ahora
-              </span>
+              <Transition name="badge" mode="out-in">
+                <span v-if="selectedHistoryId === item.id" key="showing"
+                      class="text-[8px] font-black text-amber-600 uppercase tracking-[0.2em] bg-amber-100 px-1.5 py-0.5 rounded">
+                  Mostrando
+                </span>
+                <span v-else-if="announcement.active && session.live && announcement.text === item.text" key="now"
+                      class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
+                  Ahora
+                </span>
+              </Transition>
             </div>
-            <p class="text-xs font-medium text-neutral-600 leading-snug line-clamp-2 group-hover:text-neutral-900 transition-colors">
-              {{ item.text.replace(/<[^>]*>/g, '') }}
-            </p>
+            <div class="text-xs font-medium text-neutral-600 leading-snug line-clamp-2 group-hover:text-neutral-900 transition-colors">
+              <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
+                <img
+                  v-if="segment.type === 'image'"
+                  :src="segment.value"
+                  :class="segment.class"
+                  class="!max-h-[1.25em] !mx-0.5"
+                />
+                <Icon
+                  v-else-if="segment.type === 'icon'"
+                  :name="segment.value"
+                  :class="segment.class"
+                  class="size-3.5 align-text-bottom"
+                />
+                <span v-else v-html="segment.value" :class="segment.class"></span>
+              </template>
+            </div>
           </button>
         </div>
 
@@ -318,12 +271,15 @@ const generatePdf = () => {
           {{ displayTopic }}
         </h1>
         <div class="flex items-center gap-3">
-          <div v-if="announcement.active && session.live" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse">
-            <div class="size-1.5 bg-blue-600 rounded-full"></div>
-            <span class="text-[9px] font-black uppercase tracking-wider">En vivo</span>
-          </div>
+          <Transition name="badge">
+            <div v-if="announcement.active && session.live" class="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded-md border border-blue-100 animate-pulse">
+              <div class="size-1.5 bg-blue-600 rounded-full"></div>
+              <span class="text-[9px] font-black uppercase tracking-wider">En vivo</span>
+            </div>
+          </Transition>
+          <Transition name="swap" mode="out-in">
           <button
-            v-if="showTranscription"
+            v-if="showTranscription" key="hide"
             @click="showTranscription = false; manuallyHidden = true"
             class="hidden lg:flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 active:scale-95 transition-all"
           >
@@ -331,13 +287,14 @@ const generatePdf = () => {
             <span>Transcripción</span>
           </button>
           <button
-            v-else
+            v-else key="show"
             @click="showTranscription = true; manuallyHidden = false"
             class="hidden lg:flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 active:scale-95 transition-all"
           >
             <Icon name="tabler:eye" class="size-4" />
             <span>Transcripción</span>
           </button>
+          </Transition>
           <button
             @click="generatePdf"
             class="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 text-[10px] font-bold uppercase tracking-widest border border-neutral-200 px-4 py-2 rounded-full hover:bg-neutral-50 active:scale-95 transition-all"
@@ -351,8 +308,9 @@ const generatePdf = () => {
       <!-- Spotlight area (desktop only) -->
       <div class="hidden lg:flex flex-1 items-center justify-center px-6 sm:px-12 py-8 overflow-y-auto relative">
 
+        <Transition name="fade-up" mode="out-in">
         <!-- Empty state -->
-        <div v-if="!spotlight && !isLoading" class="text-center">
+        <div v-if="!spotlight && !isLoading" key="empty" class="text-center">
           <div class="size-20 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-6">
             <Icon name="tabler:speakerphone" class="size-10 text-neutral-200" />
           </div>
@@ -360,13 +318,13 @@ const generatePdf = () => {
         </div>
 
         <!-- Loading skeleton -->
-        <div v-else-if="isLoading && !spotlight" class="w-full max-w-3xl space-y-6 px-4">
+        <div v-else-if="isLoading && !spotlight" key="loading" class="w-full max-w-3xl space-y-6 px-4">
           <GSkeleton class="h-10 w-3/4 mx-auto rounded-xl" />
           <GSkeleton class="h-10 w-1/2 mx-auto rounded-xl" />
         </div>
 
         <!-- Spotlight text -->
-        <div v-else-if="spotlight" class="w-full max-w-4xl text-center">
+        <div v-else-if="spotlight" key="spotlight" class="w-full max-w-4xl text-center">
           <Transition
             mode="out-in"
             enter-active-class="transition duration-500 ease-out"
@@ -398,6 +356,7 @@ const generatePdf = () => {
             </div>
           </Transition>
         </div>
+        </Transition>
       </div>
 
       <!-- Mobile: history list (spotlight is just the first item with different bg) -->
@@ -412,7 +371,7 @@ const generatePdf = () => {
           </div>
         </div>
 
-        <div v-else class="space-y-1">
+        <div v-else v-auto-animate="{ duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }" class="space-y-1">
           <div
             v-for="(item, idx) in history"
             :key="item.id"
@@ -429,10 +388,12 @@ const generatePdf = () => {
               <span class="text-[9px] font-bold text-neutral-300 uppercase tracking-widest">
                 {{ formatTimeAgo(new Date(item.createdAt)) }}
               </span>
-              <span v-if="announcement.active && session.live && announcement.text === item.text"
-                    class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
-                Ahora
-              </span>
+              <Transition name="badge">
+                <span v-if="announcement.active && session.live && announcement.text === item.text"
+                      class="text-[8px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-100 px-1.5 py-0.5 rounded">
+                  Ahora
+                </span>
+              </Transition>
             </div>
             <div class="whitespace-pre-line text-sm font-semibold leading-snug">
               <template v-for="(segment, idx) in parseHTML(item.text)" :key="idx">
@@ -462,77 +423,28 @@ const generatePdf = () => {
       </div>
     </div>
 
-    <!-- Right Panel: Live Transcription -->
+    <!-- Right Panel: Live Transcription (mismo componente y estilo que /anuncios) -->
+    <Transition name="panel-slide">
     <aside
       v-if="showTranscription"
-      class="hidden lg:flex flex-col h-full w-[480px] bg-black text-white relative overflow-hidden shrink-0"
+      class="hidden lg:flex flex-col h-full w-[420px] xl:w-[500px] bg-muted/40 text-foreground border-l border-border/60 shrink-0 overflow-hidden"
     >
-      <div class="p-10 pb-0">
-        <div class="flex items-center gap-4 mb-6">
-          <div class="relative flex size-3">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                  :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
-            <span class="relative inline-flex rounded-full size-3"
-                  :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
-          </div>
-          <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+      <!-- Ancho fijo interno: el aside colapsa su ancho sin que el contenido se comprima -->
+      <div class="flex flex-col h-full w-[420px] xl:w-[500px] shrink-0">
+      <div class="flex items-center gap-3 px-7 pt-7 pb-5">
+        <div class="relative flex size-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                :class="transcription.active ? 'bg-red-400' : 'bg-primary/60'"></span>
+          <span class="relative inline-flex rounded-full size-2.5"
+                :class="transcription.active ? 'bg-red-500' : 'bg-primary'"></span>
         </div>
+        <h2 class="text-xl font-bold tracking-tight">Transcripción en vivo</h2>
       </div>
 
-      <div
-        ref="desktopScrollContainer"
-        @scroll="handleScroll"
-        class="flex-1 overflow-y-auto px-10 pb-10 space-y-8"
-      >
-        <div class="space-y-4">
-          <div v-if="transcriptionHistory" class="flex flex-col gap-y-6">
-             <h3 class="text-xs font-black uppercase tracking-[0.3em] text-white/20">Registro Anterior</h3>
-             <p
-               v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
-               :key="i"
-               class="text-xl sm:text-2xl font-normal text-white/70 leading-relaxed"
-             >
-                {{ p }}
-             </p>
-          </div>
-
-          <div class="prose prose-invert max-w-none">
-             <TransitionGroup
-               name="word-stream"
-               tag="p"
-               class="text-xl sm:text-2xl leading-relaxed tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100"
-             >
-                <span v-for="word in interimWords" :key="word.id" class="transition-colors">
-                   {{ word.text }}
-                </span>
-             </TransitionGroup>
-          </div>
-
-          <div v-if="!transcription.final && !transcription.interim" class="py-16 text-center border border-dashed border-white/10 rounded-3xl">
-            <Icon name="tabler:ear" class="size-10 text-white/5 mx-auto mb-3" />
-            <p class="text-[10px] font-bold text-white/20 uppercase tracking-widest italic">Silencio detectado</p>
-          </div>
-        </div>
+      <LiveTranscript :final="transcription.final || ''" :interim="transcription.interim || ''" />
       </div>
-
-      <Transition
-        enter-active-class="transition duration-300 ease-out"
-        enter-from-class="translate-y-4 opacity-0 scale-90"
-        enter-to-class="translate-y-0 opacity-100 scale-100"
-        leave-active-class="transition duration-200 ease-in"
-        leave-from-class="translate-y-0 opacity-100 scale-100"
-        leave-to-class="translate-y-4 opacity-0 scale-90"
-      >
-        <button
-          v-if="!autoScrollEnabled"
-          @click="scrollToBottom"
-          class="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest shadow-2xl hover:scale-110 active:scale-95 transition-all z-20 border border-blue-400/30"
-        >
-          <Icon name="tabler:arrow-down" class="size-4" />
-          <span>Volver abajo</span>
-        </button>
-      </Transition>
     </aside>
+    </Transition>
 
     <!-- Mobile Floating Monitor (Bottom Bar) -->
     <Teleport to="body">
@@ -549,22 +461,22 @@ const generatePdf = () => {
           @click="isMobileExpanded = true"
           class="fixed bottom-0 left-0 right-0 z-50 lg:hidden print:hidden cursor-pointer"
         >
-          <div class="bg-black/95 backdrop-blur-md border-t border-white/10 px-5 h-20 flex flex-col justify-center shadow-[0_-4px_20px_rgba(0,0,0,0.3)] overflow-hidden">
+          <div class="bg-background/95 backdrop-blur-md border-t border-border px-5 h-20 flex flex-col justify-center shadow-[0_-4px_20px_rgba(0,0,0,0.3)] overflow-hidden">
              <div class="flex items-center gap-3">
                 <div class="relative flex size-2">
                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                        :class="transcription.active ? 'bg-red-400' : 'bg-blue-400'"></span>
+                        :class="transcription.active ? 'bg-red-400' : 'bg-primary/60'"></span>
                   <span class="relative inline-flex rounded-full size-2"
-                        :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
+                        :class="transcription.active ? 'bg-red-500' : 'bg-primary'"></span>
                 </div>
-                <span class="text-[10px] font-black uppercase tracking-[0.4em] text-white/50">
-                  Transcripción automática
+                <span class="text-xs font-bold tracking-tight text-muted-foreground">
+                  Transcripción en vivo
                 </span>
-                <div class="h-px flex-1 bg-white/5"></div>
-                <button @click.stop="showMonitor = false; manuallyHidden = true" class="p-1 -mr-1 text-white/30 hover:text-white/70 transition-colors">
+                <div class="h-px flex-1 bg-border"></div>
+                <button @click.stop="showMonitor = false; manuallyHidden = true" class="flex items-center justify-center p-1 -mr-1 text-muted-foreground hover:text-foreground transition-colors">
                   <Icon name="tabler:x" class="size-3.5" />
                 </button>
-                <Icon name="tabler:chevron-up" class="size-4 text-white/20" />
+                <Icon name="tabler:chevron-up" class="size-4 text-muted-foreground/50" />
              </div>
              <div
                ref="scrollContainer"
@@ -574,7 +486,7 @@ const generatePdf = () => {
                <TransitionGroup
                  name="word-stream-mini"
                  tag="p"
-                 class="text-base leading-tight tracking-tight flex flex-wrap gap-x-1.5 text-white opacity-100"
+                 class="text-base leading-tight tracking-tight flex flex-wrap gap-x-1.5 text-foreground"
                >
                  <span v-for="word in interimWords" :key="word.id" class="transition-colors">
                    {{ word.text }}
@@ -595,7 +507,7 @@ const generatePdf = () => {
       >
         <div
           v-if="isMobileExpanded"
-          class="fixed inset-0 z-[60] bg-black lg:hidden flex flex-col p-5 pb-8 sm:p-8 sm:pb-12"
+          class="fixed inset-0 z-[60] bg-background text-foreground lg:hidden flex flex-col p-5 pb-8 sm:p-8 sm:pb-12"
         >
            <header class="flex items-center justify-between mb-5 sm:mb-8">
               <div class="flex items-center gap-3">
@@ -605,55 +517,18 @@ const generatePdf = () => {
                   <span class="relative inline-flex rounded-full size-2"
                         :class="transcription.active ? 'bg-red-500' : 'bg-blue-500'"></span>
                 </div>
-                <h2 class="text-xs font-black uppercase tracking-[0.4em] text-white/40">Traducción en vivo</h2>
+                <h2 class="text-base font-bold tracking-tight">Transcripción en vivo</h2>
               </div>
-              <button @click="isMobileExpanded = false; showMonitor = false; manuallyHidden = true" class="p-2 -mr-2 text-white/40 hover:text-white">
+              <button @click="isMobileExpanded = false; showMonitor = false; manuallyHidden = true" class="flex items-center justify-center p-2 -mr-2 text-muted-foreground hover:text-foreground">
                 <Icon name="tabler:x" class="size-6" />
               </button>
            </header>
 
-           <div
-             ref="mobileScrollContainer"
-             @scroll="handleMobileScroll"
-             class="flex-1 overflow-y-auto space-y-8 pr-2"
-           >
-               <div v-if="transcriptionHistory" class="flex flex-col gap-y-6">
-                  <h3 class="text-[10px] font-black uppercase tracking-[0.3em] text-white/20">Registro Anterior</h3>
-                  <p
-                    v-for="(p, i) in transcriptionHistory.split('\n').filter(p => p.trim())"
-                    :key="i"
-                    class="text-xl sm:text-4xl font-normal text-white/70 leading-relaxed"
-                  >
-                     {{ p }}
-                  </p>
-               </div>
-
-               <div class="prose prose-invert max-w-none">
-                  <TransitionGroup name="word-stream" tag="p" class="text-xl sm:text-4xl leading-snug tracking-tight flex flex-wrap gap-x-3 gap-y-2 text-white opacity-100">
-                    <span v-for="word in interimWords" :key="word.id" class="transition-colors">
-                       {{ word.text }}
-                    </span>
-                 </TransitionGroup>
-              </div>
-           </div>
-
-           <Transition
-              enter-active-class="transition duration-300 ease-out"
-              enter-from-class="translate-y-2 opacity-0"
-              enter-to-class="translate-y-0 opacity-100"
-              leave-active-class="transition duration-200 ease-in"
-              leave-from-class="translate-y-0 opacity-100"
-              leave-to-class="translate-y-2 opacity-0"
-            >
-              <button
-                v-if="!mobileAutoScrollEnabled"
-                @click="scrollMobileToBottom"
-                class="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg z-20"
-              >
-                <Icon name="tabler:arrow-down" class="size-3.5" />
-                <span>Volver abajo</span>
-              </button>
-            </Transition>
+           <LiveTranscript
+             :final="transcription.final || ''"
+             :interim="transcription.interim || ''"
+             content-class="pb-4"
+           />
         </div>
       </Transition>
     </Teleport>
@@ -687,6 +562,23 @@ const generatePdf = () => {
 </template>
 
 <style scoped>
+.badge-enter-active, .badge-leave-active { transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
+.badge-enter-from, .badge-leave-to { opacity: 0; transform: scale(0.7); }
+
+.swap-enter-active, .swap-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.swap-enter-from { opacity: 0; transform: translateY(4px); }
+.swap-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.fade-up-enter-active, .fade-up-leave-active { transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(10px); }
+.fade-up-leave-to { opacity: 0; transform: translateY(-6px); }
+
+/* El ancho colapsa a 0 a la vez que el panel se desvanece: el spotlight crece en simultáneo, sin saltar */
+.panel-slide-enter-active, .panel-slide-leave-active {
+  transition: width 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease, border-width 0.35s ease;
+}
+.panel-slide-enter-from, .panel-slide-leave-to { width: 0; opacity: 0; border-left-width: 0; }
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 
 .line-clamp-1 {

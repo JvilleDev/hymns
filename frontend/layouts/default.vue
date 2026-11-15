@@ -13,6 +13,21 @@ const items = computed(() => [
 ]);
 
 const route = useRoute();
+const activeIndex = computed(() => items.value.findIndex(i => i.value === route.path));
+
+// Barra móvil: el ítem activo ocupa más columna (ícono + etiqueta en horizontal).
+// El indicador se posiciona con estas mismas proporciones, así su transform coincide con la animación del grid.
+const ACTIVE_WEIGHT = 2.4
+const navColumns = computed(() =>
+  items.value.map((_, i) => `${i === activeIndex.value ? ACTIVE_WEIGHT : 1}fr`).join(' ')
+)
+const indicator = computed(() => {
+  const total = items.value.length - 1 + ACTIVE_WEIGHT
+  return {
+    width: (ACTIVE_WEIGHT / total) * 100,
+    shift: (activeIndex.value / ACTIVE_WEIGHT) * 100,
+  }
+})
 const currentPage = computed(() => {
   return items.value.find(i => i.value === route.path) || { title: 'Himnario', description: '' }
 })
@@ -96,13 +111,26 @@ onMounted(() => {
       </main>
 
       <!-- Bottom Nav (Mobile Only) -->
-      <nav class="md:hidden shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid pb-[env(safe-area-inset-bottom)]" :style="{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }">
+      <nav class="md:hidden relative shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid pb-[env(safe-area-inset-bottom)] transition-[grid-template-columns] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]" :style="{ gridTemplateColumns: navColumns }">
+        <!-- Indicador: un solo elemento que se desliza entre ítems con transform -->
+        <span
+          v-if="activeIndex >= 0"
+          class="pointer-events-none absolute top-2 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-0 px-1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          :style="{ width: `${indicator.width}%`, transform: `translateX(${indicator.shift}%)` }"
+          aria-hidden="true"
+        >
+          <span :key="activeIndex" class="pill block h-full w-full rounded-full bg-primary/10"></span>
+        </span>
+
         <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
-          class="relative flex flex-col items-center justify-center gap-0.5 h-14 transition-colors"
+          :aria-label="item.title"
+          class="relative flex items-center justify-center h-14 min-w-0 transition-colors duration-300"
           :class="[route.path === item.value ? 'text-primary' : 'text-muted-foreground']">
-          <span v-if="route.path === item.value" class="absolute top-0 h-0.5 w-8 rounded-full bg-primary" />
-          <Icon :name="item.icon" class="size-5" />
-          <span class="text-[10px] font-bold uppercase tracking-tight">{{ item.title }}</span>
+          <Icon :name="item.icon" class="size-5 shrink-0" />
+          <span
+            class="overflow-hidden whitespace-nowrap text-xs font-bold tracking-tight leading-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+            :class="route.path === item.value ? 'max-w-24 opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'"
+          >{{ item.title }}</span>
         </NuxtLink>
       </nav>
     </div>
@@ -112,13 +140,28 @@ onMounted(() => {
 </template>
 
 <style>
+/* La píldora se acorta a mitad del desplazamiento y vuelve a crecer */
+.pill {
+  animation: pill-squeeze 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes pill-squeeze {
+  0% { transform: scaleX(1); }
+  45% { transform: scaleX(0.55); }
+  100% { transform: scaleX(1); }
+}
+
 .page-enter-active,
 .page-leave-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.page-enter-from,
+
+/* Swipe horizontal: distancia en vw (depende del viewport) y dirección por --page-dir (1 adelante, -1 atrás, 0 solo fundido) */
 .page-leave-to {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateX(calc(var(--page-dir, 0) * -30vw));
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateX(calc(var(--page-dir, 0) * 30vw));
 }
 </style>
