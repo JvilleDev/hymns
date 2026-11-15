@@ -556,6 +556,8 @@ const generatePdf = () => {
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+
 .badge-enter-active, .badge-leave-active { transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
 .badge-enter-from, .badge-leave-to { opacity: 0; transform: scale(0.7); }
 
@@ -573,7 +575,6 @@ const generatePdf = () => {
 }
 .panel-slide-enter-from, .panel-slide-leave-to { width: 0; opacity: 0; border-left-width: 0; }
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 
 .line-clamp-1 {
   display: -webkit-box;

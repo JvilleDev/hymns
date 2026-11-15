@@ -21,6 +21,10 @@ export default {
       },
     },
     extend: {
+      transitionTimingFunction: {
+        // Curva "expo out" usada en la barra móvil
+        swipe: "cubic-bezier(0.32, 0.72, 0, 1)",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

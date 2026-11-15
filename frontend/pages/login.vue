@@ -66,7 +66,7 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="min-h-svh w-screen grid lg:grid-cols-[1.05fr_1fr] bg-background selection:bg-primary/10">
+  <div class="min-h-svh w-screen pt-[env(safe-area-inset-top)] grid lg:grid-cols-[1.05fr_1fr] bg-background selection:bg-primary/10">
     <!-- Panel de marca (solo escritorio) -->
     <aside class="relative hidden lg:flex flex-col justify-between overflow-hidden p-12 text-primary-foreground bg-gradient-to-br from-primary via-blue-700 to-blue-900">
       <div class="absolute -top-32 -right-32 size-[28rem] rounded-full bg-white/10 blur-3xl pointer-events-none"></div>

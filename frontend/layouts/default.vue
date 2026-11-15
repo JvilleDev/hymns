@@ -96,7 +96,7 @@ onMounted(() => {
 
     <div class="flex-1 min-w-0 flex flex-col">
       <!-- Header (Mobile Only) -->
-      <header class="md:hidden h-14 shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 flex items-center justify-between">
+      <header class="md:hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-background/80 backdrop-blur-md z-40 px-4 flex items-center justify-between">
         <div class="min-w-0">
           <h1 class="font-bold text-lg tracking-tight leading-none truncate">{{ currentPage.title }}</h1>
           <p v-if="currentPage.description" class="hidden sm:block text-[10px] text-muted-foreground font-medium mt-1">{{ currentPage.description }}</p>
@@ -111,11 +111,11 @@ onMounted(() => {
       </main>
 
       <!-- Bottom Nav (Mobile Only) -->
-      <nav class="md:hidden relative shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid pb-[env(safe-area-inset-bottom)] transition-[grid-template-columns] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]" :style="{ gridTemplateColumns: navColumns }">
+      <nav class="md:hidden relative shrink-0 border-t border-border bg-background/90 backdrop-blur-lg z-40 grid pb-[env(safe-area-inset-bottom)] transition-[grid-template-columns] duration-300 ease-swipe" :style="{ gridTemplateColumns: navColumns }">
         <!-- Indicador: un solo elemento que se desliza entre ítems con transform -->
         <span
           v-if="activeIndex >= 0"
-          class="pointer-events-none absolute top-2 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-0 px-1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          class="pointer-events-none absolute top-2 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-0 px-1 transition-transform duration-300 ease-swipe"
           :style="{ width: `${indicator.width}%`, transform: `translateX(${indicator.shift}%)` }"
           aria-hidden="true"
         >
@@ -128,7 +128,7 @@ onMounted(() => {
           :class="[route.path === item.value ? 'text-primary' : 'text-muted-foreground']">
           <Icon :name="item.icon" class="size-5 shrink-0" />
           <span
-            class="overflow-hidden whitespace-nowrap text-xs font-bold tracking-tight leading-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+            class="overflow-hidden whitespace-nowrap text-xs font-bold tracking-tight leading-none transition-all duration-300 ease-swipe"
             :class="route.path === item.value ? 'max-w-24 opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'"
           >{{ item.title }}</span>
         </NuxtLink>

@@ -11,7 +11,18 @@ useHead({
       rel: 'icon',
       type: 'image/x-icon',
       href: '/favicon.ico?v=2'
-    }
+    },
+    { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+    { rel: 'manifest', href: '/manifest.webmanifest' }
+  ],
+  meta: [
+    // viewport-fit=cover: ocupa toda la pantalla (notch); los layouts compensan con safe-area
+    { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+    { name: 'theme-color', content: '#2563eb' },
+    { name: 'mobile-web-app-capable', content: 'yes' },
+    { name: 'apple-mobile-web-app-capable', content: 'yes' },
+    { name: 'apple-mobile-web-app-title', content: 'Himnario' },
+    { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' }
   ],
   htmlAttrs: {
     lang: 'es'
