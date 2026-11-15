@@ -157,10 +157,25 @@ onUnmounted(() => {
   font-family: 'Outfit', sans-serif;
   font-size: var(--fsz);
   line-height: 1;
+  /* inline-flex + top: evita que la línea crezca por la alineación de base de imágenes e íconos y recorte el contenido */
+  display: inline-flex;
+  align-items: center;
+  vertical-align: top;
+  height: 1em;
   letter-spacing: -0.01em;
 }
 
+/* El ancho/alto de los medios sigue al texto */
+.announcement-text :deep(img) {
+  height: 1em;
+  width: auto;
+  max-width: none;
+  flex-shrink: 0;
+}
+
 .announcement-gap {
+  vertical-align: top;
+  flex-shrink: 0;
   margin-inline: 6vw;
 }
 
@@ -170,16 +185,17 @@ onUnmounted(() => {
   transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* La distancia incluye el relleno (py-4 = 1rem) para que el texto salga y entre
+   por completo sin asomarse, sea cual sea el tamaño de letra */
 .announcement-fade-enter-from {
-  transform: translateY(100%);
+  transform: translateY(calc(100% + 1rem));
 }
 
 .announcement-fade-leave-to {
-  transform: translateY(-100%);
+  transform: translateY(calc(-100% - 1rem));
 }
 
-/* Íconos e imágenes no deben estirar la línea */
-.announcement-text :deep(img),
+/* Íconos no deben estirar la línea */
 .announcement-text :deep(svg) {
   max-height: 1em;
 }

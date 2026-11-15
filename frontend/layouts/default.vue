@@ -107,7 +107,7 @@ onMounted(() => {
       </nav>
     </div>
 
-    <Toaster position="bottom-left" richColors />
+    <Toaster position="bottom-right" :toast-options="{ class: 'site-toast' }" />
   </div>
 </template>
 
