@@ -120,14 +120,36 @@ const stopPausedHeartbeat = () => {
 }
 
 // Ownership: la auth del tenant basta, sin PIN
+// Logs de diagnóstico del STT (filtra la consola por "[STT]")
+const stt = (...a: any[]) => console.log(`[STT ${new Date().toISOString().slice(11, 23)}]`, ...a)
+const logMicInfo = async (where: string) => {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput')
+    const sel = devs.find(d => d.deviceId === selectedMicrophoneId.value)
+    const def = devs.find(d => d.deviceId === 'default')
+    let perm = 'n/d'
+    try { perm = (await (navigator as any).permissions.query({ name: 'microphone' })).state } catch {}
+    stt(`mic [${where}]`, {
+      permiso: perm,
+      seleccionado: sel?.label || selectedMicrophoneId.value || '(ninguno)',
+      predeterminadoDelSistema: def?.label || '(sin etiqueta)',
+      totalEntradas: devs.length,
+      entradas: devs.map(d => d.label || d.deviceId.slice(0, 8)),
+      nota: 'SpeechRecognition usa SIEMPRE el micrófono predeterminado del sistema/navegador, no el seleccionado aquí'
+    })
+  } catch (e) { stt('mic: no se pudo leer dispositivos', e) }
+}
+
 const claimError = ref('')
 const claimProducing = async (): Promise<boolean> => {
   claimError.value = ''
   try {
     await useApi().post('/api/transcription/claim', { clientId: clientId.value })
+    stt('claim OK', { clientId: clientId.value })
     return true
   } catch (e: any) {
     const st = e?.status || e?.response?.status || e?.statusCode
+    stt('claim FALLÓ', { status: st, msg: e?.message })
     claimError.value = st === 409 ? 'Otro productor activo' : 'No se pudo tomar el micrófono'
     return false
   }
@@ -205,8 +227,10 @@ const getMicrophones = async (opts?: { skipPermissionRequest?: boolean }) => {
   try {
     if (!navigator.mediaDevices?.enumerateDevices) return
 
-    // Siempre solicitar permiso de micrófono antes de enumerar (navegador solo muestra nombres tras permiso).
-    if (!opts?.skipPermissionRequest && navigator.mediaDevices?.getUserMedia) {
+    // Nunca abrir el micrófono mientras el reconocedor está activo: le quita el audio (no-speech)
+    // y al soltar las pistas dispara 'devicechange', que re-llama a esta función en bucle.
+    const skip = opts?.skipPermissionRequest || isUserActive.value
+    if (!skip && navigator.mediaDevices?.getUserMedia) {
       try {
         const tmp = await navigator.mediaDevices.getUserMedia({
           audio: true,
@@ -421,7 +445,18 @@ const initRecognition = () => {
   // Using native SpeechRecognition continuous mode and a more relaxed inactivity timer instead
 
 
+  const r = recognition.value
+  r.onaudiostart = () => stt('audiostart: el navegador ya captura audio del micrófono')
+  r.onsoundstart = () => stt('soundstart: se detectó sonido')
+  r.onspeechstart = () => stt('speechstart: se detectó voz')
+  r.onspeechend = () => stt('speechend')
+  r.onsoundend = () => stt('soundend')
+  r.onaudioend = () => stt('audioend: terminó la captura de audio')
+  r.onnomatch = () => stt('nomatch: audio sin coincidencia')
+
   recognition.value.onstart = () => {
+    stt('start (reconocimiento iniciado)', { lang: r.lang, continuous: r.continuous, interim: r.interimResults, https: window.isSecureContext, ua: navigator.userAgent })
+    void logMicInfo('onstart')
     isTranscribing.value = true
     isLocalProducer.value = true
     errorCount.value = 0
@@ -433,6 +468,10 @@ const initRecognition = () => {
     if (isRestarting.value) return // Ignorar resultados mientras reiniciamos
     
     resetInactivityTimer()
+    {
+      const last = event.results[event.results.length - 1]
+      stt('result', { final: last?.isFinal, texto: last?.[0]?.transcript, confianza: last?.[0]?.confidence })
+    }
     let rawInterim = ''
     let newFinal = ''
     
@@ -599,7 +638,7 @@ const initRecognition = () => {
   }, { debounce: 900 })
 
   recognition.value.onerror = (event: any) => {
-    console.error('[STT] Error:', event.error)
+    console.error('[STT] Error:', event.error, { message: event.message, estado: { activo: isUserActive.value, pausa: paused.value, errores: errorCount.value } })
     if (paused.value) return // F7: en pausa no soltar ownership ni reintentar
     // no-speech/aborted son normales: onend reinicia solo si el usuario sigue activo
     if (event.error === 'no-speech' || event.error === 'aborted') return
@@ -613,16 +652,16 @@ const initRecognition = () => {
   }
 
   recognition.value.onend = () => {
+    stt('end', { activo: isUserActive.value, pausa: paused.value, errores: errorCount.value, reiniciara: isUserActive.value && !paused.value })
     if (paused.value) { // F7: pausa detiene recognition sin soltar ownership
       isTranscribing.value = false
       return
     }
-    isTranscribing.value = false
-    isLocalProducer.value = false
     isRestarting.value = false // Permitir nuevos resultados al terminar la sesión
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
     
     if (isUserActive.value && errorCount.value < maxErrors) {
+      // reinicio transparente: los controles (pausa, etc.) no parpadean
       setTimeout(() => { if (isUserActive.value && !paused.value) { try { recognition.value?.start() } catch {} } }, 300)
     } else {
       stopAll()
@@ -631,6 +670,7 @@ const initRecognition = () => {
 }
 
 const stopAll = () => {
+  stt('stopAll (detención completa)', new Error().stack?.split('\n')[2]?.trim())
   isUserActive.value = false
   paused.value = false
   stopPausedHeartbeat()
@@ -709,6 +749,7 @@ const stopAudioAnalysis = () => {
 }
 
 const toggleTranscription = async () => {
+  stt('botón principal', { activo: isUserActive.value, transcribiendo: isTranscribing.value })
   if (isSomeoneElseTranscribing.value) return
 
   if (isUserActive.value || isTranscribing.value) {
@@ -720,7 +761,6 @@ const toggleTranscription = async () => {
     }
     paused.value = false
     errorCount.value = 0
-    void getMicrophones()
     startRecognition()
     // En móviles un 2º stream de micrófono deja sin audio al reconocedor (no-speech): solo en escritorio
     if (!window.matchMedia('(pointer: coarse)').matches) startAudioAnalysis()
