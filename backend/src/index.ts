@@ -18,7 +18,6 @@ db.run("PRAGMA synchronous=NORMAL;");
 const MERGE_THRESHOLD = Number(process.env.MERGE_THRESHOLD ?? 0.2);
 const BREAK_THRESHOLD = Number(process.env.BREAK_THRESHOLD ?? 0.55);
 const DEBUG = !!process.env.DEBUG;
-const TRANSCRIBE_PIN = process.env.TRANSCRIBE_PIN || "";
 
 const app = express();
 const server = http.createServer(app);
@@ -1158,7 +1157,7 @@ app.get("/api/paragraphs", requireTenant, (req, res) => {
   }
 });
 
-// -- Transcription persistence (F1) + PIN ownership (F2) --
+// -- Transcription persistence (F1) --
 
 const sessionIdOf = (req: any): string => tenantOf(req);
 
@@ -1166,11 +1165,6 @@ app.post("/api/transcription/claim", requireTenant, async (req, res) => {
   try {
     const sessionId = tenantOf(req);
     const producerId = (req.body?.clientId as string) || sessionId;
-    const pin = (req.body?.pin as string) || "";
-    if (TRANSCRIBE_PIN && pin !== TRANSCRIBE_PIN) {
-      res.status(403).json({ error: "PIN incorrecto" });
-      return;
-    }
     const state = await getClientState(sessionId);
     if (
       state.transcription.producing &&

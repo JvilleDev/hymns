@@ -119,26 +119,16 @@ const stopPausedHeartbeat = () => {
   pausedHeartbeat = null
 }
 
-// F2: PIN de productor (se guarda en localStorage una vez)
-const transcribePin = ref('')
-const pinError = ref('')
-if (import.meta.client) {
-  transcribePin.value = localStorage.getItem('transcripcion:pin') || ''
-}
+// Ownership: la auth del tenant basta, sin PIN
+const claimError = ref('')
 const claimProducing = async (): Promise<boolean> => {
-  pinError.value = ''
+  claimError.value = ''
   try {
-    await useApi().post('/api/transcription/claim', { clientId: clientId.value, pin: transcribePin.value || '' })
-    if (import.meta.client && transcribePin.value) localStorage.setItem('transcripcion:pin', transcribePin.value)
+    await useApi().post('/api/transcription/claim', { clientId: clientId.value })
     return true
   } catch (e: any) {
-    if (e?.status === 403 || e?.response?.status === 403 || e?.statusCode === 403) {
-      pinError.value = 'PIN incorrecto'
-    } else if (e?.status === 409 || e?.response?.status === 409 || e?.statusCode === 409) {
-      pinError.value = 'Otro productor activo'
-    } else {
-      pinError.value = 'No se pudo tomar el micrófono'
-    }
+    const st = e?.status || e?.response?.status || e?.statusCode
+    claimError.value = st === 409 ? 'Otro productor activo' : 'No se pudo tomar el micrófono'
     return false
   }
 }
@@ -611,14 +601,15 @@ const initRecognition = () => {
   recognition.value.onerror = (event: any) => {
     console.error('[STT] Error:', event.error)
     if (paused.value) return // F7: en pausa no soltar ownership ni reintentar
-    isTranscribing.value = false
-    setTranscriptionProducing(false)
-    if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
-    
-    if (event.error !== 'not-allowed' && isUserActive.value && errorCount.value < maxErrors) {
-      errorCount.value++
-      setTimeout(() => startRecognition(), 1000)
+    // no-speech/aborted son normales: onend reinicia solo si el usuario sigue activo
+    if (event.error === 'no-speech' || event.error === 'aborted') return
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
+      toast.error(event.error === 'audio-capture' ? 'No se detecta el micrófono' : 'Permiso de micrófono denegado')
+      stopAll()
+      return
     }
+    errorCount.value++
+    if (errorCount.value >= maxErrors) stopAll()
   }
 
   recognition.value.onend = () => {
@@ -632,11 +623,23 @@ const initRecognition = () => {
     if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
     
     if (isUserActive.value && errorCount.value < maxErrors) {
-      startRecognition()
+      setTimeout(() => { if (isUserActive.value && !paused.value) { try { recognition.value?.start() } catch {} } }, 300)
     } else {
-      setTranscriptionProducing(false)
+      stopAll()
     }
   }
+}
+
+const stopAll = () => {
+  isUserActive.value = false
+  paused.value = false
+  stopPausedHeartbeat()
+  try { recognition.value?.stop() } catch {}
+  isTranscribing.value = false
+  isLocalProducer.value = false
+  setTranscriptionProducing(false)
+  stopAudioAnalysis()
+  if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
 }
 
 const isUserActive = ref(false)
@@ -708,25 +711,19 @@ const stopAudioAnalysis = () => {
 const toggleTranscription = async () => {
   if (isSomeoneElseTranscribing.value) return
 
-  if (isTranscribing.value) {
-    isUserActive.value = false
-    paused.value = false
-    stopPausedHeartbeat()
-    recognition.value?.stop()
-    isLocalProducer.value = false
-    setTranscriptionProducing(false)
-    stopAudioAnalysis()
-    if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  if (isUserActive.value || isTranscribing.value) {
+    stopAll()
   } else {
-    // F2: claim con PIN antes de tomar el mic
     if (!(await claimProducing())) {
-      toast.error(pinError.value || 'PIN incorrecto')
+      toast.error(claimError.value)
       return
     }
     paused.value = false
+    errorCount.value = 0
     void getMicrophones()
     startRecognition()
-    startAudioAnalysis()
+    // En móviles un 2º stream de micrófono deja sin audio al reconocedor (no-speech): solo en escritorio
+    if (!window.matchMedia('(pointer: coarse)').matches) startAudioAnalysis()
   }
 }
 
@@ -792,10 +789,6 @@ onMounted(() => {
         finalTranscript.value = fullHistory.value
       }
     } catch {}
-    // F2: reclaim — mismo clientId recupera ownership automáticamente
-    if (transcribePin.value) {
-      try { await claimProducing().catch(() => false) } catch {}
-    }
   })()
 
   onDeviceInputsChanged = () => {
@@ -936,23 +929,6 @@ definePageMeta({
             </select>
             <Icon name="tabler:chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
           </div>
-        </div>
-
-        <!-- PIN -->
-        <div class="max-lg:order-5 rounded-2xl bg-muted/60 p-4">
-          <label for="producer-pin" class="block text-sm font-semibold mb-2">PIN de productor</label>
-          <div class="relative">
-            <Icon name="tabler:lock" class="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-            <input
-              id="producer-pin"
-              v-model="transcribePin"
-              type="password"
-              placeholder="Solo si es requerido"
-              autocomplete="off"
-              class="w-full rounded-xl bg-background pl-10 pr-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
-            />
-          </div>
-          <p v-if="pinError" class="mt-2 text-sm font-medium text-red-500">{{ pinError }}</p>
         </div>
 
         <!-- Utilidades -->
