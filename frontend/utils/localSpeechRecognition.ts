@@ -24,10 +24,14 @@ const WORKLET_SRC = `
 class Pcm16k extends AudioWorkletProcessor {
   constructor() { super(); this.acc = 0; this.n = 0; this.out = []; this.pos = 0; this.ratio = sampleRate / 16000 }
   process(inputs) {
-    const ch = inputs[0] && inputs[0][0]
-    if (!ch) return true
+    const chs = inputs[0]
+    if (!chs || !chs.length) return true
+    const ch = chs[0]
     for (let i = 0; i < ch.length; i++) {
-      this.acc += ch[i]; this.n++
+      // promedia todos los canales (p. ej. BlackHole 2ch: si solo suena un lado, no se pierde la mitad)
+      let v = 0
+      for (let c = 0; c < chs.length; c++) v += chs[c][i]
+      this.acc += v / chs.length; this.n++
       this.pos += 1
       if (this.pos >= this.ratio) {
         this.pos -= this.ratio
@@ -71,6 +75,7 @@ export class LocalSpeechRecognition {
   private ownStream: MediaStream | null = null
   private running = false
   private ended = false
+  private stopTimer: ReturnType<typeof setTimeout> | null = null
 
   async start(track?: MediaStreamTrack) {
     if (this.running) {
@@ -138,7 +143,8 @@ export class LocalSpeechRecognition {
     this.teardownAudio()
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'stop' }))
-      setTimeout(() => this.finish(), 4000) // por si el servidor tarda en el último final
+      // por si el servidor tarda en el último final; se cancela en finish() para no matar la sesión siguiente
+      this.stopTimer = setTimeout(() => this.finish(), 4000)
     } else {
       this.finish()
     }
@@ -160,6 +166,8 @@ export class LocalSpeechRecognition {
   private finish(error?: string) {
     if (this.ended) return
     this.ended = true
+    if (this.stopTimer) clearTimeout(this.stopTimer)
+    this.stopTimer = null
     if (error) this.onerror?.({ error })
     this.teardownAudio()
     const ws = this.ws

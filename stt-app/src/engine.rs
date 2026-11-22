@@ -33,7 +33,9 @@ const END_SILENCE_MS: usize = 700;
 const MAX_UTTERANCE_S: usize = 20;
 const INTERIM_EVERY_MS: usize = 600;
 const MIN_SPEECH_MS: usize = 250;
-const MIN_SPEECH_RMS: f32 = 0.012;
+// Umbral bajo a propósito: el audio de loopback/virtual (BlackHole…) suele llegar con poco nivel.
+// El suelo de ruido adaptativo evita falsos positivos en micrófonos reales.
+const MIN_SPEECH_RMS: f32 = 0.004;
 
 fn rms(x: &[f32]) -> f32 {
     if x.is_empty() {
@@ -80,7 +82,7 @@ pub fn run_session(
     let mut speech_samples = 0usize;
     let mut silence_samples = 0usize;
     let mut since_decode = 0usize;
-    let mut noise_floor = 0.004f32;
+    let mut noise_floor = 0.0015f32;
 
     let finish = |utt: &mut Vec<f32>, speech: usize| {
         if ms(speech) >= MIN_SPEECH_MS {

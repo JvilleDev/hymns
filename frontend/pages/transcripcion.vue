@@ -194,7 +194,10 @@ const attachMicEnumerateRetryOnFirstPointer = () => {
   micEnumeratePointerHooked = true
   window.addEventListener(
     'pointerdown',
-    () => void getMicrophones(),
+    () => {
+      void getMicrophones()
+      void audioContext.value?.resume() // el medidor arranca suspendido hasta el primer gesto
+    },
     { once: true, capture: true, passive: true }
   )
 }
@@ -229,7 +232,8 @@ const getMicrophones = async (opts?: { skipPermissionRequest?: boolean }) => {
 
     // Nunca abrir el micrófono mientras el reconocedor está activo: le quita el audio (no-speech)
     // y al soltar las pistas dispara 'devicechange', que re-llama a esta función en bucle.
-    const skip = opts?.skipPermissionRequest || isUserActive.value
+    // (con la vista previa abierta el permiso ya está concedido: tampoco hace falta)
+    const skip = opts?.skipPermissionRequest || isUserActive.value || !!sttStream
     if (!skip && navigator.mediaDevices?.getUserMedia) {
       try {
         const tmp = await navigator.mediaDevices.getUserMedia({
@@ -261,6 +265,7 @@ const getMicrophones = async (opts?: { skipPermissionRequest?: boolean }) => {
       const real = list.find((m) => m.deviceId !== 'default' && m.deviceId !== 'communications')
       selectedMicrophoneId.value = (builtIn || real || list[0]).deviceId || ''
     }
+    if (!isUserActive.value && !sttStream) void startMicPreview() // primer medidor (el watcher cubre los cambios)
   } catch (e) {
     console.error('[WebRTC] Error listing microphones:', e)
   }
@@ -707,6 +712,7 @@ const stopAll = () => {
   setTranscriptionProducing(false)
   stopAudioAnalysis()
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
+  void startMicPreview() // el medidor sigue activo con el micrófono elegido
 }
 
 const isUserActive = ref(false)
@@ -726,7 +732,13 @@ const getSttTrack = async (): Promise<MediaStreamTrack | null> => {
   const live = sttStream?.getAudioTracks()[0]
   if (live && live.readyState === 'live' && sttStreamDeviceId === id) return live
   stopSttStream()
-  sttStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id } }, video: false })
+  // En dispositivos virtuales/loopback (BlackHole, Loopback, VB-Cable…) el procesado del navegador
+  // (supresión de ruido, cancelación de eco, AGC) trata el audio como ruido y lo apaga: se desactiva.
+  const label = availableMicrophones.value.find(m => m.deviceId === id)?.label || ''
+  const isVirtual = /blackhole|loopback|soundflower|virtual|vb-?cable|cable (in|out)|aggregate|multi-?output|obs/i.test(label)
+  const raw = isVirtual ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : {}
+  stt('abriendo micrófono', { label, virtual: isVirtual })
+  sttStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id }, ...raw }, video: false })
   sttStreamDeviceId = id
   return sttStream.getAudioTracks()[0] || null
 }
@@ -739,7 +751,7 @@ const beginRecognition = async () => {
     if (track) {
       stt('start con pista explícita', { label: track.label, id: track.getSettings().deviceId })
       recognition.value.start(track)
-      if (sttStream && !analyser.value) startAudioAnalysis(sttStream) // medidor sobre la misma pista
+      if (sttStream && analysedStream !== sttStream) startAudioAnalysis(sttStream) // medidor sobre la misma pista
     } else {
       recognition.value.start()
     }
@@ -758,34 +770,34 @@ const startRecognition = () => {
 
 // Medidor de volumen: reutiliza la MISMA pista que el reconocedor (un 2º getUserMedia sobre el mismo
 // micrófono lo dejaba sin audio útil). No es dueño del stream: no detiene sus pistas.
+let analysedStream: MediaStream | null = null
 const startAudioAnalysis = (stream: MediaStream) => {
   stopAudioAnalysis()
   try {
-    audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
-    analyser.value = audioContext.value.createAnalyser()
-    microphone.value = audioContext.value.createMediaStreamSource(stream)
+    const ctx = audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
+    analyser.value = ctx.createAnalyser()
+    microphone.value = ctx.createMediaStreamSource(stream)
     microphone.value.connect(analyser.value)
-    
-    analyser.value.fftSize = 256
-    const bufferLength = analyser.value.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
+    analysedStream = stream
+    // Sin gesto previo Chrome crea el contexto suspendido (nivel siempre 0): se reanuda aquí y en el primer toque
+    void ctx.resume().catch(() => {})
+
+    analyser.value.fftSize = 1024
+    const data = new Uint8Array(analyser.value.fftSize)
 
     const analyze = () => {
-      if (!analyser.value || !isUserActive.value) return
-      analyser.value.getByteFrequencyData(dataArray)
-      
+      const an = analyser.value
+      if (!an || audioContext.value !== ctx) return
+      // RMS de la forma de onda: refleja el nivel real, también en dispositivos virtuales con poca señal
+      an.getByteTimeDomainData(data)
       let sum = 0
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i]
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128
+        sum += v * v
       }
-      const average = sum / bufferLength
-      const val = average / 128
-      
-      // Throttle reactive updates
-      if (Math.abs(val - currentVolume.value) > 0.05) {
-        currentVolume.value = val
-      }
-      
+      const level = Math.min(1, Math.sqrt(sum / data.length) * 5)
+      if (Math.abs(level - currentVolume.value) > 0.01) currentVolume.value = level
+
       requestAnimationFrame(analyze)
     }
     analyze()
@@ -794,7 +806,25 @@ const startAudioAnalysis = (stream: MediaStream) => {
   }
 }
 
+// Vista previa del micrófono elegido (medidor de volumen) sin necesidad de iniciar la transcripción.
+// Usa la misma pista que luego recibe el reconocedor, así el micrófono no se abre dos veces.
+// Las llamadas se encadenan (varios disparadores a la vez no abren el micrófono dos veces).
+let previewChain: Promise<void> = Promise.resolve()
+const startMicPreview = () => {
+  previewChain = previewChain.then(async () => {
+    if (!import.meta.client || !selectedMicrophoneId.value) return
+    try {
+      await getSttTrack()
+      if (sttStream && analysedStream !== sttStream) startAudioAnalysis(sttStream)
+    } catch (e) {
+      stt('vista previa del micrófono falló', e)
+    }
+  })
+  return previewChain
+}
+
 const stopAudioAnalysis = () => {
+  analysedStream = null
   if (microphone.value) {
     microphone.value.disconnect()
     microphone.value = null
@@ -862,9 +892,12 @@ const clearTranscript = async () => {
 }
 
 watch(selectedMicrophoneId, () => {
-  if (isUserActive.value) { // cambiar de micrófono en vivo: onend reinicia con la pista nueva
-    stopSttStream()
+  stopAudioAnalysis()
+  stopSttStream()
+  if (isUserActive.value) { // cambiar de micrófono en vivo: onend reinicia con la pista nueva (y su medidor)
     try { recognition.value?.stop() } catch {}
+  } else {
+    void startMicPreview() // medidor del micrófono recién elegido
   }
 })
 
@@ -919,6 +952,7 @@ onUnmounted(() => {
   setTranscriptionProducing(false)
   if (inactivityTimer.value) clearTimeout(inactivityTimer.value)
   stopAudioAnalysis()
+  stopSttStream() // suelta el micrófono al salir de la página
   if (onDeviceInputsChanged) {
     navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceInputsChanged)
     onDeviceInputsChanged = null
@@ -991,26 +1025,11 @@ definePageMeta({
               {{ isTranscribing ? 'Escuchando ahora' : 'Micrófono apagado' }}
             </span>
           </span>
-          <span v-if="isTranscribing" class="w-14 h-2 rounded-full bg-white/25 overflow-hidden shrink-0" aria-hidden="true">
-            <span class="block h-full bg-white transition-all duration-75" :style="{ width: `${currentVolume * 100}%` }"></span>
-          </span>
         </button>
 
         <p v-if="isSomeoneElseTranscribing" class="max-lg:order-2 rounded-2xl bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400">
           Alguien más está transcribiendo. Verás su transcripción aquí en tiempo real.
         </p>
-
-        <button
-          v-if="isLocalProducer"
-          @click="togglePause"
-          class="max-lg:order-3 flex items-center gap-4 rounded-2xl bg-muted/60 hover:bg-muted px-5 py-4 text-left transition-colors active:scale-[0.99]"
-        >
-          <Icon :name="paused ? 'tabler:player-play' : 'tabler:player-pause'" class="size-6 shrink-0" />
-          <span class="min-w-0">
-            <span class="block text-base font-semibold leading-tight">{{ paused ? 'Reanudar' : 'Pausar' }}</span>
-            <span class="block text-sm text-muted-foreground mt-0.5">{{ paused ? 'En pausa, conservas el control' : 'Pausa sin soltar el control' }}</span>
-          </span>
-        </button>
 
         <!-- Micrófono -->
         <div class="max-lg:order-5 rounded-2xl bg-muted/60 p-4">
@@ -1034,6 +1053,17 @@ definePageMeta({
               </option>
             </select>
             <Icon name="tabler:chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          </div>
+          <!-- Nivel del micrófono elegido (activo siempre, sin iniciar la transcripción) -->
+          <div class="mt-3 flex items-center gap-3">
+            <Icon name="tabler:volume" class="size-4 shrink-0 text-muted-foreground" />
+            <div class="h-2 flex-1 rounded-full bg-background overflow-hidden" role="meter" aria-label="Nivel del micrófono" :aria-valuenow="Math.round(currentVolume * 100)" aria-valuemin="0" aria-valuemax="100">
+              <div
+                class="h-full rounded-full transition-[width] duration-75"
+                :class="currentVolume > 0.85 ? 'bg-amber-500' : 'bg-green-500'"
+                :style="{ width: `${currentVolume * 100}%` }"
+              ></div>
+            </div>
           </div>
         </div>
 
