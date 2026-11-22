@@ -51,10 +51,17 @@ onMounted(() => {
         <span class="font-bold text-lg tracking-tight">Himnario</span>
       </div>
 
-      <nav class="flex flex-col gap-1">
+      <nav class="relative flex flex-col gap-1">
+        <!-- Fondo activo: un solo elemento que se desliza en vertical con transform (ítems de alto fijo h-14 + gap-1) -->
+        <span
+          v-if="activeIndex >= 0"
+          class="pointer-events-none absolute left-0 right-0 top-0 h-14 rounded-xl border border-primary/20 bg-primary/10 transition-transform duration-300 ease-swipe"
+          :style="{ transform: `translateY(calc(${activeIndex} * (100% + 0.25rem)))` }"
+          aria-hidden="true"
+        ></span>
         <NuxtLink v-for="item in items" :key="item.value" :to="item.value"
-          class="px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-3 border"
-          :class="[route.path === item.value ? 'bg-primary/10 text-primary border-primary/20' : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted']">
+          class="relative h-14 px-3 rounded-xl text-sm font-bold transition-colors duration-300 flex items-center gap-3 border border-transparent"
+          :class="[route.path === item.value ? 'text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted']">
           <Icon :name="item.icon" class="size-5 shrink-0" />
           <span class="flex flex-col leading-tight min-w-0">
             <span>{{ item.title }}</span>
@@ -155,13 +162,13 @@ onMounted(() => {
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Swipe horizontal: distancia en vw (depende del viewport) y dirección por --page-dir (1 adelante, -1 atrás, 0 solo fundido) */
+/* Swipe vertical: distancia en vh y dirección por --page-dir (1 adelante sube, -1 atrás baja, 0 solo fundido) */
 .page-leave-to {
   opacity: 0;
-  transform: translateX(calc(var(--page-dir, 0) * -30vw));
+  transform: translateY(calc(var(--page-dir, 0) * -12vh));
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateX(calc(var(--page-dir, 0) * 30vw));
+  transform: translateY(calc(var(--page-dir, 0) * 12vh));
 }
 </style>

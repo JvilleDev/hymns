@@ -1,5 +1,5 @@
 // Dirección del swipe entre páginas: según el orden de la navegación,
-// ir a una página posterior desliza hacia la izquierda y a una anterior hacia la derecha.
+// ir a una página posterior sube el contenido y a una anterior lo baja.
 // Se publica como variable CSS (--page-dir: 1 | -1 | 0) en vez de cambiar el nombre de la
 // transición: el nombre lo lee Vue al renderizar y llegaba un cambio tarde; la variable se
 // resuelve al aplicar las clases, ya con la dirección de esta navegación.
