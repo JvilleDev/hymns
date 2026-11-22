@@ -162,13 +162,13 @@ onMounted(() => {
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Swipe vertical: distancia en vh y dirección por --page-dir (1 adelante sube, -1 atrás baja, 0 solo fundido) */
+/* Swipe vertical: distancia en vh y dirección por --page-dir (1 adelante baja, -1 atrás sube, 0 solo fundido) */
 .page-leave-to {
   opacity: 0;
-  transform: translateY(calc(var(--page-dir, 0) * -12vh));
+  transform: translateY(calc(var(--page-dir, 0) * 12vh));
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(calc(var(--page-dir, 0) * 12vh));
+  transform: translateY(calc(var(--page-dir, 0) * -12vh));
 }
 </style>
