@@ -257,7 +257,9 @@ const getMicrophones = async (opts?: { skipPermissionRequest?: boolean }) => {
       list.some((m) => m.deviceId === sel)
 
     if (!selectionStillValid && list.length > 0) {
-      selectedMicrophoneId.value = list[0].deviceId || ''
+      const builtIn = list.find((m) => /built-in|macbook|integrado|internal/i.test(m.label) && m.deviceId !== 'default')
+      const real = list.find((m) => m.deviceId !== 'default' && m.deviceId !== 'communications')
+      selectedMicrophoneId.value = (builtIn || real || list[0]).deviceId || ''
     }
   } catch (e) {
     console.error('[WebRTC] Error listing microphones:', e)
@@ -662,7 +664,7 @@ const initRecognition = () => {
     
     if (isUserActive.value && errorCount.value < maxErrors) {
       // reinicio transparente: los controles (pausa, etc.) no parpadean
-      setTimeout(() => { if (isUserActive.value && !paused.value) { try { recognition.value?.start() } catch {} } }, 300)
+      setTimeout(() => { if (isUserActive.value && !paused.value) { void beginRecognition() } }, 300)
     } else {
       stopAll()
     }
@@ -670,6 +672,7 @@ const initRecognition = () => {
 }
 
 const stopAll = () => {
+  stopSttStream()
   stt('stopAll (detención completa)', new Error().stack?.split('\n')[2]?.trim())
   isUserActive.value = false
   paused.value = false
@@ -684,10 +687,48 @@ const stopAll = () => {
 
 const isUserActive = ref(false)
 
+// Web Speech usa el micrófono predeterminado del navegador; Chrome 139+ permite pasarle una pista
+// concreta con start(track). Así respetamos el micrófono elegido (p. ej. el de la Mac y no uno virtual).
+let sttStream: MediaStream | null = null
+let sttStreamDeviceId = ''
+const stopSttStream = () => {
+  sttStream?.getTracks().forEach((t) => t.stop())
+  sttStream = null
+  sttStreamDeviceId = ''
+}
+const getSttTrack = async (): Promise<MediaStreamTrack | null> => {
+  const id = selectedMicrophoneId.value
+  if (!id || !navigator.mediaDevices?.getUserMedia) return null
+  const live = sttStream?.getAudioTracks()[0]
+  if (live && live.readyState === 'live' && sttStreamDeviceId === id) return live
+  stopSttStream()
+  sttStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id } }, video: false })
+  sttStreamDeviceId = id
+  return sttStream.getAudioTracks()[0] || null
+}
+const beginRecognition = async () => {
+  if (!recognition.value) return
+  let track: MediaStreamTrack | null = null
+  try { track = await getSttTrack() } catch (e) { stt('no se pudo abrir el micrófono elegido; uso el predeterminado', e) }
+  if (!isUserActive.value || paused.value) return
+  try {
+    if (track) {
+      stt('start con pista explícita', { label: track.label, id: track.getSettings().deviceId })
+      recognition.value.start(track)
+    } else {
+      recognition.value.start()
+    }
+  } catch (e: any) {
+    if (e?.name === 'InvalidStateError') return // ya estaba iniciado
+    stt('start(track) falló, uso el micrófono predeterminado', e)
+    try { recognition.value.start() } catch {}
+  }
+}
+
 const startRecognition = () => {
   if (!recognition.value) initRecognition()
   isUserActive.value = true
-  try { recognition.value.start() } catch (e) {}
+  void beginRecognition()
 }
 
 const startAudioAnalysis = async () => {
@@ -804,6 +845,10 @@ const clearTranscript = async () => {
 }
 
 watch(selectedMicrophoneId, () => {
+  if (isUserActive.value) { // cambiar de micrófono en vivo: onend reinicia con la pista nueva
+    stopSttStream()
+    try { recognition.value?.stop() } catch {}
+  }
   if (isTranscribing.value) void startAudioAnalysis()
 })
 
