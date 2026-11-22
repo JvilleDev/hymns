@@ -12,5 +12,13 @@ fn main() {
             }
         }
     }
+    // Icono y datos de versión del .exe en Windows (también al compilar en cruzado desde macOS/Linux).
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        embed_resource::compile("packaging/windows/app.rc", embed_resource::NONE)
+            .manifest_required()
+            .unwrap();
+    }
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=packaging/windows/app.rc");
+    println!("cargo:rerun-if-changed=packaging/icons/icon.ico");
 }

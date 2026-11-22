@@ -19,6 +19,8 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "icons\icon.ico"
+!define MUI_UNICON "icons\icon.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\hymns-stt.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Run Hymns STT"
 

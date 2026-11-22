@@ -21,9 +21,12 @@ fn main() -> eframe::Result {
     // Carga el modelo si ya está descargado; si no, la UI ofrece descargarlo.
     models::start_loading(shared.clone(), handle.clone(), false);
 
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../packaging/icons/icon.png"))
+        .expect("icono embebido");
     let opts = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Hymns STT")
+            .with_icon(icon)
             .with_inner_size([560.0, 760.0])
             .with_min_inner_size([480.0, 600.0]),
         ..Default::default()

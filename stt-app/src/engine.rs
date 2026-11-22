@@ -5,6 +5,7 @@
 //! periódicamente todo el enunciado (resultado provisional) y al detectar una pausa se emite
 //! la decodificación definitiva (final).
 
+use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -29,13 +30,19 @@ pub enum Out {
 }
 
 const PREROLL_MS: usize = 400;
-const END_SILENCE_MS: usize = 700;
-const MAX_UTTERANCE_S: usize = 20;
+/// Pausa del orador que cierra un enunciado (emite el final).
+const END_SILENCE_MS: usize = 300;
+/// Si un enunciado llega a esto sin pausa, se parte en el punto más silencioso (no a mitad de palabra).
+const MAX_UTTERANCE_S: usize = 18;
+const SPLIT_SEARCH_S: usize = 6;
 const INTERIM_EVERY_MS: usize = 600;
 const MIN_SPEECH_MS: usize = 250;
-// Umbral bajo a propósito: el audio de loopback/virtual (BlackHole…) suele llegar con poco nivel.
-// El suelo de ruido adaptativo evita falsos positivos en micrófonos reales.
+// Umbral mínimo bajo a propósito: el audio de loopback/virtual (BlackHole…) suele llegar con poco nivel.
 const MIN_SPEECH_RMS: f32 = 0.004;
+/// El suelo de ruido es el mínimo de los últimos segundos (sigue el ruido de fondo aunque haya voz).
+const NOISE_WINDOW_MS: usize = 5000;
+const NOISE_FLOOR_CAP: f32 = 0.008;
+const NOISE_MARGIN: f32 = 2.5;
 
 fn rms(x: &[f32]) -> f32 {
     if x.is_empty() {
@@ -46,6 +53,46 @@ fn rms(x: &[f32]) -> f32 {
 
 fn ms(samples: usize) -> usize {
     samples * 1000 / SAMPLE_RATE
+}
+
+/// Mínimo del nivel RMS en una ventana deslizante de ~5 s.
+struct NoiseFloor {
+    win: VecDeque<(f32, usize)>,
+    total: usize,
+}
+
+impl NoiseFloor {
+    fn new() -> Self {
+        Self { win: VecDeque::new(), total: 0 }
+    }
+    fn push(&mut self, level: f32, samples: usize) {
+        self.win.push_back((level, samples));
+        self.total += samples;
+        while self.total > NOISE_WINDOW_MS * SAMPLE_RATE / 1000 && self.win.len() > 1 {
+            let (_, n) = self.win.pop_front().unwrap();
+            self.total -= n;
+        }
+    }
+    fn floor(&self) -> f32 {
+        self.win.iter().map(|x| x.0).fold(f32::MAX, f32::min).clamp(0.0005, NOISE_FLOOR_CAP)
+    }
+}
+
+/// Punto más silencioso (tramos de 20 ms) entre los últimos 6 s y el último segundo del audio.
+fn quietest_split(audio: &[f32]) -> usize {
+    let frame = SAMPLE_RATE / 50;
+    let start = audio.len().saturating_sub(SPLIT_SEARCH_S * SAMPLE_RATE);
+    let end = audio.len().saturating_sub(SAMPLE_RATE);
+    let mut best = (f32::MAX, audio.len());
+    let mut i = start;
+    while i + frame <= end {
+        let r = rms(&audio[i..i + frame]);
+        if r <= best.0 {
+            best = (r, i + frame / 2);
+        }
+        i += frame;
+    }
+    best.1
 }
 
 fn decode(model: &Mutex<ParakeetTDT>, audio: &[f32]) -> Option<String> {
@@ -68,6 +115,44 @@ fn decode(model: &Mutex<ParakeetTDT>, audio: &[f32]) -> Option<String> {
     }
 }
 
+/// Enunciado en curso.
+struct Utt {
+    audio: Vec<f32>,
+    speech: usize,
+    silence: usize,
+    since_decode: usize,
+    /// Voz recibida desde el último parcial; si es 0, el parcial ya es el texto final.
+    speech_since_decode: usize,
+    last_interim: Option<String>,
+}
+
+impl Utt {
+    fn new(preroll: &[f32], chunk: &[f32]) -> Self {
+        let mut audio = Vec::with_capacity(preroll.len() + chunk.len());
+        audio.extend_from_slice(preroll);
+        audio.extend_from_slice(chunk);
+        Self {
+            since_decode: audio.len(),
+            speech: chunk.len(),
+            silence: 0,
+            speech_since_decode: chunk.len(),
+            last_interim: None,
+            audio,
+        }
+    }
+}
+
+fn finish(model: &Mutex<ParakeetTDT>, tx: &UnboundedSender<Out>, u: &Utt) {
+    if ms(u.speech) < MIN_SPEECH_MS {
+        return;
+    }
+    // Si desde el último parcial solo hubo silencio, ese parcial ya es el final: no se decodifica otra vez.
+    let text = if u.speech_since_decode == 0 { u.last_interim.clone() } else { decode(model, &u.audio) };
+    if let Some(text) = text {
+        let _ = tx.send(Out::Result { text, is_final: true });
+    }
+}
+
 /// Bucle bloqueante de una sesión; se ejecuta en su propio hilo.
 pub fn run_session(
     model: Arc<Mutex<ParakeetTDT>>,
@@ -77,21 +162,8 @@ pub fn run_session(
 ) {
     let preroll_len = PREROLL_MS * SAMPLE_RATE / 1000;
     let mut preroll: Vec<f32> = Vec::new();
-    let mut utt: Vec<f32> = Vec::new();
-    let mut in_utt = false;
-    let mut speech_samples = 0usize;
-    let mut silence_samples = 0usize;
-    let mut since_decode = 0usize;
-    let mut noise_floor = 0.0015f32;
-
-    let finish = |utt: &mut Vec<f32>, speech: usize| {
-        if ms(speech) >= MIN_SPEECH_MS {
-            if let Some(text) = decode(&model, utt) {
-                let _ = tx.send(Out::Result { text, is_final: true });
-            }
-        }
-        utt.clear();
-    };
+    let mut cur: Option<Utt> = None;
+    let mut noise = NoiseFloor::new();
 
     'outer: loop {
         // Espera el siguiente mensaje y drena lo acumulado mientras se decodificaba.
@@ -108,37 +180,29 @@ pub fn run_session(
             }
         }
 
+        // Los parciales se piden como mucho una vez por tanda: así, si el modelo va más lento que el
+        // tiempo real, el retraso no se acumula (cada parcial usa todo el audio ya recibido).
+        let mut interim_due = false;
         for msg in pending {
             match msg {
                 In::Close => break 'outer,
                 In::Flush => {
-                    if in_utt {
-                        finish(&mut utt, speech_samples);
-                        in_utt = false;
-                        speech_samples = 0;
-                        silence_samples = 0;
-                        since_decode = 0;
+                    if let Some(u) = cur.take() {
+                        finish(&model, &tx, &u);
                     }
+                    interim_due = false;
                 }
                 In::Audio(chunk) => {
                     let level = rms(&chunk);
                     shared.set_level(level);
-                    // El suelo de ruido sigue lentamente a los tramos silenciosos.
-                    let threshold = (noise_floor * 3.0).max(MIN_SPEECH_RMS);
-                    let is_speech = level > threshold;
-                    if !is_speech {
-                        noise_floor = noise_floor * 0.95 + level * 0.05;
-                    }
+                    noise.push(level, chunk.len());
+                    let base = (noise.floor() * NOISE_MARGIN).max(MIN_SPEECH_RMS);
+                    // Histéresis: dentro de un enunciado basta un nivel menor para seguir (palabras suaves).
+                    let is_speech = level > if cur.is_some() { base * 0.6 } else { base };
 
-                    if !in_utt {
+                    let Some(u) = cur.as_mut() else {
                         if is_speech {
-                            in_utt = true;
-                            utt.clear();
-                            utt.extend_from_slice(&preroll);
-                            utt.extend_from_slice(&chunk);
-                            speech_samples = chunk.len();
-                            silence_samples = 0;
-                            since_decode = utt.len();
+                            cur = Some(Utt::new(&preroll, &chunk));
                         } else {
                             preroll.extend_from_slice(&chunk);
                             if preroll.len() > preroll_len {
@@ -147,38 +211,52 @@ pub fn run_session(
                             }
                         }
                         continue;
-                    }
+                    };
 
-                    utt.extend_from_slice(&chunk);
-                    since_decode += chunk.len();
+                    u.audio.extend_from_slice(&chunk);
+                    u.since_decode += chunk.len();
                     if is_speech {
-                        speech_samples += chunk.len();
-                        silence_samples = 0;
+                        u.speech += chunk.len();
+                        u.speech_since_decode += chunk.len();
+                        u.silence = 0;
                     } else {
-                        silence_samples += chunk.len();
+                        u.silence += chunk.len();
                     }
 
-                    let ended = ms(silence_samples) >= END_SILENCE_MS;
-                    let too_long = utt.len() >= MAX_UTTERANCE_S * SAMPLE_RATE;
-                    if ended || too_long {
-                        finish(&mut utt, speech_samples);
-                        in_utt = false;
-                        speech_samples = 0;
-                        silence_samples = 0;
-                        since_decode = 0;
+                    if ms(u.silence) >= END_SILENCE_MS {
+                        let u = cur.take().unwrap();
+                        finish(&model, &tx, &u);
                         preroll.clear();
-                    } else if ms(since_decode) >= INTERIM_EVERY_MS && ms(speech_samples) >= MIN_SPEECH_MS {
-                        since_decode = 0;
-                        if let Some(text) = decode(&model, &utt) {
-                            let _ = tx.send(Out::Result { text, is_final: false });
-                        }
+                        interim_due = false;
+                    } else if u.audio.len() >= MAX_UTTERANCE_S * SAMPLE_RATE {
+                        // Sin pausas: se cierra hasta el punto más silencioso y el resto sigue como enunciado nuevo.
+                        let mut u = cur.take().unwrap();
+                        let at = quietest_split(&u.audio);
+                        let rest = u.audio.split_off(at);
+                        u.speech_since_decode = usize::MAX / 2; // fuerza decodificar el tramo cerrado
+                        finish(&model, &tx, &u);
+                        cur = Some(Utt::new(&[], &rest));
+                        interim_due = false;
+                    } else if ms(u.since_decode) >= INTERIM_EVERY_MS && ms(u.speech) >= MIN_SPEECH_MS {
+                        interim_due = true;
                     }
+                }
+            }
+        }
+
+        if interim_due {
+            if let Some(u) = cur.as_mut() {
+                u.since_decode = 0;
+                u.speech_since_decode = 0;
+                u.last_interim = decode(&model, &u.audio);
+                if let Some(text) = &u.last_interim {
+                    let _ = tx.send(Out::Result { text: text.clone(), is_final: false });
                 }
             }
         }
     }
 
-    if in_utt {
-        finish(&mut utt, speech_samples);
+    if let Some(u) = cur.take() {
+        finish(&model, &tx, &u);
     }
 }

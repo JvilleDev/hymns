@@ -1,0 +1,27 @@
+// Recursos del .exe de Windows: icono y datos de versión (los muestra el Explorador y SmartScreen).
+1 ICON "../icons/icon.ico"
+
+1 VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS 0x4
+FILETYPE 0x1
+{
+  BLOCK "StringFileInfo"
+  {
+    BLOCK "040904B0"
+    {
+      VALUE "CompanyName", "Hymns"
+      VALUE "FileDescription", "Hymns STT - transcripcion local de voz"
+      VALUE "FileVersion", "0.1.0"
+      VALUE "InternalName", "hymns-stt"
+      VALUE "OriginalFilename", "hymns-stt.exe"
+      VALUE "ProductName", "Hymns STT"
+      VALUE "ProductVersion", "0.1.0"
+    }
+  }
+  BLOCK "VarFileInfo"
+  {
+    VALUE "Translation", 0x0409, 0x04B0
+  }
+}
