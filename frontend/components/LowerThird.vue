@@ -133,12 +133,19 @@ onUnmounted(() => {
 <style scoped>
 /* Misma altura que la caja de la letra: py-4 + 1 línea de leading-none */
 .lower-root {
-  --fsz: calc(clamp(1.5rem, 5vw, 6rem) * var(--fs, 1));
+  --fsz-lyric: calc(clamp(1.5rem, 5vw, 6rem) * var(--fs, 1));
+  /* Mayúsculas + peso 800/900 se ven ~1.4x más grandes que la letra (minúsculas, peso 500)
+     con el mismo font-size; 0.7 iguala el tamaño percibido */
+  --fsz: calc(var(--fsz-lyric) * 0.7);
 }
 
+/* La caja conserva la altura de la letra; el texto, más pequeño, va centrado */
 .marquee-container {
   overflow: hidden;
-  height: var(--fsz);
+  height: var(--fsz-lyric);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .animate-scroll {
@@ -162,6 +169,7 @@ onUnmounted(() => {
   align-items: center;
   vertical-align: top;
   height: 1em;
+  flex-shrink: 0;
   letter-spacing: -0.01em;
 }
 
