@@ -278,7 +278,6 @@ const inactivityTimer = ref<NodeJS.Timeout | null>(null)
 const audioContext = shallowRef<AudioContext | null>(null)
 const analyser = shallowRef<AnalyserNode | null>(null)
 const microphone = shallowRef<MediaStreamAudioSourceNode | null>(null)
-const vuMeterMicStream = shallowRef<MediaStream | null>(null)
 const currentVolume = ref(0)
 const lastActiveTime = ref(Date.now())
 
@@ -467,13 +466,13 @@ const initRecognition = () => {
   }
 
   recognition.value.onresult = async (event: any) => {
+    {
+      const last = event.results[event.results.length - 1]
+      stt(isRestarting.value ? 'result (DESCARTADO: reiniciando)' : 'result', { final: last?.isFinal, texto: last?.[0]?.transcript, confianza: last?.[0]?.confidence })
+    }
     if (isRestarting.value) return // Ignorar resultados mientras reiniciamos
     
     resetInactivityTimer()
-    {
-      const last = event.results[event.results.length - 1]
-      stt('result', { final: last?.isFinal, texto: last?.[0]?.transcript, confianza: last?.[0]?.confidence })
-    }
     let rawInterim = ''
     let newFinal = ''
     
@@ -715,6 +714,7 @@ const beginRecognition = async () => {
     if (track) {
       stt('start con pista explícita', { label: track.label, id: track.getSettings().deviceId })
       recognition.value.start(track)
+      if (sttStream && !analyser.value) startAudioAnalysis(sttStream) // medidor sobre la misma pista
     } else {
       recognition.value.start()
     }
@@ -731,16 +731,11 @@ const startRecognition = () => {
   void beginRecognition()
 }
 
-const startAudioAnalysis = async () => {
+// Medidor de volumen: reutiliza la MISMA pista que el reconocedor (un 2º getUserMedia sobre el mismo
+// micrófono lo dejaba sin audio útil). No es dueño del stream: no detiene sus pistas.
+const startAudioAnalysis = (stream: MediaStream) => {
   stopAudioAnalysis()
   try {
-    const audioOpts: MediaTrackConstraints = {}
-    if (selectedMicrophoneId.value) audioOpts.deviceId = { exact: selectedMicrophoneId.value }
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: Object.keys(audioOpts).length ? audioOpts : true,
-      video: false
-    })
-    vuMeterMicStream.value = stream
     audioContext.value = new (window.AudioContext || (window as any).webkitAudioContext)()
     analyser.value = audioContext.value.createAnalyser()
     microphone.value = audioContext.value.createMediaStreamSource(stream)
@@ -751,7 +746,7 @@ const startAudioAnalysis = async () => {
     const dataArray = new Uint8Array(bufferLength)
 
     const analyze = () => {
-      if (!analyser.value || !isTranscribing.value) return
+      if (!analyser.value || !isUserActive.value) return
       analyser.value.getByteFrequencyData(dataArray)
       
       let sum = 0
@@ -784,8 +779,6 @@ const stopAudioAnalysis = () => {
     audioContext.value = null
   }
   analyser.value = null
-  vuMeterMicStream.value?.getTracks().forEach((t) => t.stop())
-  vuMeterMicStream.value = null
   currentVolume.value = 0
 }
 
@@ -803,8 +796,6 @@ const toggleTranscription = async () => {
     paused.value = false
     errorCount.value = 0
     startRecognition()
-    // En móviles un 2º stream de micrófono deja sin audio al reconocedor (no-speech): solo en escritorio
-    if (!window.matchMedia('(pointer: coarse)').matches) startAudioAnalysis()
   }
 }
 
@@ -849,7 +840,6 @@ watch(selectedMicrophoneId, () => {
     stopSttStream()
     try { recognition.value?.stop() } catch {}
   }
-  if (isTranscribing.value) void startAudioAnalysis()
 })
 
 
