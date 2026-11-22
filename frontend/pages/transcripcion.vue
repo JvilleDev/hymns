@@ -310,6 +310,7 @@ const isRestarting = ref(false)
 // Q2: interim crudo por defecto (gris, sin red); subir a true solo si se quiere puntuar interims
 const PUNCTUATE_INTERIM = false
 let interimRequestId = 0 // Q2: ignora respuestas obsoletas
+let interimSeq = 0 // cuenta los parciales recibidos (para no borrar uno más nuevo que el final)
 
 // Q1 delta: prefijo congelado — cada final solo re-puntúa contexto + cola nueva
 const punctuatedPrefix = ref('')
@@ -361,6 +362,8 @@ const commitInterim = () => {
 
 const requestPunctuation = async (text: string) => {
   if (!text.trim()) return ''
+  // Parakeet ya devuelve puntuación y mayúsculas: no hace falta el servicio /api/punctuate
+  if (sttEngine.value === 'local') return applyBiblicalTerms(text)
   try {
     const data = await useApi().post<{text: string}>('/api/punctuate', { text })
     return applyBiblicalTerms(data?.text || text)
@@ -421,17 +424,35 @@ const dropConsumedChunks = (consumedWords: number) => {
   }
 }
 
+// Motor de voz: la app local "Hymns STT" (NVIDIA Parakeet en localhost:8090) si está abierta y lista;
+// si no, la Web Speech API del navegador (Google).
+const sttEngine = ref<'local' | 'google'>('google')
+const googleSupported = ref(false)
+const refreshSttEngine = async () => {
+  const local = await probeLocalStt()
+  const next = local ? 'local' : 'google'
+  if (next !== sttEngine.value) {
+    stt('motor de voz', next)
+    sttEngine.value = next
+    recognition.value = null // se recrea con el motor nuevo en el próximo inicio
+  }
+  isSupportedBrowser.value = local || googleSupported.value
+}
+
 const checkBrowser = () => {
   const ua = navigator.userAgent.toLowerCase()
   const isChrome = /chrome/.test(ua) && !/edge|opr/.test(ua)
   const isSafari = /safari/.test(ua) && !/chrome/.test(ua)
-  isSupportedBrowser.value = isChrome || isSafari
+  googleSupported.value = isChrome || isSafari
+  isSupportedBrowser.value = googleSupported.value
 }
 
 const initRecognition = () => {
   if (!import.meta.client) return
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-  
+  const SpeechRecognition = sttEngine.value === 'local'
+    ? LocalSpeechRecognition
+    : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
   if (!SpeechRecognition) {
     toast.error('API de voz no disponible')
     return
@@ -503,8 +524,11 @@ const initRecognition = () => {
       const contextCount = contextTail ? contextTail.split(/\s+/).filter(Boolean).length : 0
       const windowRaw = (contextTail ? contextTail + ' ' : '') + trimmedNew
       const rawSnapshot = activeParagraphRaw.value
+      const interimSeqAtFinal = interimSeq
       requestPunctuation(windowRaw).then(pWindow => {
         if (rawSnapshot !== activeParagraphRaw.value) return
+        // El final ya está listo: retira el parcial que lo cubría, salvo que haya llegado uno más nuevo
+        if (interimSeq === interimSeqAtFinal) interimTranscript.value = ''
 
         // La ventana devuelve contexto+cola; la cola son las palabras extra.
         // Si falla, el fallback de requestPunctuation devuelve windowRaw en crudo → cola cruda como hoy.
@@ -580,15 +604,16 @@ const initRecognition = () => {
         scheduleSilenceFlush(now)
       })
 
-      // Reset interim tracking
+      // Reset interim tracking. El parcial visible NO se vacía aquí: se mantiene hasta que vuelve la
+      // puntuación y el final ocupa su lugar (si no, el texto desaparece unos instantes).
       punctuatedInterim.value = ''
       lastPunctuatedWordCount.value = 0
       currentRawInterim.value = ''
-      interimTranscript.value = ''
     }
 
     // Process Interim text smoothly
     if (rawInterim) {
+      interimSeq++
       currentRawInterim.value = rawInterim
       
       const rawWords = rawInterim.trim().split(/\s+/).filter(Boolean)
@@ -789,6 +814,7 @@ const toggleTranscription = async () => {
   if (isUserActive.value || isTranscribing.value) {
     stopAll()
   } else {
+    await refreshSttEngine() // detecta si la app local se abrió o cerró desde la última vez
     if (!(await claimProducing())) {
       toast.error(claimError.value)
       return
@@ -843,8 +869,9 @@ watch(selectedMicrophoneId, () => {
 })
 
 
-onMounted(() => {
+onMounted(async () => {
   checkBrowser()
+  await refreshSttEngine()
   if (!isSupportedBrowser.value) return
 
   connect()
@@ -928,6 +955,10 @@ definePageMeta({
             <span class="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
               <Icon name="tabler:id" class="size-4" />
               <span class="truncate max-w-[14rem]">{{ clientId }}</span>
+            </span>
+            <span class="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Icon :name="sttEngine === 'local' ? 'tabler:cpu' : 'tabler:brand-google'" class="size-4" />
+              {{ sttEngine === 'local' ? 'Motor: Parakeet local' : 'Motor: Google (abre Hymns STT para usar el local)' }}
             </span>
           </div>
           <span
